@@ -4,7 +4,7 @@
   height: 1em !important;
   margin: 0 0.08em !important;
   border-inline-start: var(--super-reader-divider-width, 2px) solid currentColor !important;
-  vertical-align: -0.1em !important;
+  vertical-align: -0.15em !important;
   pointer-events: none !important;
   content: "" !important;
 }

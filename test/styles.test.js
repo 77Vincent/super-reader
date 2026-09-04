@@ -16,6 +16,7 @@ test("extension renders thin vertical separators without underlines", () => {
     /border-inline-start:\s*var\(--super-reader-divider-width, 2px\) solid currentColor/u,
   );
   assert.match(css, /margin:\s*0 0\.08em/u);
+  assert.match(css, /vertical-align:\s*-0\.15em/u);
   assert.match(css, /content:\s*""/u);
   assert.doesNotMatch(css, /opacity:\s*0\.[0-9]+/u);
   assert.doesNotMatch(css, /text-decoration|underline|chunk--a|chunk--b/u);
@@ -34,6 +35,7 @@ test("HTML demo uses the same vertical separator treatment", () => {
     /border-inline-start:\s*var\(--reader-divider-width, 2px\) solid currentColor/u,
   );
   assert.match(html, /margin:\s*0 0\.08em/u);
+  assert.match(html, /vertical-align:\s*-0\.15em/u);
   assert.match(html, /reader-chunk--separated/u);
   assert.doesNotMatch(html, /\.reader-chunk--separated::before\s*\{[^}]*opacity:\s*0\.[0-9]+/su);
   assert.doesNotMatch(
