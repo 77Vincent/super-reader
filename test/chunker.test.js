@@ -86,6 +86,11 @@ test("always selects the model's highest-scoring boundary without a threshold", 
   assert.equal(selectBestBoundary([0.01, 0]), 0);
 });
 
+test("selects the highest-scoring allowed boundary", () => {
+  assert.equal(selectBestBoundary([1, 3, 2], (index) => index !== 1), 2);
+  assert.equal(selectBestBoundary([1, 3, 2], () => false), null);
+});
+
 test("only asks the model to split clauses longer than seven Han characters", () => {
   assert.deepEqual(chunkText("甲乙丙丁戊己庚", { segmenter: null }), [
     "甲乙丙丁戊己庚",
@@ -121,7 +126,7 @@ test("detects a predicted boundary strictly inside a Segmenter word", () => {
   assert.equal(boundaryFallsInsideWord("春天", 2, segmenter), false);
 });
 
-test("abandons a model split when its winning boundary is inside a word", () => {
+test("keeps a clause intact when every model boundary is inside a word", () => {
   const text = "春天来了我们出发";
   const wholeWordSegmenter = {
     segment() {
@@ -130,6 +135,15 @@ test("abandons a model split when its winning boundary is inside a word", () => 
   };
 
   assert.deepEqual(chunkText(text, { segmenter: wholeWordSegmenter }), [text]);
+});
+
+test("falls back to a valid model boundary when the winner is inside a word", () => {
+  const text = "同一个无标点子句内的短语块用细竖线分隔；";
+  const chunks = chunkText(text);
+
+  assert.ok(chunks.length > 1);
+  assert.equal(chunks.join(""), text);
+  assert.equal(chunks.some((chunk) => chunk.endsWith("分")), false);
 });
 
 test("Segmenter is only a guard and the model can run without it", () => {

@@ -109,15 +109,18 @@
     return clauses;
   }
 
-  function selectBestBoundary(scores) {
+  function selectBestBoundary(scores, isAllowed = () => true) {
     if (!Array.isArray(scores) || scores.length === 0) return null;
 
-    let bestIndex = 0;
-    for (let index = 1; index < scores.length; index += 1) {
-      if (scores[index] > scores[bestIndex]) bestIndex = index;
+    let bestIndex = null;
+    for (let index = 0; index < scores.length; index += 1) {
+      if (!Number.isFinite(scores[index]) || !isAllowed(index)) continue;
+      if (bestIndex === null || scores[index] > scores[bestIndex]) {
+        bestIndex = index;
+      }
     }
 
-    return Number.isFinite(scores[bestIndex]) ? bestIndex : null;
+    return bestIndex;
   }
 
   function boundaryFallsInsideWord(text, boundary, segmenter) {
@@ -151,19 +154,17 @@
       const scores = modelBackend.scoreTokens(
         tokens.slice(start, end).map((token) => token.segment),
       );
-      const boundaryIndex = selectBestBoundary(scores);
+      const boundaryIndex = selectBestBoundary(scores, (candidateIndex) => {
+        const boundaryAfter = start + candidateIndex;
+        const sourceBoundary = tokens[boundaryAfter + 1].index;
+        return !boundaryFallsInsideWord(text, sourceBoundary, segmenter);
+      });
       if (boundaryIndex === null) {
         ranges.push({ start, end });
         return;
       }
 
       const boundaryAfter = start + boundaryIndex;
-      const sourceBoundary = tokens[boundaryAfter + 1].index;
-      if (boundaryFallsInsideWord(text, sourceBoundary, segmenter)) {
-        ranges.push({ start, end });
-        return;
-      }
-
       visit(start, boundaryAfter + 1);
       visit(boundaryAfter + 1, end);
     }
