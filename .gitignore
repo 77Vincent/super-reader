@@ -1,0 +1,6 @@
+training/data/raw/
+training/data/processed/
+training/artifacts/
+training/.deps/
+__pycache__/
+*.pyc

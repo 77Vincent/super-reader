@@ -4,6 +4,8 @@
   "private": true,
   "description": "Chrome extension for alternating-underline Chinese phrase chunking",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "smoke:data": "node training/prepare_smoke_data.mjs",
+    "smoke:model": "npm run smoke:data && python3 training/run_smoke.py"
   }
 }

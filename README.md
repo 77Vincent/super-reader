@@ -37,6 +37,12 @@
 npm test
 ```
 
+边界模型的端到端小规模训练实验位于 [`training/`](training/README.md)，可运行：
+
+```bash
+npm run smoke:model
+```
+
 修改扩展代码后，在 `chrome://extensions/` 中点击扩展卡片上的刷新按钮，再刷新要测试的网页。
 
 ## 文件结构
