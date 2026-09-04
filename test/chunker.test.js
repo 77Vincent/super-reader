@@ -7,13 +7,15 @@ const {
   createBoundaryTree,
   splitUnderlineRuns,
   splitClauses,
+  tokenizeHanCharacters,
   visualLength,
 } = require("../src/chunker.js");
 
-test("combines Chinese words into readable chunks without splitting words", () => {
+test("combines Chinese characters into target-sized model chunks", () => {
   const chunks = chunkText("我一直在思考明天早上的早餐吃什么", { targetLength: 7 });
 
-  assert.deepEqual(chunks, ["我一直在思考", "明天早上的早餐", "吃什么"]);
+  assert.equal(chunks.join(""), "我一直在思考明天早上的早餐吃什么");
+  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 7));
 });
 
 test("keeps strong punctuation with the preceding phrase", () => {
@@ -93,7 +95,7 @@ test("punctuation ends one visual block before alternation continues", () => {
   );
 });
 
-test("builds a full recursive tree from ranked word gaps", () => {
+test("builds a full recursive tree from ranked character gaps", () => {
   const tokens = ["甲", "乙", "丙", "丁"].map((segment, index) => ({
     segment,
     index,
@@ -108,13 +110,10 @@ test("builds a full recursive tree from ranked word gaps", () => {
   assert.equal(tree.left.right.text, "乙");
 });
 
-test("only emits boundaries exposed by the browser word segmenter", () => {
+test("can emit any adjacent Chinese-character boundary", () => {
   const text = "我一直在思考明天早上的早餐吃什么";
-  const segmenter = new Intl.Segmenter("zh-CN", { granularity: "word" });
-  const validBoundaries = new Set(
-    Array.from(segmenter.segment(text), (item) => item.index).slice(1),
-  );
-  const chunks = chunkText(text, { targetLength: 2, segmenter });
+  const validBoundaries = new Set(Array.from({ length: text.length - 1 }, (_, index) => index + 1));
+  const chunks = chunkText(text, { targetLength: 2 });
   let offset = 0;
 
   chunks.slice(0, -1).forEach((chunk) => {
@@ -122,9 +121,10 @@ test("only emits boundaries exposed by the browser word segmenter", () => {
     assert.ok(validBoundaries.has(offset), `unexpected boundary at ${offset}`);
   });
   assert.equal(chunks.join(""), text);
+  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 2));
 });
 
-test("abandons a hard cut when the remaining span is one segmenter word", () => {
+test("does not restrict candidates to browser word boundaries", () => {
   const text = "超长而不可拆分的浏览器词";
   const segmenter = {
     segment() {
@@ -132,39 +132,35 @@ test("abandons a hard cut when the remaining span is one segmenter word", () => 
     },
   };
 
-  assert.deepEqual(chunkText(text, { targetLength: 2, segmenter }), [text]);
+  const chunks = chunkText(text, { targetLength: 2, segmenter });
+  assert.equal(chunks.join(""), text);
+  assert.ok(chunks.length > 1);
+  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 2));
 });
 
-test("abandons chunking when browser word segmentation is unavailable", () => {
+test("does not depend on browser word segmentation", () => {
   const text = "无法确认词语边界时保留整段文字";
+  const chunks = chunkText(text, { targetLength: 2, segmenter: null });
 
-  assert.deepEqual(chunkText(text, { targetLength: 2, segmenter: null }), [text]);
+  assert.equal(chunks.join(""), text);
+  assert.ok(chunks.length > 1);
+  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 2));
 });
 
-test("supports a two-character minimum target without merging valid words", () => {
+test("supports a two-character minimum target", () => {
   const text = "春天来了我们出发。";
-  const segmenter = {
-    segment() {
-      return [
-        { segment: "春天", isWordLike: true },
-        { segment: "来了", isWordLike: true },
-        { segment: "我们", isWordLike: true },
-        { segment: "出发", isWordLike: true },
-        { segment: "。", isWordLike: false },
-      ];
-    },
-  };
+  const chunks = chunkText(text, { targetLength: 2 });
 
-  assert.deepEqual(chunkText(text, { targetLength: 2, segmenter }), [
-    "春天",
-    "来了",
-    "我们",
-    "出发。",
+  assert.equal(chunks.join(""), text);
+  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 2));
+  assert.deepEqual(chunkText(text, { targetLength: 1 }), chunks);
+});
+
+test("character tokenization keeps original UTF-16 source offsets", () => {
+  assert.deepEqual(tokenizeHanCharacters("A中😀文"), [
+    { segment: "中", index: 1 },
+    { segment: "文", index: 4 },
   ]);
-  assert.deepEqual(
-    chunkText(text, { targetLength: 1, segmenter }),
-    chunkText(text, { targetLength: 2, segmenter }),
-  );
 });
 
 test("never loses whitespace or mixed-language content", () => {

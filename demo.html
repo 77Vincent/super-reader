@@ -758,7 +758,7 @@
         <article class="principle">
           <span class="principle-number">01</span>
           <b>先识别结构边界，再划分块</b>
-          <p>先确定标点与双引号边界，再由本地模型在浏览器分词器给出的词间隙中递归选择结构边界。</p>
+          <p>先确定标点与双引号边界，再由本地模型在所有相邻汉字间隙中递归选择结构边界。</p>
         </article>
         <article class="principle">
           <span class="principle-number">02</span>
@@ -788,13 +788,10 @@
         const readerOutput = document.querySelector("#reader-output");
         const chunkCount = document.querySelector("#chunk-count");
         const sampleButtons = Array.from(document.querySelectorAll("[data-sample]"));
-        const segmenter = SuperReaderChunker.createSegmenter("zh-CN");
-
         function render() {
           const text = sourceInput.value || "在左侧输入一段中文，看看它如何被重新组织。";
           const chunks = SuperReaderChunker.buildVisualChunks(text, {
             targetLength: Number(targetInput.value),
-            segmenter,
           });
 
           readerOutput.replaceChildren();

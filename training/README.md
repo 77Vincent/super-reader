@@ -10,7 +10,7 @@ accuracy.
 
 ## Architecture
 
-- word embedding with 48 channels;
+- Han-character embedding with 48 channels;
 - three residual blocks;
 - two `Conv1d(kernel_size=3, dilation=1)` layers per block;
 - one score for every adjacent Han-character gap;

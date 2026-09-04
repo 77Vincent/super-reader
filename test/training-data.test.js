@@ -11,9 +11,9 @@ test("training pairs use adjacent punctuation fragments with one target gap", as
 
   assert.equal(samples.length, 2);
   assert.equal(samples[0].tokens.join(""), "今天下雨我们留在家里");
-  assert.equal(samples[0].target_index, 1);
-  assert.equal(samples[0].tokens[samples[0].target_index], "下雨");
-  assert.equal(samples[0].tokens[samples[0].target_index + 1], "我们");
+  assert.equal(samples[0].target_index, 3);
+  assert.equal(samples[0].tokens[samples[0].target_index], "雨");
+  assert.equal(samples[0].tokens[samples[0].target_index + 1], "我");
   assert.equal(samples[1].document_id, samples[0].document_id);
 });
 
