@@ -727,8 +727,8 @@
               <span class="stage-label">实时阅读视图</span>
               <div id="reader-output" class="reader-output" aria-live="polite"></div>
               <footer class="stage-footer">
-                <span id="chunk-count"><strong>6</strong> 个视觉块</span>
-                <span>标点先分句 · 模型置信度 &gt; 0.6</span>
+                <span id="chunk-count"><strong>3</strong> 个视觉块</span>
+                <span>子句 &gt; 7 字 · 模型置信度 &gt; 0.6</span>
               </footer>
             </div>
           </div>
@@ -739,7 +739,7 @@
         <article class="principle">
           <span class="principle-number">01</span>
           <b>先识别结构边界，再划分块</b>
-          <p>标点和成对双引号先建立硬边界；模型只在小句内部递归判断，置信不足或预测落入词内时保留当前片段。</p>
+          <p>标点和成对双引号先建立硬边界；模型只对超过 7 个汉字的小句递归判断，置信不足或预测落入词内时保留当前片段。</p>
         </article>
         <article class="principle">
           <span class="principle-number">02</span>

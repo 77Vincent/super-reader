@@ -90,6 +90,23 @@ test("accepts only a uniquely high-confidence softmax winner", () => {
   assert.equal(selectConfidentBoundary([Math.log(1.5), 0]), null);
 });
 
+test("only asks the model to split clauses longer than seven Han characters", () => {
+  assert.deepEqual(chunkText("甲乙丙丁戊己庚", { segmenter: null }), [
+    "甲乙丙丁戊己庚",
+  ]);
+  assert.deepEqual(chunkText("春天来了我们出发", { segmenter: null }), [
+    "春天来了",
+    "我们出发",
+  ]);
+});
+
+test("punctuation-delimited clauses of seven characters or fewer stay intact", () => {
+  assert.deepEqual(chunkText("甲乙丙丁，戊己庚辛。", { segmenter: null }), [
+    "甲乙丙丁，",
+    "戊己庚辛。",
+  ]);
+});
+
 test("detects a predicted boundary strictly inside a Segmenter word", () => {
   const segmenter = {
     segment() {
@@ -102,7 +119,7 @@ test("detects a predicted boundary strictly inside a Segmenter word", () => {
 });
 
 test("abandons a model split when its winning boundary is inside a word", () => {
-  const text = "春天";
+  const text = "春天来了我们出发";
   const wholeWordSegmenter = {
     segment() {
       return [{ segment: text, index: 0, isWordLike: true }];
@@ -113,7 +130,10 @@ test("abandons a model split when its winning boundary is inside a word", () => 
 });
 
 test("Segmenter is only a guard and the model can run without it", () => {
-  assert.deepEqual(chunkText("春天", { segmenter: null }), ["春", "天"]);
+  assert.deepEqual(chunkText("春天来了我们出发", { segmenter: null }), [
+    "春天来了",
+    "我们出发",
+  ]);
 });
 
 test("visual alternation continues across punctuation-delimited clauses", () => {

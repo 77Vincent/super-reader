@@ -17,6 +17,7 @@
   const OPENING_DOUBLE_QUOTE = /[“]/u;
   const CLOSING_DOUBLE_QUOTE = /[”]/u;
   const TRAILING_CLOSER = /[”’」』）》】〉〕〗〙〛"'）)\]]/u;
+  const MAX_UNSPLIT_LENGTH = 7;
   const CONFIDENCE_THRESHOLD = 0.6;
   const CONFIDENCE_EPSILON = 1e-12;
 
@@ -172,7 +173,7 @@
     const ranges = [];
 
     function visit(start, end) {
-      if (end - start < 2) {
+      if (end - start <= MAX_UNSPLIT_LENGTH) {
         ranges.push({ start, end });
         return;
       }
