@@ -12,11 +12,13 @@
 })(globalThis, function createChunker(modelBackend) {
   "use strict";
 
+  const HAN_CHARACTER = /\p{Script=Han}/u;
   const CLAUSE_END_CHARACTER = /[，,、。.！？!?；;：:\n…]/u;
   const OPENING_DOUBLE_QUOTE = /[“]/u;
   const CLOSING_DOUBLE_QUOTE = /[”]/u;
   const TRAILING_CLOSER = /[”’」』）》】〉〕〗〙〛"'）)\]]/u;
-  const HAN_CHARACTER = /\p{Script=Han}/u;
+  const CONFIDENCE_THRESHOLD = 0.6;
+  const CONFIDENCE_EPSILON = 1e-12;
 
   function visualLength(text) {
     return Array.from(text).reduce(
@@ -56,6 +58,13 @@
     return tokens;
   }
 
+  function createSegmenter(locale) {
+    if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
+      return new Intl.Segmenter(locale || "zh-CN", { granularity: "word" });
+    }
+    return null;
+  }
+
   function splitClauses(text) {
     if (!text) return [];
 
@@ -72,11 +81,9 @@
 
     for (let index = 0; index < characters.length; index += 1) {
       const character = characters[index];
-
-      const isOpeningDoubleQuote = (
+      const isOpeningDoubleQuote =
         OPENING_DOUBLE_QUOTE.test(character) ||
-        (character === '"' && !isInsideStraightDoubleQuote)
-      );
+        (character === '"' && !isInsideStraightDoubleQuote);
 
       if (isOpeningDoubleQuote) {
         flush();
@@ -87,10 +94,9 @@
 
       buffer += character;
 
-      const isClosingDoubleQuote = (
+      const isClosingDoubleQuote =
         CLOSING_DOUBLE_QUOTE.test(character) ||
-        (character === '"' && isInsideStraightDoubleQuote)
-      );
+        (character === '"' && isInsideStraightDoubleQuote);
 
       if (isClosingDoubleQuote) {
         if (character === '"') isInsideStraightDoubleQuote = false;
@@ -100,22 +106,18 @@
 
       if (!CLAUSE_END_CHARACTER.test(character)) continue;
 
-      while (
-        index + 1 < characters.length &&
-        (
-          CLAUSE_END_CHARACTER.test(characters[index + 1]) ||
-          (
-            TRAILING_CLOSER.test(characters[index + 1]) &&
-            (
-              characters[index + 1] !== '"' ||
-              isInsideStraightDoubleQuote
-            )
-          )
-        )
-      ) {
+      while (index + 1 < characters.length) {
+        const nextCharacter = characters[index + 1];
+        const isTrailingPunctuation = CLAUSE_END_CHARACTER.test(nextCharacter);
+        const isTrailingCloser =
+          TRAILING_CLOSER.test(nextCharacter) &&
+          (nextCharacter !== '"' || isInsideStraightDoubleQuote);
+
+        if (!isTrailingPunctuation && !isTrailingCloser) break;
+
         index += 1;
-        buffer += characters[index];
-        if (characters[index] === '"') isInsideStraightDoubleQuote = false;
+        buffer += nextCharacter;
+        if (nextCharacter === '"') isInsideStraightDoubleQuote = false;
       }
 
       flush();
@@ -125,55 +127,77 @@
     return clauses;
   }
 
-  function createBoundaryTree(tokens, scores) {
-    const lengthPrefix = [0];
-    for (const token of tokens) {
-      lengthPrefix.push(lengthPrefix.at(-1) + visualLength(token.segment));
+  function selectConfidentBoundary(scores) {
+    if (!Array.isArray(scores) || scores.length === 0) return null;
+
+    let bestIndex = 0;
+    for (let index = 1; index < scores.length; index += 1) {
+      if (scores[index] > scores[bestIndex]) bestIndex = index;
     }
 
-    function createNode(start, end) {
-      const node = {
-        start,
-        end,
-        length: lengthPrefix[end] - lengthPrefix[start],
-        text: tokens.slice(start, end).map((token) => token.segment).join(""),
-      };
-      if (end - start <= 1) return node;
-
-      let boundary = start;
-      for (let gap = start + 1; gap < end - 1; gap += 1) {
-        if (scores[gap] > scores[boundary]) boundary = gap;
-      }
-      node.boundaryAfter = boundary;
-      node.boundaryScore = scores[boundary];
-      node.left = createNode(start, boundary + 1);
-      node.right = createNode(boundary + 1, end);
-      return node;
+    const maximum = scores[bestIndex];
+    if (!Number.isFinite(maximum)) return null;
+    let denominator = 0;
+    for (const score of scores) {
+      if (!Number.isFinite(score)) return null;
+      denominator += Math.exp(score - maximum);
     }
+    const confidence = 1 / denominator;
 
-    return createNode(0, tokens.length);
+    return confidence > CONFIDENCE_THRESHOLD + CONFIDENCE_EPSILON
+      ? { index: bestIndex, confidence }
+      : null;
   }
 
-  function collectTargetRanges(node, targetLength, ranges) {
-    if (!node.left || !node.right || node.length <= targetLength) {
-      ranges.push({ start: node.start, end: node.end });
-      return;
+  function boundaryFallsInsideWord(text, boundary, segmenter) {
+    if (!segmenter) return false;
+
+    let fallbackIndex = 0;
+    for (const item of segmenter.segment(text)) {
+      const start = Number.isInteger(item.index) ? item.index : fallbackIndex;
+      const end = start + item.segment.length;
+      fallbackIndex = end;
+      if (item.isWordLike && boundary > start && boundary < end) return true;
     }
-    collectTargetRanges(node.left, targetLength, ranges);
-    collectTargetRanges(node.right, targetLength, ranges);
+    return false;
   }
 
-  function chunkClause(text, targetLength) {
+  function chunkByModel(text, segmenter) {
     const tokens = tokenizeHanCharacters(text);
     if (tokens.length < 2) return [text];
     if (!modelBackend || typeof modelBackend.scoreTokens !== "function") {
       throw new Error("Super Reader model backend must load before the chunker");
     }
 
-    const scores = modelBackend.scoreTokens(tokens.map((token) => token.segment));
-    const tree = createBoundaryTree(tokens, scores);
     const ranges = [];
-    collectTargetRanges(tree, targetLength, ranges);
+
+    function visit(start, end) {
+      if (end - start < 2) {
+        ranges.push({ start, end });
+        return;
+      }
+
+      const scores = modelBackend.scoreTokens(
+        tokens.slice(start, end).map((token) => token.segment),
+      );
+      const prediction = selectConfidentBoundary(scores);
+      if (!prediction) {
+        ranges.push({ start, end });
+        return;
+      }
+
+      const boundaryAfter = start + prediction.index;
+      const sourceBoundary = tokens[boundaryAfter + 1].index;
+      if (boundaryFallsInsideWord(text, sourceBoundary, segmenter)) {
+        ranges.push({ start, end });
+        return;
+      }
+
+      visit(start, boundaryAfter + 1);
+      visit(boundaryAfter + 1, end);
+    }
+
+    visit(0, tokens.length);
 
     return ranges.map((range, index) => {
       const start = index === 0 ? 0 : tokens[range.start].index;
@@ -186,11 +210,10 @@
 
   function chunkTextByClause(text, options = {}) {
     if (!text) return [];
-
-    const targetLength = Math.min(12, Math.max(2, Number(options.targetLength) || 7));
-    return splitClauses(text).map((clause) => (
-      chunkClause(clause, targetLength)
-    ));
+    const segmenter = options.segmenter === undefined
+      ? createSegmenter(options.locale)
+      : options.segmenter;
+    return splitClauses(text).map((clause) => chunkByModel(clause, segmenter));
   }
 
   function chunkText(text, options = {}) {
@@ -209,12 +232,14 @@
 
   return Object.freeze({
     buildVisualChunks,
-    createBoundaryTree,
+    boundaryFallsInsideWord,
     chunkText,
     chunkTextByClause,
+    createSegmenter,
+    selectConfidentBoundary,
+    splitClauses,
     tokenizeHanCharacters,
     splitUnderlineRuns,
-    splitClauses,
     visualLength,
   });
 });

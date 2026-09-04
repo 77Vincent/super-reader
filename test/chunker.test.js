@@ -1,47 +1,44 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  boundaryFallsInsideWord,
   buildVisualChunks,
   chunkText,
   chunkTextByClause,
-  createBoundaryTree,
+  selectConfidentBoundary,
   splitUnderlineRuns,
   splitClauses,
   tokenizeHanCharacters,
   visualLength,
 } = require("../src/chunker.js");
 
-test("combines Chinese characters into target-sized model chunks", () => {
-  const chunks = chunkText("我一直在思考明天早上的早餐吃什么", { targetLength: 7 });
-
-  assert.equal(chunks.join(""), "我一直在思考明天早上的早餐吃什么");
-  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 7));
+test("model chunks preserve the complete source text", () => {
+  const text = "我一直在思考明天早上的早餐吃什么";
+  assert.equal(chunkText(text).join(""), text);
 });
 
-test("keeps strong punctuation with the preceding phrase", () => {
-  const text = "今天下雨了。我们明天再出发！";
-  const chunks = chunkText(text, { targetLength: 7 });
+test("punctuation creates hard clause boundaries before model recursion", () => {
+  const text = "我们需要对齐模型的输入结构。如果可以的话，请告诉我。";
+  const expectedClauses = [
+    "我们需要对齐模型的输入结构。",
+    "如果可以的话，",
+    "请告诉我。",
+  ];
+  const modelChunksByClause = chunkTextByClause(text);
 
-  assert.equal(chunks.join(""), text);
-  assert.ok(chunks.includes("今天下雨了。"));
-  assert.equal(chunks.at(-1), "我们明天再出发！");
+  assert.deepEqual(splitClauses(text), expectedClauses);
+  assert.deepEqual(
+    modelChunksByClause.map((chunks) => chunks.join("")),
+    expectedClauses,
+  );
+  assert.equal(modelChunksByClause.flat().join(""), text);
 });
 
-test("splits at punctuation before making visual chunks", () => {
-  const text = "在左侧输入一段中文，看看它如何被重新组织。";
-  const clauses = chunkTextByClause(text, { targetLength: 7 });
+test("a model chunk never crosses a punctuation boundary", () => {
+  const chunks = chunkText("输入结构。如果可以的话，请告诉我。");
 
-  assert.equal(clauses.length, 2);
-  assert.ok(clauses[0].at(-1).endsWith("，"));
-  assert.ok(clauses[1].at(-1).endsWith("。"));
-  assert.equal(clauses.flat().join(""), text);
-});
-
-test("never joins text across a punctuation boundary", () => {
-  const chunks = chunkText("在左侧输入一段中文，", { targetLength: 7 });
-
-  assert.equal(chunks.join(""), "在左侧输入一段中文，");
-  assert.ok(chunks.at(-1).endsWith("，"));
+  assert.equal(chunks.some((chunk) => chunk.includes("。如果")), false);
+  assert.equal(chunks.some((chunk) => chunk.includes("，请")), false);
 });
 
 test("keeps closing quotes with the punctuation-delimited clause", () => {
@@ -52,21 +49,19 @@ test("keeps closing quotes with the punctuation-delimited clause", () => {
   ]);
 });
 
-test("treats paired double quotes as structural boundaries", () => {
+test("treats paired double quotes as hard structural boundaries", () => {
   const text = "必须在“连续单字合并”之前执行。";
+  const expectedClauses = ["必须在", "“连续单字合并”", "之前执行。"];
+  const modelChunksByClause = chunkTextByClause(text);
 
-  assert.deepEqual(splitClauses(text), [
-    "必须在",
-    "“连续单字合并”",
-    "之前执行。",
-  ]);
-  const clauses = chunkTextByClause(text, { targetLength: 2 });
-  assert.equal(clauses.length, 3);
-  assert.equal(clauses.flat().join(""), text);
-  assert.equal(clauses[1].join(""), "“连续单字合并”");
+  assert.deepEqual(splitClauses(text), expectedClauses);
+  assert.deepEqual(
+    modelChunksByClause.map((chunks) => chunks.join("")),
+    expectedClauses,
+  );
 });
 
-test("treats straight double quotes as structural boundaries", () => {
+test("treats straight double quotes as hard structural boundaries", () => {
   assert.deepEqual(splitClauses('在"quoted words"之后。'), [
     "在",
     '"quoted words"',
@@ -74,86 +69,64 @@ test("treats straight double quotes as structural boundaries", () => {
   ]);
 });
 
-test("treats enumeration commas as clause boundaries", () => {
-  assert.deepEqual(splitClauses("清晰、效率与视觉愉悦。"), [
+test("treats punctuation and newlines as hard boundaries", () => {
+  assert.deepEqual(splitClauses("清晰、效率，稳定；自然：继续\n结束。"), [
     "清晰、",
-    "效率与视觉愉悦。",
+    "效率，",
+    "稳定；",
+    "自然：",
+    "继续\n",
+    "结束。",
   ]);
 });
 
-test("punctuation ends one visual block before alternation continues", () => {
-  const text = "我们需要对齐模型的输入结构。如果可以的话，请告诉我。";
-  const chunks = buildVisualChunks(text, { targetLength: 7 });
-  const sentenceEndIndex = chunks.findIndex((chunk) => chunk.text.endsWith("。"));
+test("accepts only a uniquely high-confidence softmax winner", () => {
+  assert.equal(selectConfidentBoundary([0, 0]), null);
 
-  assert.ok(sentenceEndIndex >= 0);
-  assert.ok(sentenceEndIndex < chunks.length - 1);
-  assert.equal(chunks.some((chunk) => chunk.text.includes("。如果")), false);
-  assert.notEqual(
-    chunks[sentenceEndIndex].underlined,
-    chunks[sentenceEndIndex + 1].underlined,
-  );
+  const prediction = selectConfidentBoundary([0, 2, 0]);
+  assert.equal(prediction.index, 1);
+  assert.ok(prediction.confidence > 0.6);
+
+  assert.equal(selectConfidentBoundary([Math.log(1.5), 0]), null);
 });
 
-test("builds a full recursive tree from ranked character gaps", () => {
-  const tokens = ["甲", "乙", "丙", "丁"].map((segment, index) => ({
-    segment,
-    index,
-    isWordLike: true,
-  }));
-  const tree = createBoundaryTree(tokens, [0.2, 0.9, 0.4]);
-
-  assert.equal(tree.boundaryAfter, 1);
-  assert.equal(tree.left.text, "甲乙");
-  assert.equal(tree.right.text, "丙丁");
-  assert.equal(tree.left.left.text, "甲");
-  assert.equal(tree.left.right.text, "乙");
-});
-
-test("can emit any adjacent Chinese-character boundary", () => {
-  const text = "我一直在思考明天早上的早餐吃什么";
-  const validBoundaries = new Set(Array.from({ length: text.length - 1 }, (_, index) => index + 1));
-  const chunks = chunkText(text, { targetLength: 2 });
-  let offset = 0;
-
-  chunks.slice(0, -1).forEach((chunk) => {
-    offset += chunk.length;
-    assert.ok(validBoundaries.has(offset), `unexpected boundary at ${offset}`);
-  });
-  assert.equal(chunks.join(""), text);
-  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 2));
-});
-
-test("does not restrict candidates to browser word boundaries", () => {
-  const text = "超长而不可拆分的浏览器词";
+test("detects a predicted boundary strictly inside a Segmenter word", () => {
   const segmenter = {
+    segment() {
+      return [{ segment: "春天", index: 0, isWordLike: true }];
+    },
+  };
+
+  assert.equal(boundaryFallsInsideWord("春天", 1, segmenter), true);
+  assert.equal(boundaryFallsInsideWord("春天", 2, segmenter), false);
+});
+
+test("abandons a model split when its winning boundary is inside a word", () => {
+  const text = "春天";
+  const wholeWordSegmenter = {
     segment() {
       return [{ segment: text, index: 0, isWordLike: true }];
     },
   };
 
-  const chunks = chunkText(text, { targetLength: 2, segmenter });
-  assert.equal(chunks.join(""), text);
-  assert.ok(chunks.length > 1);
-  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 2));
+  assert.deepEqual(chunkText(text, { segmenter: wholeWordSegmenter }), [text]);
 });
 
-test("does not depend on browser word segmentation", () => {
-  const text = "无法确认词语边界时保留整段文字";
-  const chunks = chunkText(text, { targetLength: 2, segmenter: null });
-
-  assert.equal(chunks.join(""), text);
-  assert.ok(chunks.length > 1);
-  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 2));
+test("Segmenter is only a guard and the model can run without it", () => {
+  assert.deepEqual(chunkText("春天", { segmenter: null }), ["春", "天"]);
 });
 
-test("supports a two-character minimum target", () => {
-  const text = "春天来了我们出发。";
-  const chunks = chunkText(text, { targetLength: 2 });
+test("visual alternation continues across punctuation-delimited clauses", () => {
+  const text = "我们需要对齐模型的输入结构。如果可以的话，请告诉我。";
+  const chunks = buildVisualChunks(text);
+  const sentenceEndIndex = chunks.findIndex((chunk) => chunk.text.endsWith("。"));
 
-  assert.equal(chunks.join(""), text);
-  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 2));
-  assert.deepEqual(chunkText(text, { targetLength: 1 }), chunks);
+  assert.ok(sentenceEndIndex >= 0);
+  assert.ok(sentenceEndIndex < chunks.length - 1);
+  assert.notEqual(
+    chunks[sentenceEndIndex].underlined,
+    chunks[sentenceEndIndex + 1].underlined,
+  );
 });
 
 test("character tokenization keeps original UTF-16 source offsets", () => {
@@ -165,9 +138,7 @@ test("character tokenization keeps original UTF-16 source offsets", () => {
 
 test("never loses whitespace or mixed-language content", () => {
   const text = "这是 Super Reader 的 2.0 版本，很好用。";
-  const chunks = chunkText(text, { targetLength: 6 });
-
-  assert.equal(chunks.join(""), text);
+  assert.equal(chunkText(text).join(""), text);
 });
 
 test("visual length counts only Chinese characters", () => {
@@ -183,12 +154,13 @@ test("underline runs exclude all non-Chinese content", () => {
 });
 
 test("non-Chinese chunks neither receive underlines nor advance alternation", () => {
-  const chunks = buildVisualChunks("中文。Synthetic English.汉字。", { targetLength: 7 });
+  const text = "中文。Synthetic English.汉字。";
+  const chunks = buildVisualChunks(text);
   const chineseChunks = chunks.filter((chunk) => chunk.processed);
   const englishChunk = chunks.find((chunk) => chunk.text.includes("Synthetic"));
 
   assert.deepEqual(chineseChunks.map((chunk) => chunk.underlined), [true, false]);
   assert.equal(englishChunk.processed, false);
   assert.equal(englishChunk.underlined, false);
-  assert.equal(chunks.map((chunk) => chunk.text).join(""), "中文。Synthetic English.汉字。");
+  assert.equal(chunks.map((chunk) => chunk.text).join(""), text);
 });

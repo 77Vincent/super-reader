@@ -31,7 +31,6 @@
       const fixtureListeners = [];
       const fixtureSettings = {
         enabled: true,
-        targetLength: 7,
       };
 
       window.chrome = {
@@ -60,6 +59,8 @@
         fixtureListeners.forEach((listener) => listener(storageChanges, "sync"));
       };
     </script>
+    <script src="../src/boundary-model-data.js"></script>
+    <script src="../src/model-backend.js"></script>
     <script src="../src/chunker.js"></script>
     <script src="../src/content.js"></script>
     <script>

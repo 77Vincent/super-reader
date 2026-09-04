@@ -389,11 +389,6 @@
         font-weight: 700;
       }
 
-      .field-label output {
-        color: var(--accent);
-        font-weight: 700;
-      }
-
       textarea {
         display: block;
         width: 100%;
@@ -413,12 +408,6 @@
       textarea:focus {
         border-color: #938af2;
         box-shadow: 0 0 0 3px rgba(100, 87, 237, 0.12);
-      }
-
-      input[type="range"] {
-        width: 100%;
-        margin: 2px 0 0;
-        accent-color: var(--accent);
       }
 
       .reader-stage {
@@ -672,7 +661,7 @@
           <p class="eyebrow">Structural Reading</p>
           <h1>把长句，变成眼睛容易跟上的<em>短语块</em>。</h1>
           <p class="hero-copy">
-            Super Reader 尊重中文词语边界，用间隔出现的下划线呈现句子结构。
+            Super Reader 用本地模型判断自然停顿，用间隔出现的下划线呈现句子结构。
             不改变内容，只给视线一条更清晰的阅读路径。
           </p>
           <div class="hero-notes" aria-label="产品特点">
@@ -689,7 +678,7 @@
           </div>
           <div class="mini-title" aria-hidden="true"></div>
           <p class="mini-copy">
-            <span class="reader-chunk reader-chunk--a">阅读不是更快地扫过文字，</span><span class="reader-chunk reader-chunk--b">而是更轻松地看见</span><span class="reader-chunk reader-chunk--a">句子的结构。</span>
+            <span class="reader-chunk reader-chunk--a">阅读不是更快地扫过文字</span>，<span class="reader-chunk reader-chunk--b">而是更轻松地看见句子的结构</span>。
           </p>
         </div>
       </section>
@@ -702,7 +691,7 @@
               <h2>现在，试着读一遍。</h2>
             </div>
             <p>
-              输入自己的句子并调整分块长度，每一次变化都会实时呈现在右侧。
+              输入自己的句子，模型判断出的高置信度边界会实时呈现在右侧。
             </p>
           </div>
 
@@ -724,20 +713,12 @@
                   <span>阅读文本</span>
                   <span>可编辑</span>
                 </label>
-                <textarea id="source-text" maxlength="240">我一直在思考明天早上的早餐吃什么</textarea>
+                <textarea id="source-text" maxlength="240">真正高效的阅读并不是追求速度，而是帮助大脑更快地识别信息结构。</textarea>
                 <div class="sample-list" aria-label="示例文本">
                   <button class="sample-button" type="button" data-sample="我一直在思考明天早上的早餐吃什么">日常短句</button>
                   <button class="sample-button" type="button" data-sample="真正高效的阅读并不是追求速度，而是帮助大脑更快地识别信息结构。">阅读方法</button>
                   <button class="sample-button" type="button" data-sample="产品设计需要在清晰、效率与视觉愉悦之间找到恰到好处的平衡。">产品设计</button>
                 </div>
-              </div>
-
-              <div class="field">
-                <label class="field-label" for="chunk-length">
-                  <span>分块长度</span>
-                  <output id="length-output" for="chunk-length">7 字左右</output>
-                </label>
-                <input id="chunk-length" type="range" min="2" max="12" value="7">
               </div>
 
             </aside>
@@ -746,8 +727,8 @@
               <span class="stage-label">实时阅读视图</span>
               <div id="reader-output" class="reader-output" aria-live="polite"></div>
               <footer class="stage-footer">
-                <span id="chunk-count"><strong>3</strong> 个视觉块</span>
-                <span>模型递归划分 · 内容仅在本地处理</span>
+                <span id="chunk-count"><strong>6</strong> 个视觉块</span>
+                <span>标点先分句 · 模型置信度 &gt; 0.6</span>
               </footer>
             </div>
           </div>
@@ -758,7 +739,7 @@
         <article class="principle">
           <span class="principle-number">01</span>
           <b>先识别结构边界，再划分块</b>
-          <p>先确定标点与双引号边界，再由本地模型在所有相邻汉字间隙中递归选择结构边界。</p>
+          <p>标点和成对双引号先建立硬边界；模型只在小句内部递归判断，置信不足或预测落入词内时保留当前片段。</p>
         </article>
         <article class="principle">
           <span class="principle-number">02</span>
@@ -781,17 +762,16 @@
         "use strict";
 
         const sourceInput = document.querySelector("#source-text");
-        const targetInput = document.querySelector("#chunk-length");
-        const targetOutput = document.querySelector("#length-output");
         const readerToggle = document.querySelector("#reader-toggle");
         const toggleCopy = document.querySelector("#toggle-copy");
         const readerOutput = document.querySelector("#reader-output");
         const chunkCount = document.querySelector("#chunk-count");
         const sampleButtons = Array.from(document.querySelectorAll("[data-sample]"));
+        const segmenter = SuperReaderChunker.createSegmenter("zh-CN");
         function render() {
           const text = sourceInput.value || "在左侧输入一段中文，看看它如何被重新组织。";
           const chunks = SuperReaderChunker.buildVisualChunks(text, {
-            targetLength: Number(targetInput.value),
+            segmenter,
           });
 
           readerOutput.replaceChildren();
@@ -821,11 +801,6 @@
 
         sourceInput.addEventListener("input", render);
         readerToggle.addEventListener("change", render);
-
-        targetInput.addEventListener("input", function updateLength() {
-          targetOutput.textContent = targetInput.value + " 字左右";
-          render();
-        });
 
         sampleButtons.forEach(function bindSample(button) {
           button.addEventListener("click", function chooseSample() {

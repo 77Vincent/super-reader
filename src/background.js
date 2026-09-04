@@ -2,7 +2,6 @@
 
 const DEFAULTS = {
   enabled: false,
-  targetLength: 7,
 };
 
 function updateBadge(enabled) {
@@ -16,7 +15,7 @@ function updateBadge(enabled) {
 chrome.runtime.onInstalled.addListener(async () => {
   const current = await chrome.storage.sync.get(DEFAULTS);
   await chrome.storage.sync.set(current);
-  await chrome.storage.sync.remove("palette");
+  await chrome.storage.sync.remove(["palette", "targetLength"]);
   updateBadge(current.enabled);
 });
 

@@ -2,20 +2,15 @@
 
 const DEFAULTS = {
   enabled: false,
-  targetLength: 7,
 };
 
 const enabledInput = document.querySelector("#enabled");
-const targetInput = document.querySelector("#target-length");
-const targetOutput = document.querySelector("#target-output");
 const switchState = document.querySelector("#switch-state");
 const pageStatus = document.querySelector("#page-status");
 const settingsPanel = document.querySelector(".settings");
 
 function render(settings) {
   enabledInput.checked = settings.enabled;
-  targetInput.value = settings.targetLength;
-  targetOutput.textContent = settings.targetLength + " 字左右";
   switchState.textContent = settings.enabled ? "已开启" : "已关闭";
   settingsPanel.setAttribute("aria-disabled", String(!settings.enabled));
 }
@@ -79,14 +74,6 @@ enabledInput.addEventListener("change", async () => {
   switchState.textContent = enabled ? "已开启" : "已关闭";
   settingsPanel.setAttribute("aria-disabled", String(!enabled));
   await ensureCurrentPageReady();
-});
-
-targetInput.addEventListener("input", () => {
-  targetOutput.textContent = targetInput.value + " 字左右";
-});
-
-targetInput.addEventListener("change", async () => {
-  await chrome.storage.sync.set({ targetLength: Number(targetInput.value) });
 });
 
 chrome.storage.onChanged.addListener(async (_changes, areaName) => {

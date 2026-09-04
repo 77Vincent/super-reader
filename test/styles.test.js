@@ -41,3 +41,14 @@ test("extension and demo load the same model backend", () => {
     "src/content.js",
   ]);
 });
+
+test("target chunk length is no longer configurable", () => {
+  const demo = readFileSync(join(projectRoot, "demo.html"), "utf8");
+  const popup = readFileSync(join(projectRoot, "popup/popup.html"), "utf8");
+  const popupScript = readFileSync(join(projectRoot, "popup/popup.js"), "utf8");
+  const contentScript = readFileSync(join(projectRoot, "src/content.js"), "utf8");
+
+  for (const source of [demo, popup, popupScript, contentScript]) {
+    assert.doesNotMatch(source, /targetLength|chunk-length|分块长度/u);
+  }
+});

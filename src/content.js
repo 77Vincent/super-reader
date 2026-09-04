@@ -6,7 +6,6 @@
 
   const DEFAULTS = {
     enabled: false,
-    targetLength: 7,
   };
 
   const IGNORED_TAGS = new Set([
@@ -32,6 +31,7 @@
     enabled: false,
     observer: null,
     settings: { ...DEFAULTS },
+    segmenter: SuperReaderChunker.createSegmenter("zh-CN"),
     pendingRoots: new Set(),
     flushScheduled: false,
   };
@@ -52,15 +52,14 @@
     const text = textNode.nodeValue;
     if (!text || !/[\u3400-\u9fff]/u.test(text)) return false;
 
-    const minimum = Math.max(2, state.settings.targetLength - 2);
-    return SuperReaderChunker.visualLength(text) >= minimum;
+    return SuperReaderChunker.visualLength(text) >= 2;
   }
 
   function processTextNode(textNode) {
     if (!shouldProcess(textNode)) return;
 
     const chunks = SuperReaderChunker.buildVisualChunks(textNode.nodeValue, {
-      targetLength: state.settings.targetLength,
+      segmenter: state.segmenter,
     });
     if (!chunks.length) return;
 
@@ -174,17 +173,15 @@
 
   function applySettings(nextSettings) {
     const wasEnabled = state.enabled;
-    const targetChanged = Object.prototype.hasOwnProperty.call(nextSettings, "targetLength")
-      && nextSettings.targetLength !== state.settings.targetLength;
-
-    state.settings = { ...state.settings, ...nextSettings };
+    state.settings = {
+      enabled: Object.prototype.hasOwnProperty.call(nextSettings, "enabled")
+        ? Boolean(nextSettings.enabled)
+        : state.settings.enabled,
+    };
 
     if (wasEnabled && !state.settings.enabled) {
       disable();
     } else if (!wasEnabled && state.settings.enabled) {
-      enable();
-    } else if (state.enabled && targetChanged) {
-      disable();
       enable();
     }
   }
@@ -192,12 +189,8 @@
   chrome.storage.sync.get(DEFAULTS, applySettings);
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== "sync") return;
-    const nextSettings = {};
-    for (const [key, change] of Object.entries(changes)) {
-      nextSettings[key] = change.newValue;
-    }
-    applySettings(nextSettings);
+    if (areaName !== "sync" || !changes.enabled) return;
+    applySettings({ enabled: changes.enabled.newValue });
   });
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
