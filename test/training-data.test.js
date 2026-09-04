@@ -76,6 +76,62 @@ test("training selection balances relative boundary-position buckets", async () 
   assert.deepEqual(histogram, Array(10).fill(3));
 });
 
+test("training weights keep every sample and balance positions within each length bucket", async () => {
+  const { assignLengthPositionWeights } = await import(
+    "../training/prepare_smoke_data.mjs"
+  );
+  const makeSamples = (prefix, length, leftLength, count, domain) => (
+    Array.from({ length: count }, (_, index) => ({
+      id: `${prefix}:${index}`,
+      domain,
+      tokens: Array(length).fill("字"),
+      left_character_length: leftLength,
+      right_character_length: length - leftLength,
+      relative_boundary_position: leftLength / length,
+    }))
+  );
+  const candidates = [
+    ...makeSamples("short-left", 8, 1, 6, "news"),
+    ...makeSamples("short-right", 8, 6, 2, "dialogue"),
+    ...makeSamples("medium-left", 16, 2, 1, "news"),
+    ...makeSamples("medium-right", 16, 12, 3, "dialogue"),
+  ];
+
+  const weighted = assignLengthPositionWeights(candidates);
+  assert.deepEqual(
+    weighted.map((sample) => sample.id),
+    candidates.map((sample) => sample.id),
+  );
+  assert.ok(weighted.every((sample) => sample.training_weight > 0));
+
+  const totals = new Map();
+  for (const sample of weighted) {
+    const key = `${sample.length_bucket}:${sample.position_bin}`;
+    totals.set(key, (totals.get(key) || 0) + sample.training_weight);
+  }
+  assert.ok(Math.abs(totals.get("<=8:1") - totals.get("<=8:7")) < 1e-9);
+  assert.ok(Math.abs(totals.get("<=16:1") - totals.get("<=16:7")) < 1e-9);
+  assert.ok(
+    Math.abs(
+      weighted.reduce((total, sample) => total + sample.training_weight, 0)
+        / weighted.length
+        - 1,
+    ) < 1e-9,
+  );
+});
+
+test("production data defaults to all samples and weighted training loss", () => {
+  const { readFileSync } = require("node:fs");
+  const preparation = readFileSync("training/prepare_smoke_data.mjs", "utf8");
+  const training = readFileSync("training/train_smoke.py", "utf8");
+
+  assert.match(preparation, /requested > 0/u);
+  assert.match(preparation, /: candidates;/u);
+  assert.match(preparation, /domain_balancing:\s*false/u);
+  assert.match(training, /per_sample_loss \* batch\["sample_weights"\]/u);
+  assert.match(training, /batch\["sample_weight_sum"\]/u);
+});
+
 test("comparison modes keep the same text and gold boundary but change candidates", async () => {
   const { buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
   const document = {

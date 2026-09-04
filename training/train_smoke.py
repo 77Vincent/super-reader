@@ -72,6 +72,7 @@ def encode_records(
             "document_id": record["document_id"],
             "tokens": record["tokens"],
             "target_index": record["target_index"],
+            "training_weight": float(record.get("training_weight", 1.0)),
             "token_ids": [vocabulary.get(token, unknown) for token in record["tokens"]],
         }
         for record in records
@@ -136,6 +137,7 @@ def iterate_batches(
         token_mask = np.zeros((len(selected), batch_length), dtype=np.float32)
         gap_mask = np.zeros((len(selected), batch_length - 1), dtype=np.bool_)
         targets = np.zeros(len(selected), dtype=np.int32)
+        sample_weights = np.ones(len(selected), dtype=np.float32)
 
         for row, record in enumerate(selected):
             length = len(record["token_ids"])
@@ -143,12 +145,15 @@ def iterate_batches(
             token_mask[row, :length] = 1.0
             gap_mask[row, : length - 1] = True
             targets[row] = record["target_index"]
+            sample_weights[row] = record["training_weight"]
 
         yield {
             "token_ids": Tensor(token_ids),
             "token_mask": Tensor(token_mask),
             "gap_mask": Tensor(gap_mask),
             "targets": Tensor(targets),
+            "sample_weights": Tensor(sample_weights),
+            "sample_weight_sum": float(sample_weights.sum()),
             "records": selected,
         }
 
@@ -467,7 +472,7 @@ def main() -> None:
     for epoch in range(1, args.epochs + 1):
         Tensor.training = True
         running_loss = 0.0
-        seen = 0
+        seen_weight = 0.0
         for batch in iterate_batches(
             records["train"],
             args.batch_size,
@@ -477,12 +482,14 @@ def main() -> None:
         ):
             optimizer.zero_grad()
             logits = model(batch["token_ids"], batch["token_mask"], batch["gap_mask"])
-            loss = logits.sparse_categorical_crossentropy(batch["targets"]).mean()
+            per_sample_loss = logits.sparse_categorical_crossentropy(batch["targets"])
+            loss = (
+                per_sample_loss * batch["sample_weights"]
+            ).sum() / batch["sample_weight_sum"]
             loss.backward()
             optimizer.step()
-            count = len(batch["records"])
-            running_loss += float(loss.numpy()) * count
-            seen += count
+            running_loss += float(loss.numpy()) * batch["sample_weight_sum"]
+            seen_weight += batch["sample_weight_sum"]
 
         validation = evaluate(
             model,
@@ -492,7 +499,7 @@ def main() -> None:
         )
         row = {
             "epoch": epoch,
-            "train_loss": running_loss / seen,
+            "train_loss": running_loss / seen_weight,
             "validation_loss": validation["loss"],
             "validation_accuracy": validation["accuracy"],
         }
@@ -560,6 +567,17 @@ def main() -> None:
             "dilation": 1,
         },
         "data_sizes": {split: len(items) for split, items in records.items()},
+        "training_weighting": {
+            "strategy": data_summary.get("training_balance", {}).get(
+                "strategy",
+                "unit weights",
+            ),
+            "minimum_weight": min(record["training_weight"] for record in records["train"]),
+            "maximum_weight": max(record["training_weight"] for record in records["train"]),
+            "mean_weight": sum(
+                record["training_weight"] for record in records["train"]
+            ) / len(records["train"]),
+        },
         "average_candidate_gaps": {
             split: sum(len(record["tokens"]) - 1 for record in items) / len(items)
             for split, items in records.items()

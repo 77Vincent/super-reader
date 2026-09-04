@@ -1,5 +1,10 @@
 # Boundary model smoke result
 
+> These metrics describe the currently exported checkpoint, which was trained
+> before the data pipeline switched from equal-domain downsampling to
+> all-sample length-position weighting. Run `npm run smoke:model` to produce a
+> directly comparable checkpoint under the new policy.
+
 Run date: 2026-09-04
 
 The smoke test completed the full path from public source archives to a saved

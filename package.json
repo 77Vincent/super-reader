@@ -5,7 +5,7 @@
   "description": "Chrome extension for vertically separated Chinese phrase chunking",
   "scripts": {
     "test": "node --test",
-    "smoke:data": "node training/prepare_smoke_data.mjs --tokenization character --train-per-domain 0 --validation-per-domain 0 --test-per-domain 0",
+    "smoke:data": "node training/prepare_smoke_data.mjs --tokenization character",
     "smoke:model": "npm run smoke:data && python3 training/run_smoke.py --epochs 2",
     "model:export": "python3 training/export_browser_model.py",
     "smoke:compare": "python3 training/run_tokenization_comparison.py"

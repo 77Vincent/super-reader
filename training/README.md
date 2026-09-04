@@ -1,9 +1,9 @@
 # Boundary model smoke test
 
 This experiment checks the complete weak-supervision pipeline without claiming
-production model quality. Its default dataset uses the maximum balanced number
-of pairs available in each split, with equal counts across all four domains.
-All eligible source documents participate in the document-level split; `0` for
+production model quality. Its default dataset uses every eligible pair in each
+split without equalizing or downsampling source domains. All eligible source
+documents participate in the document-level split; `0` for
 `--docs-per-domain` means that no document-count cap is applied. Training runs
 for two epochs by default and retains the checkpoint with the best validation
 accuracy.
@@ -27,17 +27,19 @@ The preparation script downloads four small public CLUE task archives:
 
 Documents are normalized and globally deduplicated before being split. Each
 document belongs to exactly one of train, validation, or test. Adjacent `A+B`
-pairs are generated only after that split, and every split contains an equal
-number of samples from all four domains.
+pairs are generated only after that split. Every eligible pair is retained, so
+the four source domains keep their natural sample counts.
 
 There is no minimum or maximum length for either side: even a one-character
 side remains valid, and long sides are never cropped. Punctuation and
 whitespace are excluded from the recorded side lengths.
 
-Within each source domain, training samples are selected round-robin from ten
-equal-width buckets of `A_length / (A_length + B_length)`. This suppresses the
-shortcut of always choosing a boundary near the middle. Validation and test
-retain their natural position distributions.
+Training samples are grouped by total Han-character length (`2–8`, `9–16`,
+`17–32`, and `33+`) and then by ten equal-width buckets of
+`A_length / (A_length + B_length)`. No samples are discarded: inverse-cell loss
+weights make the occupied position buckets contribute equally within each
+length bucket. Domains are not part of the weighting calculation. Validation
+and test retain their natural distributions and use ordinary unit weights.
 
 Training batches use power-of-two token-length buckets. Every batch is padded
 only to its own longest sequence, with at most 64 examples and a target budget
@@ -55,12 +57,12 @@ checksums are saved in `training/data/processed/summary.json`.
 npm run smoke:model
 ```
 
-The default production run uses character tokenization, every available pair
-that fits the four-domain balance constraint, and two epochs. Passing `0` for
-any `--train-per-domain`, `--validation-per-domain`, or `--test-per-domain`
-selects the largest count supported by the smallest domain in that split.
-Every adjacent Han-character gap is a candidate; non-Han content is excluded
-from model input.
+The default production run uses character tokenization, every available pair,
+and two epochs. Passing `0` for any `--train-per-domain`,
+`--validation-per-domain`, or `--test-per-domain` keeps every eligible sample
+from each domain. Positive values remain available for explicitly capped
+comparison experiments. Every adjacent Han-character gap is a candidate;
+non-Han content is excluded from model input.
 
 The command installs the pinned 751 KB `tinygrad` wheel under the ignored
 `training/.deps/` directory. To prepare and train separately:

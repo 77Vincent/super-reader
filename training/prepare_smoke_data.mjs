@@ -12,6 +12,7 @@ const HAN_CHARACTER = /\p{Script=Han}/u;
 const PROXY_PUNCTUATION = new Set([
   "，", ",", "。", ".", "！", "!", "？", "?", "；", ";", "、",
 ]);
+const LENGTH_BUCKET_MAXIMUMS = [8, 16, 32];
 
 const SOURCES = [
   {
@@ -286,6 +287,57 @@ function positionBin(sample, binCount) {
   );
 }
 
+function lengthBucket(sample, maximums = LENGTH_BUCKET_MAXIMUMS) {
+  const length = sample.left_character_length + sample.right_character_length;
+  const maximum = maximums.find((candidate) => length <= candidate);
+  return maximum === undefined ? `${maximums.at(-1) + 1}+` : `<=${maximum}`;
+}
+
+export function assignLengthPositionWeights(
+  samples,
+  positionBinCount = 10,
+  lengthBucketMaximums = LENGTH_BUCKET_MAXIMUMS,
+) {
+  const cellCounts = new Map();
+  const lengthBucketCounts = new Map();
+  const annotated = samples.map((sample) => {
+    const sampleLengthBucket = lengthBucket(sample, lengthBucketMaximums);
+    const samplePositionBin = positionBin(sample, positionBinCount);
+    const cellKey = `${sampleLengthBucket}:${samplePositionBin}`;
+    cellCounts.set(cellKey, (cellCounts.get(cellKey) || 0) + 1);
+    lengthBucketCounts.set(
+      sampleLengthBucket,
+      (lengthBucketCounts.get(sampleLengthBucket) || 0) + 1,
+    );
+    return {
+      ...sample,
+      length_bucket: sampleLengthBucket,
+      position_bin: samplePositionBin,
+      cell_key: cellKey,
+    };
+  });
+
+  const occupiedPositionBins = new Map();
+  for (const cellKey of cellCounts.keys()) {
+    const sampleLengthBucket = cellKey.slice(0, cellKey.lastIndexOf(":"));
+    occupiedPositionBins.set(
+      sampleLengthBucket,
+      (occupiedPositionBins.get(sampleLengthBucket) || 0) + 1,
+    );
+  }
+
+  return annotated.map(({ cell_key: cellKey, ...sample }) => {
+    const targetCellWeight = (
+      lengthBucketCounts.get(sample.length_bucket)
+      / occupiedPositionBins.get(sample.length_bucket)
+    );
+    return {
+      ...sample,
+      training_weight: targetCellWeight / cellCounts.get(cellKey),
+    };
+  });
+}
+
 export function selectPositionBalancedSamples(samples, count, seed, binCount = 10) {
   const bins = Array.from({ length: binCount }, () => []);
   for (const sample of samples) bins[positionBin(sample, binCount)].push(sample);
@@ -415,21 +467,21 @@ async function main() {
       Array.from(byDomain, ([domain, candidates]) => [domain, candidates.length]),
     );
     const requested = options[`${split}PerDomain`];
-    const selectionCount = requested > 0
-      ? requested
-      : Math.min(...Array.from(byDomain.values(), (candidates) => candidates.length));
-    selectedSamplesPerDomain[split] = selectionCount;
+    selectedSamplesPerDomain[split] = {};
 
     for (const [domain, candidates] of byDomain) {
       const selectionSeed = `${options.seed}:${split}:${domain}`;
-      const selected = split === "train"
-        ? selectPositionBalancedSamples(
-          candidates,
-          selectionCount,
-          selectionSeed,
-          options.positionBins,
-        )
-        : selectDeterministicSamples(candidates, selectionCount, selectionSeed);
+      const selected = requested > 0
+        ? split === "train"
+          ? selectPositionBalancedSamples(
+            candidates,
+            requested,
+            selectionSeed,
+            options.positionBins,
+          )
+          : selectDeterministicSamples(candidates, requested, selectionSeed)
+        : candidates;
+      selectedSamplesPerDomain[split][domain] = selected.length;
       samplesBySplitAndDomain[split].set(
         domain,
         selected,
@@ -440,8 +492,10 @@ async function main() {
   const samplesBySplit = {};
   const sampleCounts = {};
   for (const [split, byDomain] of Object.entries(samplesBySplitAndDomain)) {
-    samplesBySplit[split] = Array.from(byDomain.values())
-      .flat()
+    const combined = Array.from(byDomain.values()).flat();
+    samplesBySplit[split] = (split === "train"
+      ? assignLengthPositionWeights(combined, options.positionBins)
+      : combined)
       .sort((left, right) => (
         hashText(`${options.seed}:${split}:${left.id}`)
           .localeCompare(hashText(`${options.seed}:${split}:${right.id}`))
@@ -465,7 +519,13 @@ async function main() {
       : "between every adjacent Han character",
     non_han_policy: "excluded before model input",
     max_side_characters: null,
-    training_position_bins: options.positionBins,
+    sample_selection: "all eligible samples unless an explicit per-domain cap is provided",
+    domain_balancing: false,
+    training_balance: {
+      strategy: "loss weights balance relative boundary positions within each total-length bucket",
+      length_bucket_maximums: LENGTH_BUCKET_MAXIMUMS,
+      position_bins: options.positionBins,
+    },
     sources: SOURCES.map(({ domain, url, sha256 }) => ({ domain, url, sha256 })),
     duplicate_documents_removed: deduplicated.duplicateCount,
     documents: documentCounts,

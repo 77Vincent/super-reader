@@ -14,7 +14,6 @@ const DIVIDER_COLORS = Object.freeze({
   text: "currentColor",
 });
 const COLORED_DIVIDER_FILTER = [
-  "drop-shadow(-0.5px 0 0 rgba(0, 0, 0, 0.65))",
   "drop-shadow(0.5px 0 0 rgba(255, 255, 255, 0.7))",
 ].join(" ");
 
