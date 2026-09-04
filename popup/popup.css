@@ -144,19 +144,15 @@ header p {
   line-height: 2;
 }
 
-.preview span {
-  text-decoration-line: underline;
-  text-decoration-thickness: 2px;
-  text-underline-offset: 0.23em;
-}
-
-.preview-a {
-  text-decoration-color: currentColor;
-  text-decoration-style: solid;
-}
-
-.preview .preview-b {
-  text-decoration-line: none;
+.preview-chunk--separated::before {
+  display: inline-block;
+  width: 0;
+  height: 0.8em;
+  margin: 0 0.08em;
+  border-inline-start: 1px solid currentColor;
+  opacity: 0.38;
+  vertical-align: -0.06em;
+  content: "";
 }
 
 .status {

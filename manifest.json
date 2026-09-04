@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Super Reader - 中文视觉分块阅读",
   "version": "0.1.0",
-  "description": "将中文长句按词义边界切成短语块，并用间隔出现的下划线辅助阅读。",
+  "description": "将中文长句按词义边界切成短语块，并用细竖向分隔线辅助阅读。",
   "permissions": ["activeTab", "scripting", "storage"],
   "action": {
     "default_title": "Super Reader",

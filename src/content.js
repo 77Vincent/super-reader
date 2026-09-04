@@ -65,20 +65,18 @@
 
     const fragment = document.createDocumentFragment();
     chunks.forEach((chunk) => {
-      const runs = SuperReaderChunker.splitUnderlineRuns(chunk.text);
+      if (!chunk.processed) {
+        fragment.append(document.createTextNode(chunk.text));
+        return;
+      }
 
-      runs.forEach((run) => {
-        if (!run.underlinable) {
-          fragment.append(document.createTextNode(run.text));
-          return;
-        }
-        const span = document.createElement("span");
-        const variant = chunk.underlined ? "a" : "b";
-        span.className = `super-reader-chunk super-reader-chunk--${variant}`;
-        span.dataset.superReaderChunk = variant;
-        span.textContent = run.text;
-        fragment.append(span);
-      });
+      const span = document.createElement("span");
+      span.className = chunk.separated
+        ? "super-reader-chunk super-reader-chunk--separated"
+        : "super-reader-chunk";
+      span.dataset.superReaderChunk = "true";
+      span.textContent = chunk.text;
+      fragment.append(span);
     });
 
     textNode.replaceWith(fragment);

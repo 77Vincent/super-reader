@@ -18,31 +18,12 @@
   const CLOSING_DOUBLE_QUOTE = /[”]/u;
   const TRAILING_CLOSER = /[”’」』）》】〉〕〗〙〛"'）)\]]/u;
   const MAX_UNSPLIT_LENGTH = 7;
-  const CONFIDENCE_THRESHOLD = 0.6;
-  const CONFIDENCE_EPSILON = 1e-12;
 
   function visualLength(text) {
     return Array.from(text).reduce(
       (length, character) => length + (HAN_CHARACTER.test(character) ? 1 : 0),
       0,
     );
-  }
-
-  function splitUnderlineRuns(text) {
-    const runs = [];
-
-    for (const character of Array.from(text)) {
-      const underlinable = HAN_CHARACTER.test(character);
-      const previous = runs[runs.length - 1];
-
-      if (previous?.underlinable === underlinable) {
-        previous.text += character;
-      } else {
-        runs.push({ text: character, underlinable });
-      }
-    }
-
-    return runs;
   }
 
   function tokenizeHanCharacters(text) {
@@ -128,7 +109,7 @@
     return clauses;
   }
 
-  function selectConfidentBoundary(scores) {
+  function selectBestBoundary(scores) {
     if (!Array.isArray(scores) || scores.length === 0) return null;
 
     let bestIndex = 0;
@@ -136,18 +117,7 @@
       if (scores[index] > scores[bestIndex]) bestIndex = index;
     }
 
-    const maximum = scores[bestIndex];
-    if (!Number.isFinite(maximum)) return null;
-    let denominator = 0;
-    for (const score of scores) {
-      if (!Number.isFinite(score)) return null;
-      denominator += Math.exp(score - maximum);
-    }
-    const confidence = 1 / denominator;
-
-    return confidence > CONFIDENCE_THRESHOLD + CONFIDENCE_EPSILON
-      ? { index: bestIndex, confidence }
-      : null;
+    return Number.isFinite(scores[bestIndex]) ? bestIndex : null;
   }
 
   function boundaryFallsInsideWord(text, boundary, segmenter) {
@@ -181,13 +151,13 @@
       const scores = modelBackend.scoreTokens(
         tokens.slice(start, end).map((token) => token.segment),
       );
-      const prediction = selectConfidentBoundary(scores);
-      if (!prediction) {
+      const boundaryIndex = selectBestBoundary(scores);
+      if (boundaryIndex === null) {
         ranges.push({ start, end });
         return;
       }
 
-      const boundaryAfter = start + prediction.index;
+      const boundaryAfter = start + boundaryIndex;
       const sourceBoundary = tokens[boundaryAfter + 1].index;
       if (boundaryFallsInsideWord(text, sourceBoundary, segmenter)) {
         ranges.push({ start, end });
@@ -222,13 +192,17 @@
   }
 
   function buildVisualChunks(text, options = {}) {
-    let visualIndex = 0;
-    return chunkText(text, options).map((chunk) => {
-      const processed = HAN_CHARACTER.test(chunk);
-      const underlined = processed && visualIndex % 2 === 0;
-      if (processed) visualIndex += 1;
-      return { text: chunk, underlined, processed };
-    });
+    return chunkTextByClause(text, options).flatMap((clauseChunks) => (
+      clauseChunks.map((chunk, index) => {
+        const processed = HAN_CHARACTER.test(chunk);
+        const previousProcessed = index > 0 && HAN_CHARACTER.test(clauseChunks[index - 1]);
+        return {
+          text: chunk,
+          processed,
+          separated: processed && previousProcessed,
+        };
+      })
+    ));
   }
 
   return Object.freeze({
@@ -237,10 +211,9 @@
     chunkText,
     chunkTextByClause,
     createSegmenter,
-    selectConfidentBoundary,
+    selectBestBoundary,
     splitClauses,
     tokenizeHanCharacters,
-    splitUnderlineRuns,
     visualLength,
   });
 });

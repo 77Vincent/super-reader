@@ -2,7 +2,7 @@
   "name": "super-reader",
   "version": "0.1.0",
   "private": true,
-  "description": "Chrome extension for alternating-underline Chinese phrase chunking",
+  "description": "Chrome extension for vertically separated Chinese phrase chunking",
   "scripts": {
     "test": "node --test",
     "smoke:data": "node training/prepare_smoke_data.mjs --tokenization character --train-per-domain 0 --validation-per-domain 0 --test-per-domain 0",

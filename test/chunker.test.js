@@ -5,8 +5,7 @@ const {
   buildVisualChunks,
   chunkText,
   chunkTextByClause,
-  selectConfidentBoundary,
-  splitUnderlineRuns,
+  selectBestBoundary,
   splitClauses,
   tokenizeHanCharacters,
   visualLength,
@@ -80,14 +79,11 @@ test("treats punctuation and newlines as hard boundaries", () => {
   ]);
 });
 
-test("accepts only a uniquely high-confidence softmax winner", () => {
-  assert.equal(selectConfidentBoundary([0, 0]), null);
-
-  const prediction = selectConfidentBoundary([0, 2, 0]);
-  assert.equal(prediction.index, 1);
-  assert.ok(prediction.confidence > 0.6);
-
-  assert.equal(selectConfidentBoundary([Math.log(1.5), 0]), null);
+test("always selects the model's highest-scoring boundary without a threshold", () => {
+  assert.equal(selectBestBoundary([]), null);
+  assert.equal(selectBestBoundary([0, 0]), 0);
+  assert.equal(selectBestBoundary([0, 2, 0]), 1);
+  assert.equal(selectBestBoundary([0.01, 0]), 0);
 });
 
 test("only asks the model to split clauses longer than seven Han characters", () => {
@@ -105,6 +101,13 @@ test("punctuation-delimited clauses of seven characters or fewer stay intact", (
     "甲乙丙丁，",
     "戊己庚辛。",
   ]);
+});
+
+test("continues recursively when the remainder after a split still exceeds seven characters", () => {
+  const chunks = chunkText("而是帮助大脑更快地识别信息结构。");
+
+  assert.deepEqual(chunks, ["而是", "帮助大脑更快地", "识别信息结构。"]);
+  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 7));
 });
 
 test("detects a predicted boundary strictly inside a Segmenter word", () => {
@@ -136,17 +139,28 @@ test("Segmenter is only a guard and the model can run without it", () => {
   ]);
 });
 
-test("visual alternation continues across punctuation-delimited clauses", () => {
+test("visual chunks preserve punctuation-delimited boundaries", () => {
   const text = "我们需要对齐模型的输入结构。如果可以的话，请告诉我。";
   const chunks = buildVisualChunks(text);
   const sentenceEndIndex = chunks.findIndex((chunk) => chunk.text.endsWith("。"));
 
   assert.ok(sentenceEndIndex >= 0);
   assert.ok(sentenceEndIndex < chunks.length - 1);
-  assert.notEqual(
-    chunks[sentenceEndIndex].underlined,
-    chunks[sentenceEndIndex + 1].underlined,
-  );
+  assert.equal(chunks[sentenceEndIndex].processed, true);
+  assert.equal(chunks[sentenceEndIndex + 1].processed, true);
+  assert.equal(chunks[sentenceEndIndex + 1].separated, false);
+  assert.equal(chunks.some((chunk) => "underlined" in chunk), false);
+});
+
+test("vertical separators appear only at model boundaries inside one clause", () => {
+  assert.deepEqual(buildVisualChunks("春天来了我们出发。"), [
+    { text: "春天来了", processed: true, separated: false },
+    { text: "我们出发。", processed: true, separated: true },
+  ]);
+  assert.deepEqual(buildVisualChunks("春天来了，我们出发。"), [
+    { text: "春天来了，", processed: true, separated: false },
+    { text: "我们出发。", processed: true, separated: false },
+  ]);
 });
 
 test("character tokenization keeps original UTF-16 source offsets", () => {
@@ -165,22 +179,14 @@ test("visual length counts only Chinese characters", () => {
   assert.equal(visualLength("你好，Reader 2.0！"), 2);
 });
 
-test("underline runs exclude all non-Chinese content", () => {
-  assert.deepEqual(splitUnderlineRuns("你好，Reader 2.0！世界"), [
-    { text: "你好", underlinable: true },
-    { text: "，Reader 2.0！", underlinable: false },
-    { text: "世界", underlinable: true },
-  ]);
-});
-
-test("non-Chinese chunks neither receive underlines nor advance alternation", () => {
+test("non-Chinese chunks remain unprocessed", () => {
   const text = "中文。Synthetic English.汉字。";
   const chunks = buildVisualChunks(text);
   const chineseChunks = chunks.filter((chunk) => chunk.processed);
   const englishChunk = chunks.find((chunk) => chunk.text.includes("Synthetic"));
 
-  assert.deepEqual(chineseChunks.map((chunk) => chunk.underlined), [true, false]);
+  assert.equal(chineseChunks.length, 2);
   assert.equal(englishChunk.processed, false);
-  assert.equal(englishChunk.underlined, false);
+  assert.equal(chunks.some((chunk) => "underlined" in chunk), false);
   assert.equal(chunks.map((chunk) => chunk.text).join(""), text);
 });
