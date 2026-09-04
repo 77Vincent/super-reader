@@ -3,8 +3,9 @@
   width: 0 !important;
   height: 1em !important;
   margin: 0 0.08em !important;
-  border-inline-start: var(--super-reader-divider-width, 2px) solid currentColor !important;
+  border-inline-start: var(--super-reader-divider-width, 2px) solid var(--super-reader-divider-color, currentColor) !important;
   vertical-align: -0.15em !important;
+  filter: var(--super-reader-divider-filter, none) !important;
   pointer-events: none !important;
   content: "" !important;
 }

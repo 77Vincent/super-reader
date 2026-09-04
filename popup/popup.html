@@ -34,6 +34,37 @@
         </label>
         <input id="divider-width" type="range" min="1" max="4" step="0.5" value="2">
 
+        <fieldset class="color-picker">
+          <legend>分割线颜色</legend>
+          <div class="color-options">
+            <label class="color-option" title="亮红">
+              <input type="radio" name="divider-color" value="red">
+              <span class="color-swatch color-swatch--red" aria-hidden="true"></span>
+              <small>红</small>
+            </label>
+            <label class="color-option" title="亮黄">
+              <input type="radio" name="divider-color" value="yellow">
+              <span class="color-swatch color-swatch--yellow" aria-hidden="true"></span>
+              <small>黄</small>
+            </label>
+            <label class="color-option" title="亮蓝">
+              <input type="radio" name="divider-color" value="blue">
+              <span class="color-swatch color-swatch--blue" aria-hidden="true"></span>
+              <small>蓝</small>
+            </label>
+            <label class="color-option" title="亮绿">
+              <input type="radio" name="divider-color" value="green">
+              <span class="color-swatch color-swatch--green" aria-hidden="true"></span>
+              <small>绿</small>
+            </label>
+            <label class="color-option" title="跟随字体颜色">
+              <input type="radio" name="divider-color" value="text" checked>
+              <span class="color-swatch color-swatch--text" aria-hidden="true"></span>
+              <small>字体</small>
+            </label>
+          </div>
+        </fieldset>
+
         <div class="preview" aria-label="效果预览">
           <span class="preview-chunk">春天来了</span><span class="preview-chunk preview-chunk--separated">我们出发</span>
         </div>

@@ -3,6 +3,7 @@
 const DEFAULTS = {
   enabled: false,
   dividerWidth: 2,
+  dividerColor: "text",
 };
 
 function updateBadge(enabled) {

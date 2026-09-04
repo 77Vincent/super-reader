@@ -13,10 +13,11 @@ test("extension renders thin vertical separators without underlines", () => {
   assert.match(css, /height:\s*1em/u);
   assert.match(
     css,
-    /border-inline-start:\s*var\(--super-reader-divider-width, 2px\) solid currentColor/u,
+    /border-inline-start:\s*var\(--super-reader-divider-width, 2px\) solid var\(--super-reader-divider-color, currentColor\)/u,
   );
   assert.match(css, /margin:\s*0 0\.08em/u);
   assert.match(css, /vertical-align:\s*-0\.15em/u);
+  assert.match(css, /filter:\s*var\(--super-reader-divider-filter, none\)/u);
   assert.match(css, /content:\s*""/u);
   assert.doesNotMatch(css, /opacity:\s*0\.[0-9]+/u);
   assert.doesNotMatch(css, /text-decoration|underline|chunk--a|chunk--b/u);
@@ -32,10 +33,11 @@ test("HTML demo uses the same vertical separator treatment", () => {
   assert.match(html, /height:\s*1em/u);
   assert.match(
     html,
-    /border-inline-start:\s*var\(--reader-divider-width, 2px\) solid currentColor/u,
+    /border-inline-start:\s*var\(--reader-divider-width, 2px\) solid var\(--reader-divider-color, currentColor\)/u,
   );
   assert.match(html, /margin:\s*0 0\.08em/u);
   assert.match(html, /vertical-align:\s*-0\.15em/u);
+  assert.match(html, /filter:\s*var\(--reader-divider-filter, none\)/u);
   assert.match(html, /reader-chunk--separated/u);
   assert.doesNotMatch(html, /\.reader-chunk--separated::before\s*\{[^}]*opacity:\s*0\.[0-9]+/su);
   assert.doesNotMatch(
@@ -61,6 +63,42 @@ test("demo and popup expose the same divider-width range", () => {
   assert.match(contentScript, /dividerWidth:\s*2/u);
   assert.match(contentScript, /--super-reader-divider-width/u);
   assert.match(contentScript, /Math\.min\(4, Math\.max\(1, width\)\)/u);
+});
+
+test("demo and extension expose five matching divider colors with text color as default", () => {
+  const demo = readFileSync(join(projectRoot, "demo.html"), "utf8");
+  const popup = readFileSync(join(projectRoot, "popup/popup.html"), "utf8");
+  const popupScript = readFileSync(join(projectRoot, "popup/popup.js"), "utf8");
+  const contentScript = readFileSync(join(projectRoot, "src/content.js"), "utf8");
+  const backgroundScript = readFileSync(join(projectRoot, "src/background.js"), "utf8");
+  const colors = {
+    red: "#ff1744",
+    yellow: "#ffd600",
+    blue: "#2979ff",
+    green: "#00e676",
+    text: "currentColor",
+  };
+
+  for (const markup of [demo, popup]) {
+    const options = markup.match(/name="divider-color"/gu) || [];
+    assert.equal(options.length, 5);
+    for (const name of Object.keys(colors)) {
+      assert.match(markup, new RegExp(`name="divider-color" value="${name}"`, "u"));
+    }
+    assert.match(markup, /name="divider-color" value="text" checked/u);
+  }
+
+  for (const script of [demo, popupScript, contentScript]) {
+    for (const [name, value] of Object.entries(colors)) {
+      assert.match(script, new RegExp(`${name}: "${value}"`, "u"));
+    }
+    assert.match(script, /drop-shadow/u);
+  }
+  for (const script of [popupScript, contentScript, backgroundScript]) {
+    assert.match(script, /dividerColor:\s*"text"/u);
+  }
+  assert.match(contentScript, /changes\.dividerColor/u);
+  assert.match(popupScript, /chrome\.storage\.sync\.set\(\{ dividerColor:/u);
 });
 
 test("extension and demo load the same model backend", () => {

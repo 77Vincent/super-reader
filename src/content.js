@@ -7,7 +7,20 @@
   const DEFAULTS = {
     enabled: false,
     dividerWidth: 2,
+    dividerColor: "text",
   };
+
+  const DIVIDER_COLORS = Object.freeze({
+    red: "#ff1744",
+    yellow: "#ffd600",
+    blue: "#2979ff",
+    green: "#00e676",
+    text: "currentColor",
+  });
+  const COLORED_DIVIDER_FILTER = [
+    "drop-shadow(-0.5px 0 0 rgba(0, 0, 0, 0.65))",
+    "drop-shadow(0.5px 0 0 rgba(255, 255, 255, 0.7))",
+  ].join(" ");
 
   const IGNORED_TAGS = new Set([
     "SCRIPT",
@@ -39,7 +52,27 @@
 
   function normalizeDividerWidth(value) {
     const width = Number(value);
-    return Number.isFinite(width) ? Math.min(4, Math.max(1, width)) : 1;
+    return Number.isFinite(width) ? Math.min(4, Math.max(1, width)) : DEFAULTS.dividerWidth;
+  }
+
+  function normalizeDividerColor(value) {
+    return Object.hasOwn(DIVIDER_COLORS, value) ? value : DEFAULTS.dividerColor;
+  }
+
+  function applyDividerStyle(element) {
+    const colorName = state.settings.dividerColor;
+    element.style.setProperty(
+      "--super-reader-divider-width",
+      `${state.settings.dividerWidth}px`,
+    );
+    element.style.setProperty(
+      "--super-reader-divider-color",
+      DIVIDER_COLORS[colorName],
+    );
+    element.style.setProperty(
+      "--super-reader-divider-filter",
+      colorName === "text" ? "none" : COLORED_DIVIDER_FILTER,
+    );
   }
 
   function isIgnored(element) {
@@ -81,10 +114,7 @@
         ? "super-reader-chunk super-reader-chunk--separated"
         : "super-reader-chunk";
       span.dataset.superReaderChunk = "true";
-      span.style.setProperty(
-        "--super-reader-divider-width",
-        `${state.settings.dividerWidth}px`,
-      );
+      applyDividerStyle(span);
       span.textContent = chunk.text;
       fragment.append(span);
     });
@@ -179,12 +209,9 @@
     restoreDocument();
   }
 
-  function updateDividerWidth() {
+  function updateDividerStyles() {
     document.querySelectorAll(".super-reader-chunk").forEach((span) => {
-      span.style.setProperty(
-        "--super-reader-divider-width",
-        `${state.settings.dividerWidth}px`,
-      );
+      applyDividerStyle(span);
     });
   }
 
@@ -193,20 +220,25 @@
     const dividerWidth = Object.prototype.hasOwnProperty.call(nextSettings, "dividerWidth")
       ? normalizeDividerWidth(nextSettings.dividerWidth)
       : state.settings.dividerWidth;
+    const dividerColor = Object.prototype.hasOwnProperty.call(nextSettings, "dividerColor")
+      ? normalizeDividerColor(nextSettings.dividerColor)
+      : state.settings.dividerColor;
     const dividerWidthChanged = dividerWidth !== state.settings.dividerWidth;
+    const dividerColorChanged = dividerColor !== state.settings.dividerColor;
     state.settings = {
       enabled: Object.prototype.hasOwnProperty.call(nextSettings, "enabled")
         ? Boolean(nextSettings.enabled)
         : state.settings.enabled,
       dividerWidth,
+      dividerColor,
     };
 
     if (wasEnabled && !state.settings.enabled) {
       disable();
     } else if (!wasEnabled && state.settings.enabled) {
       enable();
-    } else if (state.enabled && dividerWidthChanged) {
-      updateDividerWidth();
+    } else if (state.enabled && (dividerWidthChanged || dividerColorChanged)) {
+      updateDividerStyles();
     }
   }
 
@@ -218,6 +250,9 @@
     if (changes.enabled) nextSettings.enabled = changes.enabled.newValue;
     if (changes.dividerWidth) {
       nextSettings.dividerWidth = changes.dividerWidth.newValue;
+    }
+    if (changes.dividerColor) {
+      nextSettings.dividerColor = changes.dividerColor.newValue;
     }
     if (Object.keys(nextSettings).length) applySettings(nextSettings);
   });

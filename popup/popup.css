@@ -154,6 +154,85 @@ header p {
   accent-color: #4f46e5;
 }
 
+.color-picker {
+  min-width: 0;
+  margin: 16px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.color-picker legend {
+  margin-bottom: 10px;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.color-options {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.color-option {
+  position: relative;
+  display: grid;
+  cursor: pointer;
+  gap: 5px;
+  justify-items: center;
+}
+
+.color-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.color-option small {
+  color: #64748b;
+  font-size: 10px;
+}
+
+.color-swatch {
+  width: 26px;
+  height: 26px;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: var(--swatch-color);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.18);
+  transition: 140ms ease;
+}
+
+.color-swatch--red { --swatch-color: #ff1744; }
+.color-swatch--yellow { --swatch-color: #ffd600; }
+.color-swatch--blue { --swatch-color: #2979ff; }
+.color-swatch--green { --swatch-color: #00e676; }
+
+.color-swatch--text {
+  display: grid;
+  place-items: center;
+  color: #334155;
+  background: #eef2f7;
+}
+
+.color-swatch--text::before {
+  content: "字";
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.color-option input:checked + .color-swatch {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
+  transform: scale(0.92);
+}
+
+.color-option input:focus-visible + .color-swatch {
+  outline: 3px solid rgba(79, 70, 229, 0.35);
+  outline-offset: 2px;
+}
+
 .preview {
   margin-top: 13px;
   padding: 12px 10px;
@@ -169,8 +248,9 @@ header p {
   width: 0;
   height: 1em;
   margin: 0 0.08em;
-  border-inline-start: var(--super-reader-divider-width, 2px) solid currentColor;
+  border-inline-start: var(--super-reader-divider-width, 2px) solid var(--super-reader-divider-color, currentColor);
   vertical-align: -0.15em;
+  filter: var(--super-reader-divider-filter, none);
   content: "";
 }
 

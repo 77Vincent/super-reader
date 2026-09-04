@@ -399,6 +399,85 @@
         accent-color: var(--accent);
       }
 
+      .color-picker {
+        min-width: 0;
+        margin: 24px 0 0;
+        padding: 0;
+        border: 0;
+      }
+
+      .color-picker legend {
+        margin-bottom: 11px;
+        padding: 0;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .color-options {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 8px;
+      }
+
+      .color-option {
+        position: relative;
+        display: grid;
+        cursor: pointer;
+        gap: 6px;
+        justify-items: center;
+      }
+
+      .color-option input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+      }
+
+      .color-option small {
+        color: var(--muted);
+        font-size: 10px;
+      }
+
+      .color-swatch {
+        width: 30px;
+        height: 30px;
+        border: 2px solid white;
+        border-radius: 50%;
+        background: var(--swatch-color);
+        box-shadow: 0 0 0 1px rgba(23, 32, 51, 0.18);
+        transition: 140ms ease;
+      }
+
+      .color-swatch--red { --swatch-color: #ff1744; }
+      .color-swatch--yellow { --swatch-color: #ffd600; }
+      .color-swatch--blue { --swatch-color: #2979ff; }
+      .color-swatch--green { --swatch-color: #00e676; }
+
+      .color-swatch--text {
+        display: grid;
+        place-items: center;
+        color: #263247;
+        background: #eef1f6;
+      }
+
+      .color-swatch--text::before {
+        content: "字";
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .color-option input:checked + .color-swatch {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+        transform: scale(0.92);
+      }
+
+      .color-option input:focus-visible + .color-swatch {
+        outline: 3px solid rgba(100, 87, 237, 0.3);
+        outline-offset: 3px;
+      }
+
       textarea {
         display: block;
         width: 100%;
@@ -469,8 +548,9 @@
         width: 0;
         height: 1em;
         margin: 0 0.08em;
-        border-inline-start: var(--reader-divider-width, 2px) solid currentColor;
+        border-inline-start: var(--reader-divider-width, 2px) solid var(--reader-divider-color, currentColor);
         vertical-align: -0.15em;
+        filter: var(--reader-divider-filter, none);
         content: "";
       }
 
@@ -736,6 +816,37 @@
                 <input id="divider-width" type="range" min="1" max="4" step="0.5" value="2">
               </div>
 
+              <fieldset class="color-picker">
+                <legend>分割线颜色</legend>
+                <div class="color-options">
+                  <label class="color-option" title="亮红">
+                    <input type="radio" name="divider-color" value="red">
+                    <span class="color-swatch color-swatch--red" aria-hidden="true"></span>
+                    <small>红</small>
+                  </label>
+                  <label class="color-option" title="亮黄">
+                    <input type="radio" name="divider-color" value="yellow">
+                    <span class="color-swatch color-swatch--yellow" aria-hidden="true"></span>
+                    <small>黄</small>
+                  </label>
+                  <label class="color-option" title="亮蓝">
+                    <input type="radio" name="divider-color" value="blue">
+                    <span class="color-swatch color-swatch--blue" aria-hidden="true"></span>
+                    <small>蓝</small>
+                  </label>
+                  <label class="color-option" title="亮绿">
+                    <input type="radio" name="divider-color" value="green">
+                    <span class="color-swatch color-swatch--green" aria-hidden="true"></span>
+                    <small>绿</small>
+                  </label>
+                  <label class="color-option" title="跟随字体颜色">
+                    <input type="radio" name="divider-color" value="text" checked>
+                    <span class="color-swatch color-swatch--text" aria-hidden="true"></span>
+                    <small>字体</small>
+                  </label>
+                </div>
+              </fieldset>
+
             </aside>
 
             <div class="reader-stage">
@@ -779,12 +890,24 @@
         const sourceInput = document.querySelector("#source-text");
         const dividerInput = document.querySelector("#divider-width");
         const dividerOutput = document.querySelector("#divider-output");
+        const dividerColorInputs = Array.from(document.querySelectorAll("[name='divider-color']"));
         const readerToggle = document.querySelector("#reader-toggle");
         const toggleCopy = document.querySelector("#toggle-copy");
         const readerOutput = document.querySelector("#reader-output");
         const chunkCount = document.querySelector("#chunk-count");
         const sampleButtons = Array.from(document.querySelectorAll("[data-sample]"));
         const segmenter = SuperReaderChunker.createSegmenter("zh-CN");
+        const dividerColors = Object.freeze({
+          red: "#ff1744",
+          yellow: "#ffd600",
+          blue: "#2979ff",
+          green: "#00e676",
+          text: "currentColor",
+        });
+        const coloredDividerFilter = [
+          "drop-shadow(-0.5px 0 0 rgba(0, 0, 0, 0.65))",
+          "drop-shadow(0.5px 0 0 rgba(255, 255, 255, 0.7))",
+        ].join(" ");
         function render() {
           const text = sourceInput.value || "在左侧输入一段中文，看看它如何被重新组织。";
           const chunks = SuperReaderChunker.buildVisualChunks(text, {
@@ -795,6 +918,17 @@
           readerOutput.style.setProperty(
             "--reader-divider-width",
             dividerInput.value + "px",
+          );
+          const selectedColorInput = dividerColorInputs.find(function isSelected(input) {
+            return input.checked;
+          });
+          const colorName = selectedColorInput && dividerColors[selectedColorInput.value]
+            ? selectedColorInput.value
+            : "text";
+          readerOutput.style.setProperty("--reader-divider-color", dividerColors[colorName]);
+          readerOutput.style.setProperty(
+            "--reader-divider-filter",
+            colorName === "text" ? "none" : coloredDividerFilter,
           );
           dividerOutput.textContent = dividerInput.value + " px";
           chunks.forEach(function appendChunk(chunk) {
@@ -822,6 +956,9 @@
 
         sourceInput.addEventListener("input", render);
         dividerInput.addEventListener("input", render);
+        dividerColorInputs.forEach(function bindDividerColor(input) {
+          input.addEventListener("change", render);
+        });
         readerToggle.addEventListener("change", render);
 
         sampleButtons.forEach(function bindSample(button) {

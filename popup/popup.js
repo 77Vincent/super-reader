@@ -3,11 +3,25 @@
 const DEFAULTS = {
   enabled: false,
   dividerWidth: 2,
+  dividerColor: "text",
 };
+
+const DIVIDER_COLORS = Object.freeze({
+  red: "#ff1744",
+  yellow: "#ffd600",
+  blue: "#2979ff",
+  green: "#00e676",
+  text: "currentColor",
+});
+const COLORED_DIVIDER_FILTER = [
+  "drop-shadow(-0.5px 0 0 rgba(0, 0, 0, 0.65))",
+  "drop-shadow(0.5px 0 0 rgba(255, 255, 255, 0.7))",
+].join(" ");
 
 const enabledInput = document.querySelector("#enabled");
 const dividerInput = document.querySelector("#divider-width");
 const dividerOutput = document.querySelector("#divider-output");
+const dividerColorInputs = Array.from(document.querySelectorAll("[name='divider-color']"));
 const switchState = document.querySelector("#switch-state");
 const pageStatus = document.querySelector("#page-status");
 const settingsPanel = document.querySelector(".settings");
@@ -20,9 +34,22 @@ function renderDividerWidth(value) {
   preview.style.setProperty("--super-reader-divider-width", `${width}px`);
 }
 
+function renderDividerColor(value) {
+  const colorName = Object.hasOwn(DIVIDER_COLORS, value) ? value : DEFAULTS.dividerColor;
+  dividerColorInputs.forEach((input) => {
+    input.checked = input.value === colorName;
+  });
+  preview.style.setProperty("--super-reader-divider-color", DIVIDER_COLORS[colorName]);
+  preview.style.setProperty(
+    "--super-reader-divider-filter",
+    colorName === "text" ? "none" : COLORED_DIVIDER_FILTER,
+  );
+}
+
 function render(settings) {
   enabledInput.checked = settings.enabled;
   renderDividerWidth(settings.dividerWidth);
+  renderDividerColor(settings.dividerColor);
   switchState.textContent = settings.enabled ? "已开启" : "已关闭";
   settingsPanel.setAttribute("aria-disabled", String(!settings.enabled));
 }
@@ -95,6 +122,15 @@ dividerInput.addEventListener("input", () => {
 dividerInput.addEventListener("change", async () => {
   await chrome.storage.sync.set({ dividerWidth: Number(dividerInput.value) });
   await ensureCurrentPageReady();
+});
+
+dividerColorInputs.forEach((input) => {
+  input.addEventListener("change", async () => {
+    if (!input.checked) return;
+    renderDividerColor(input.value);
+    await chrome.storage.sync.set({ dividerColor: input.value });
+    await ensureCurrentPageReady();
+  });
 });
 
 chrome.storage.onChanged.addListener(async (_changes, areaName) => {
