@@ -2,8 +2,8 @@
 
 const DEFAULTS = {
   enabled: false,
-  dividerWidth: 2,
-  dividerColor: "text",
+  dividerWidth: 3,
+  dividerColor: "red",
 };
 
 function updateBadge(enabled) {

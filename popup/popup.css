@@ -248,7 +248,7 @@ header p {
   width: 0;
   height: 1em;
   margin: 0 0.08em;
-  border-inline-start: var(--super-reader-divider-width, 2px) solid var(--super-reader-divider-color, currentColor);
+  border-inline-start: var(--super-reader-divider-width, 3px) solid var(--super-reader-divider-color, #ff1744);
   vertical-align: -0.15em;
   filter: var(--super-reader-divider-filter, none);
   content: "";

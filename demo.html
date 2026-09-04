@@ -29,11 +29,11 @@
 
       body {
         min-width: 320px;
+        min-height: 100vh;
         margin: 0;
         color: var(--ink);
         background:
-          radial-gradient(circle at 9% 11%, rgba(255, 203, 112, 0.24), transparent 24rem),
-          radial-gradient(circle at 91% 20%, rgba(100, 87, 237, 0.16), transparent 28rem),
+          radial-gradient(circle at 88% 8%, rgba(100, 87, 237, 0.12), transparent 28rem),
           var(--paper);
       }
 
@@ -55,8 +55,7 @@
       .site-header {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        height: 76px;
+        height: 68px;
       }
 
       .brand {
@@ -86,51 +85,17 @@
         letter-spacing: -0.02em;
       }
 
-      .header-tag {
-        padding: 7px 11px;
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        color: var(--muted);
-        background: rgba(255, 255, 255, 0.55);
-        font-size: 12px;
-      }
-
       .hero {
-        display: grid;
-        grid-template-columns: minmax(0, 0.9fr) minmax(420px, 1.1fr);
-        gap: clamp(42px, 7vw, 92px);
-        align-items: center;
-        min-height: 660px;
-        padding: 56px 0 86px;
-      }
-
-      .eyebrow {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        margin: 0 0 22px;
-        color: #594fd0;
-        font-size: 12px;
-        font-weight: 760;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-      }
-
-      .eyebrow::before {
-        width: 24px;
-        height: 2px;
-        border-radius: 99px;
-        background: currentColor;
-        content: "";
+        padding: 62px 0 34px;
       }
 
       h1 {
-        max-width: 620px;
+        max-width: 720px;
         margin: 0;
-        font-size: clamp(46px, 5.8vw, 76px);
+        font-size: clamp(38px, 5vw, 58px);
         font-weight: 760;
-        letter-spacing: -0.065em;
-        line-height: 1.06;
+        letter-spacing: -0.055em;
+        line-height: 1.12;
       }
 
       h1 em {
@@ -140,159 +105,15 @@
         white-space: nowrap;
       }
 
-      h1 em::after {
-        position: absolute;
-        right: 0;
-        bottom: -0.02em;
-        left: 0;
-        height: 0.09em;
-        border-radius: 999px;
-        background: #ffbd4a;
-        content: "";
-        transform: rotate(-1.4deg);
-      }
-
       .hero-copy {
-        max-width: 530px;
-        margin: 28px 0 0;
+        margin: 14px 0 0;
         color: var(--muted);
-        font-size: 17px;
-        line-height: 1.85;
-      }
-
-      .hero-notes {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px 18px;
-        margin-top: 30px;
-        color: #475569;
-        font-size: 12px;
-        font-weight: 650;
-      }
-
-      .hero-notes span {
-        display: inline-flex;
-        align-items: center;
-        gap: 7px;
-      }
-
-      .hero-notes span::before {
-        display: grid;
-        width: 17px;
-        height: 17px;
-        place-items: center;
-        border-radius: 50%;
-        color: #3f35bb;
-        background: #e5e2ff;
-        content: "✓";
-        font-size: 10px;
-      }
-
-      .mini-reader {
-        position: relative;
-        overflow: hidden;
-        padding: 27px;
-        border: 1px solid rgba(255, 255, 255, 0.75);
-        border-radius: 28px;
-        background: rgba(255, 255, 255, 0.72);
-        box-shadow:
-          0 30px 70px rgba(37, 41, 76, 0.12),
-          inset 0 0 0 1px rgba(23, 32, 51, 0.04);
-        backdrop-filter: blur(18px);
-        transform: rotate(1.2deg);
-      }
-
-      .mini-reader::before {
-        position: absolute;
-        width: 180px;
-        height: 180px;
-        top: -110px;
-        right: -60px;
-        border-radius: 50%;
-        background: rgba(255, 189, 74, 0.18);
-        content: "";
-      }
-
-      .window-bar {
-        display: flex;
-        align-items: center;
-        gap: 7px;
-        padding-bottom: 20px;
-        border-bottom: 1px solid var(--line);
-      }
-
-      .window-bar i {
-        width: 9px;
-        height: 9px;
-        border-radius: 50%;
-        background: #d8dbe3;
-      }
-
-      .window-bar i:first-child {
-        background: #ffb45b;
-      }
-
-      .window-bar i:nth-child(2) {
-        background: #7bd49c;
-      }
-
-      .window-bar span {
-        margin-left: auto;
-        color: #9299a8;
-        font-size: 10px;
-        letter-spacing: 0.08em;
-      }
-
-      .mini-title {
-        width: 58%;
-        height: 9px;
-        margin: 28px 0 22px;
-        border-radius: 999px;
-        background: #dfe2e9;
-      }
-
-      .mini-copy {
-        margin: 0;
-        font-family: "Songti SC", "STSong", serif;
-        font-size: clamp(21px, 2.2vw, 29px);
-        line-height: 2.05;
-        letter-spacing: 0.025em;
+        font-size: 16px;
+        line-height: 1.7;
       }
 
       .demo-section {
-        padding: 94px 0 110px;
-        border-top: 1px solid var(--line);
-      }
-
-      .section-heading {
-        display: flex;
-        align-items: end;
-        justify-content: space-between;
-        gap: 30px;
-        margin-bottom: 34px;
-      }
-
-      .section-kicker {
-        margin: 0 0 8px;
-        color: var(--accent);
-        font-size: 11px;
-        font-weight: 760;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-      }
-
-      h2 {
-        margin: 0;
-        font-size: clamp(30px, 4vw, 46px);
-        letter-spacing: -0.045em;
-      }
-
-      .section-heading > p {
-        max-width: 390px;
-        margin: 0;
-        color: var(--muted);
-        font-size: 14px;
-        line-height: 1.7;
+        padding: 0 0 72px;
       }
 
       .playground {
@@ -321,13 +142,6 @@
       .control-top strong {
         display: block;
         font-size: 14px;
-      }
-
-      .control-top small {
-        display: block;
-        margin-top: 4px;
-        color: var(--muted);
-        font-size: 11px;
       }
 
       .switch {
@@ -481,7 +295,7 @@
       textarea {
         display: block;
         width: 100%;
-        min-height: 132px;
+        min-height: 116px;
         resize: vertical;
         padding: 14px;
         border: 1px solid #dce0e8;
@@ -501,7 +315,7 @@
 
       .reader-stage {
         display: flex;
-        min-height: 500px;
+        min-height: 450px;
         flex-direction: column;
         justify-content: space-between;
         padding: clamp(30px, 5vw, 60px);
@@ -548,7 +362,7 @@
         width: 0;
         height: 1em;
         margin: 0 0.08em;
-        border-inline-start: var(--reader-divider-width, 2px) solid var(--reader-divider-color, currentColor);
+        border-inline-start: var(--reader-divider-width, 3px) solid var(--reader-divider-color, #ff1744);
         vertical-align: -0.15em;
         filter: var(--reader-divider-filter, none);
         content: "";
@@ -578,82 +392,7 @@
         font-weight: 720;
       }
 
-      .sample-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 18px;
-      }
-
-      .sample-button {
-        padding: 7px 10px;
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        cursor: pointer;
-        color: #687185;
-        background: rgba(255, 255, 255, 0.7);
-        font-size: 11px;
-      }
-
-      .sample-button:hover,
-      .sample-button:focus-visible {
-        border-color: #a8a1ed;
-        color: #4e43c5;
-        outline: none;
-      }
-
-      .principles {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 18px;
-        padding: 30px 0 105px;
-      }
-
-      .principle {
-        padding: 24px;
-        border-top: 1px solid var(--line);
-      }
-
-      .principle b {
-        display: block;
-        margin-bottom: 10px;
-        font-size: 13px;
-      }
-
-      .principle p {
-        margin: 0;
-        color: var(--muted);
-        font-size: 12px;
-        line-height: 1.75;
-      }
-
-      .principle-number {
-        display: block;
-        margin-bottom: 27px;
-        color: #9a91ef;
-        font: 700 12px/1 ui-monospace, "SFMono-Regular", monospace;
-      }
-
       @media (max-width: 880px) {
-        .hero {
-          grid-template-columns: 1fr;
-          min-height: auto;
-          padding-top: 66px;
-        }
-
-        .mini-reader {
-          max-width: 620px;
-          transform: none;
-        }
-
-        .section-heading {
-          display: block;
-        }
-
-        .section-heading > p {
-          margin-top: 14px;
-        }
-
         .playground {
           grid-template-columns: 1fr;
         }
@@ -673,26 +412,16 @@
           height: 66px;
         }
 
-        .header-tag {
-          display: none;
-        }
-
         .hero {
-          gap: 50px;
-          padding: 54px 4px 70px;
+          padding: 42px 4px 28px;
         }
 
         h1 {
-          font-size: clamp(42px, 14vw, 60px);
-        }
-
-        .mini-reader {
-          padding: 21px;
-          border-radius: 22px;
+          font-size: clamp(36px, 11vw, 48px);
         }
 
         .demo-section {
-          padding: 70px 0 80px;
+          padding-bottom: 44px;
         }
 
         .playground {
@@ -717,10 +446,6 @@
           flex-direction: column;
           gap: 5px;
         }
-
-        .principles {
-          grid-template-columns: 1fr;
-        }
       }
 
       @media (prefers-reduced-motion: reduce) {
@@ -739,56 +464,20 @@
         <span class="brand-mark" aria-hidden="true">阅</span>
         <span class="brand-name">Super Reader</span>
       </a>
-      <span class="header-tag">Chrome Extension · Concept Demo</span>
     </header>
 
     <main>
       <section class="hero shell">
-        <div>
-          <p class="eyebrow">Structural Reading</p>
-          <h1>把长句，变成眼睛容易跟上的<em>短语块</em>。</h1>
-          <p class="hero-copy">
-            Super Reader 用本地模型判断自然停顿，用细竖线呈现句子结构。
-            不改变内容，只给视线一条更清晰的阅读路径。
-          </p>
-          <div class="hero-notes" aria-label="产品特点">
-            <span>本地模型断句</span>
-            <span>动态网页支持</span>
-            <span>本地隐私处理</span>
-          </div>
-        </div>
-
-        <div class="mini-reader" aria-label="Super Reader 效果示意">
-          <div class="window-bar" aria-hidden="true">
-            <i></i><i></i><i></i>
-            <span>SUPER READER / ON</span>
-          </div>
-          <div class="mini-title" aria-hidden="true"></div>
-          <p class="mini-copy">
-            <span class="reader-chunk">真正高效的阅读</span><span class="reader-chunk reader-chunk--separated">并不是追求速度。</span>
-          </p>
-        </div>
+        <h1>看清句子的<em>停顿</em>。</h1>
+        <p class="hero-copy">输入中文，立即查看分块效果。</p>
       </section>
 
       <section class="demo-section" id="demo">
         <div class="shell">
-          <div class="section-heading">
-            <div>
-              <p class="section-kicker">Live Playground</p>
-              <h2>现在，试着读一遍。</h2>
-            </div>
-            <p>
-              输入自己的句子，模型判断出的边界会实时呈现在右侧。
-            </p>
-          </div>
-
           <div class="playground">
             <aside class="controls" aria-label="阅读效果控制面板">
               <div class="control-top">
-                <div>
-                  <strong>视觉分块</strong>
-                  <small id="toggle-copy">效果已开启</small>
-                </div>
+                <strong>视觉分块</strong>
                 <label class="switch">
                   <input id="reader-toggle" type="checkbox" checked aria-label="开启视觉分块">
                   <span class="switch-track"></span>
@@ -797,30 +486,24 @@
 
               <div class="field">
                 <label class="field-label" for="source-text">
-                  <span>阅读文本</span>
-                  <span>可编辑</span>
+                  <span>输入文本</span>
                 </label>
                 <textarea id="source-text" maxlength="240">真正高效的阅读并不是追求速度，而是帮助大脑更快地识别信息结构。</textarea>
-                <div class="sample-list" aria-label="示例文本">
-                  <button class="sample-button" type="button" data-sample="我一直在思考明天早上的早餐吃什么">日常短句</button>
-                  <button class="sample-button" type="button" data-sample="真正高效的阅读并不是追求速度，而是帮助大脑更快地识别信息结构。">阅读方法</button>
-                  <button class="sample-button" type="button" data-sample="产品设计需要在清晰、效率与视觉愉悦之间找到恰到好处的平衡。">产品设计</button>
-                </div>
               </div>
 
               <div class="field">
                 <label class="field-label" for="divider-width">
                   <span>分割线粗细</span>
-                  <output id="divider-output" for="divider-width">2 px</output>
+                  <output id="divider-output" for="divider-width">3 px</output>
                 </label>
-                <input id="divider-width" type="range" min="1" max="4" step="0.5" value="2">
+                <input id="divider-width" type="range" min="1" max="5" step="1" value="3">
               </div>
 
               <fieldset class="color-picker">
                 <legend>分割线颜色</legend>
                 <div class="color-options">
                   <label class="color-option" title="亮红">
-                    <input type="radio" name="divider-color" value="red">
+                    <input type="radio" name="divider-color" value="red" checked>
                     <span class="color-swatch color-swatch--red" aria-hidden="true"></span>
                     <small>红</small>
                   </label>
@@ -840,7 +523,7 @@
                     <small>绿</small>
                   </label>
                   <label class="color-option" title="跟随字体颜色">
-                    <input type="radio" name="divider-color" value="text" checked>
+                    <input type="radio" name="divider-color" value="text">
                     <span class="color-swatch color-swatch--text" aria-hidden="true"></span>
                     <small>字体</small>
                   </label>
@@ -850,33 +533,14 @@
             </aside>
 
             <div class="reader-stage">
-              <span class="stage-label">实时阅读视图</span>
+              <span class="stage-label">预览</span>
               <div id="reader-output" class="reader-output" aria-live="polite"></div>
               <footer class="stage-footer">
                 <span id="chunk-count"><strong>5</strong> 个视觉块</span>
-                <span>子句 &gt; 7 字 · 采用模型最高分边界</span>
               </footer>
             </div>
           </div>
         </div>
-      </section>
-
-      <section class="principles shell" aria-label="设计原则">
-        <article class="principle">
-          <span class="principle-number">01</span>
-          <b>先识别结构边界，再划分块</b>
-          <p>标点和成对双引号先建立硬边界；模型只对超过 7 个汉字的小句递归判断，预测落入词内时保留当前片段。</p>
-        </article>
-        <article class="principle">
-          <span class="principle-number">02</span>
-          <b>视觉提示，不打断阅读</b>
-          <p>同一个无标点子句内的短语块用细竖线分隔；标点本身已是边界，不再重复画线。</p>
-        </article>
-        <article class="principle">
-          <span class="principle-number">03</span>
-          <b>随时开启，也能完整恢复</b>
-          <p>需要时提供阅读路径，关闭后页面立即回到原本的文本状态。</p>
-        </article>
       </section>
     </main>
 
@@ -892,10 +556,8 @@
         const dividerOutput = document.querySelector("#divider-output");
         const dividerColorInputs = Array.from(document.querySelectorAll("[name='divider-color']"));
         const readerToggle = document.querySelector("#reader-toggle");
-        const toggleCopy = document.querySelector("#toggle-copy");
         const readerOutput = document.querySelector("#reader-output");
         const chunkCount = document.querySelector("#chunk-count");
-        const sampleButtons = Array.from(document.querySelectorAll("[data-sample]"));
         const segmenter = SuperReaderChunker.createSegmenter("zh-CN");
         const dividerColors = Object.freeze({
           red: "#ff1744",
@@ -923,7 +585,7 @@
           });
           const colorName = selectedColorInput && dividerColors[selectedColorInput.value]
             ? selectedColorInput.value
-            : "text";
+            : "red";
           readerOutput.style.setProperty("--reader-divider-color", dividerColors[colorName]);
           readerOutput.style.setProperty(
             "--reader-divider-filter",
@@ -949,7 +611,6 @@
             return chunk.processed;
           }).length;
           readerOutput.classList.toggle("is-plain", !isEnabled);
-          toggleCopy.textContent = isEnabled ? "效果已开启" : "效果已关闭";
           chunkCount.innerHTML = "<strong>" + (isEnabled ? processedChunkCount : 1) + "</strong> 个视觉块";
         }
 
@@ -959,14 +620,6 @@
           input.addEventListener("change", render);
         });
         readerToggle.addEventListener("change", render);
-
-        sampleButtons.forEach(function bindSample(button) {
-          button.addEventListener("click", function chooseSample() {
-            sourceInput.value = button.dataset.sample;
-            render();
-            sourceInput.focus();
-          });
-        });
 
         render();
       })();

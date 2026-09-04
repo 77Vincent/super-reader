@@ -6,8 +6,8 @@
 
   const DEFAULTS = {
     enabled: false,
-    dividerWidth: 2,
-    dividerColor: "text",
+    dividerWidth: 3,
+    dividerColor: "red",
   };
 
   const DIVIDER_COLORS = Object.freeze({
@@ -51,7 +51,9 @@
 
   function normalizeDividerWidth(value) {
     const width = Number(value);
-    return Number.isFinite(width) ? Math.min(4, Math.max(1, width)) : DEFAULTS.dividerWidth;
+    return Number.isFinite(width)
+      ? Math.min(5, Math.max(1, Math.round(width)))
+      : DEFAULTS.dividerWidth;
   }
 
   function normalizeDividerColor(value) {

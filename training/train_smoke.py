@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
-"""Train a tiny three-block residual boundary chooser for a smoke test."""
+"""Train the three-block residual boundary chooser on a multithreaded CPU."""
 
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import math
+import os
 import random
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterator
 
 import numpy as np
-from tinygrad import Tensor, nn
-from tinygrad.nn import optim
-from tinygrad.nn.state import get_parameters, get_state_dict, load_state_dict, safe_save
+import torch
+from torch import nn
+from torch.nn import functional as F
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -29,19 +32,41 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--artifact-dir", type=Path, default=DEFAULT_ARTIFACT_DIR)
     parser.add_argument("--epochs", type=int, default=2)
-    parser.add_argument("--batch-size", type=int, default=64)
-    parser.add_argument("--max-tokens-per-batch", type=int, default=2048)
+    parser.add_argument("--batch-size", type=int, default=512)
+    parser.add_argument("--max-tokens-per-batch", type=int, default=8192)
     parser.add_argument("--channels", type=int, default=48)
     parser.add_argument("--vocab-size", type=int, default=4096)
     parser.add_argument("--learning-rate", type=float, default=3e-3)
     parser.add_argument("--seed", type=int, default=2026090405)
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=min(5, os.cpu_count() or 1),
+        help="PyTorch intra-op CPU threads; five is fastest on the benchmarked M5 Pro",
+    )
+    parser.add_argument(
+        "--interop-threads",
+        type=int,
+        default=1,
+        help="Parallel operators per training process",
+    )
     return parser.parse_args()
 
 
 def seed_everything(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
-    Tensor.manual_seed(seed)
+    torch.manual_seed(seed)
+
+
+def configure_cpu(threads: int, interop_threads: int) -> None:
+    if threads < 1 or interop_threads < 1:
+        raise ValueError("CPU thread counts must be positive")
+    # Set these before constructing tensors or running any operators. More than
+    # five intra-op threads slow this short-convolution workload on the M5 Pro.
+    torch.set_num_threads(threads)
+    torch.set_num_interop_threads(interop_threads)
+    torch.set_flush_denormal(True)
 
 
 def read_json_lines(path: Path) -> list[dict[str, Any]]:
@@ -133,10 +158,10 @@ def iterate_batches(
     for indices in batches:
         selected = [records[index] for index in indices]
         batch_length = max(len(record["token_ids"]) for record in selected)
-        token_ids = np.zeros((len(selected), batch_length), dtype=np.int32)
+        token_ids = np.zeros((len(selected), batch_length), dtype=np.int64)
         token_mask = np.zeros((len(selected), batch_length), dtype=np.float32)
         gap_mask = np.zeros((len(selected), batch_length - 1), dtype=np.bool_)
-        targets = np.zeros(len(selected), dtype=np.int32)
+        targets = np.zeros(len(selected), dtype=np.int64)
         sample_weights = np.ones(len(selected), dtype=np.float32)
 
         for row, record in enumerate(selected):
@@ -148,77 +173,84 @@ def iterate_batches(
             sample_weights[row] = record["training_weight"]
 
         yield {
-            "token_ids": Tensor(token_ids),
-            "token_mask": Tensor(token_mask),
-            "gap_mask": Tensor(gap_mask),
-            "targets": Tensor(targets),
-            "sample_weights": Tensor(sample_weights),
+            "token_ids": torch.from_numpy(token_ids),
+            "token_mask": torch.from_numpy(token_mask),
+            "gap_mask": torch.from_numpy(gap_mask),
+            "targets": torch.from_numpy(targets),
+            "sample_weights": torch.from_numpy(sample_weights),
             "sample_weight_sum": float(sample_weights.sum()),
             "records": selected,
         }
 
 
-class ResidualConvBlock:
-    def __init__(self, channels: int):
-        self.normalization = nn.LayerNorm(channels)
-        self.first = nn.Conv2d(
-            channels,
-            channels,
-            kernel_size=(1, 3),
-            padding=(0, 1),
-        )
-        self.second = nn.Conv2d(
-            channels,
-            channels,
-            kernel_size=(1, 3),
-            padding=(0, 1),
-        )
-        self.residual_scale = Tensor([0.1], requires_grad=True)
+class ThreeTapConv1d(nn.Module):
+    """Kernel-3 convolution expressed as three CPU-efficient matrix products."""
 
-    def __call__(self, inputs: Tensor) -> Tensor:
-        batch_size, sequence_length, channels = inputs.shape
-        hidden = self.normalization(inputs)
-        hidden = hidden.permute(0, 2, 1).reshape(
-            batch_size,
-            channels,
-            1,
-            sequence_length,
+    def __init__(self, channels: int):
+        super().__init__()
+        self.weight = nn.Parameter(torch.empty(channels, channels, 3))
+        self.bias = nn.Parameter(torch.empty(channels))
+        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        bound = 1 / math.sqrt(channels * 3)
+        nn.init.uniform_(self.bias, -bound, bound)
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        center = F.linear(inputs, self.weight[:, :, 1], self.bias)
+        left = F.pad(
+            F.linear(inputs[:, :-1], self.weight[:, :, 0]),
+            (0, 0, 1, 0),
         )
-        hidden = self.first(hidden).gelu()
+        right = F.pad(
+            F.linear(inputs[:, 1:], self.weight[:, :, 2]),
+            (0, 0, 0, 1),
+        )
+        return center + left + right
+
+
+class ResidualConvBlock(nn.Module):
+    def __init__(self, channels: int):
+        super().__init__()
+        self.normalization = nn.LayerNorm(channels)
+        self.first = ThreeTapConv1d(channels)
+        self.second = ThreeTapConv1d(channels)
+        self.residual_scale = nn.Parameter(torch.tensor([0.1]))
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        hidden = self.normalization(inputs)
+        hidden = F.gelu(self.first(hidden), approximate="tanh")
         hidden = self.second(hidden)
-        hidden = hidden.reshape(batch_size, channels, sequence_length).permute(0, 2, 1)
         return inputs + self.residual_scale * hidden
 
 
-class BoundaryChooser:
+class BoundaryChooser(nn.Module):
     def __init__(self, vocabulary_size: int, channels: int):
+        super().__init__()
         self.embedding = nn.Embedding(vocabulary_size, channels)
-        self.blocks = [ResidualConvBlock(channels) for _ in range(3)]
+        # tinygrad's Embedding used by the earlier trainer initializes with
+        # Glorot uniform; preserve that scale instead of PyTorch's N(0, 1).
+        nn.init.xavier_uniform_(self.embedding.weight)
+        self.blocks = nn.ModuleList(ResidualConvBlock(channels) for _ in range(3))
         self.boundary_hidden = nn.Linear(channels * 4, channels)
         self.boundary_output = nn.Linear(channels, 1)
 
-    def __call__(
+    def forward(
         self,
-        token_ids: Tensor,
-        token_mask: Tensor,
-        gap_mask: Tensor,
-    ) -> Tensor:
+        token_ids: torch.Tensor,
+        token_mask: torch.Tensor,
+        gap_mask: torch.Tensor,
+    ) -> torch.Tensor:
         hidden = self.embedding(token_ids)
-        expanded_mask = token_mask.reshape(*token_mask.shape, 1)
+        expanded_mask = token_mask.unsqueeze(-1)
         hidden = hidden * expanded_mask
         for block in self.blocks:
             hidden = block(hidden) * expanded_mask
 
         left = hidden[:, :-1]
         right = hidden[:, 1:]
-        gap_features = left.cat(
-            right,
-            right - left,
-            right * left,
-            dim=-1,
-        )
-        logits = self.boundary_output(self.boundary_hidden(gap_features).gelu()).squeeze(-1)
-        return gap_mask.where(logits, -1e9)
+        gap_features = torch.cat((left, right, right - left, right * left), dim=-1)
+        hidden_gaps = F.gelu(self.boundary_hidden(gap_features), approximate="tanh")
+        logits = self.boundary_output(hidden_gaps).squeeze(-1)
+        return logits.masked_fill(~gap_mask, -1e9)
 
 
 def evaluate(
@@ -227,7 +259,7 @@ def evaluate(
     batch_size: int,
     max_tokens_per_batch: int,
 ) -> dict[str, Any]:
-    Tensor.training = False
+    model.eval()
     total_loss = 0.0
     total_count = 0
     total_correct = 0
@@ -238,41 +270,42 @@ def evaluate(
     domain_counts: dict[str, int] = defaultdict(int)
     domain_correct: dict[str, int] = defaultdict(int)
 
-    for batch in iterate_batches(
-        records,
-        batch_size,
-        max_tokens_per_batch,
-        shuffle=False,
-        seed=0,
-    ):
-        logits = model(batch["token_ids"], batch["token_mask"], batch["gap_mask"])
-        loss = logits.sparse_categorical_crossentropy(batch["targets"]).mean()
-        logits_array = logits.numpy()
-        targets = batch["targets"].numpy()
-        predictions = logits_array.argmax(axis=1)
-        ranks = np.argsort(-logits_array, axis=1)
+    with torch.inference_mode():
+        for batch in iterate_batches(
+            records,
+            batch_size,
+            max_tokens_per_batch,
+            shuffle=False,
+            seed=0,
+        ):
+            logits = model(batch["token_ids"], batch["token_mask"], batch["gap_mask"])
+            loss = F.cross_entropy(logits, batch["targets"])
+            predictions_tensor = logits.argmax(dim=1)
+            target_logits = logits.gather(1, batch["targets"].unsqueeze(1))
+            ranks = 1 + (logits > target_logits).sum(dim=1)
+            predictions = predictions_tensor.numpy()
+            targets = batch["targets"].numpy()
 
-        count = len(targets)
-        total_loss += float(loss.numpy()) * count
-        total_count += count
-        total_correct += int((predictions == targets).sum())
-        for row, target in enumerate(targets):
-            rank = int(np.where(ranks[row] == target)[0][0]) + 1
-            reciprocal_rank += 1.0 / rank
+            count = len(targets)
+            total_loss += loss.item() * count
+            total_count += count
+            total_correct += int((predictions == targets).sum())
+            reciprocal_rank += float((1.0 / ranks.float()).sum().item())
 
-            record = batch["records"][row]
-            prediction = int(predictions[row])
-            predicted_character_position = len("".join(record["tokens"][: prediction + 1]))
-            target_character_position = len("".join(record["tokens"][: int(target) + 1]))
-            character_error = abs(predicted_character_position - target_character_position)
-            absolute_character_error += character_error
-            within_one_character += character_error <= 1
-            within_two_characters += character_error <= 2
+            for row, target in enumerate(targets):
+                record = batch["records"][row]
+                prediction = int(predictions[row])
+                predicted_character_position = len("".join(record["tokens"][: prediction + 1]))
+                target_character_position = len("".join(record["tokens"][: int(target) + 1]))
+                character_error = abs(predicted_character_position - target_character_position)
+                absolute_character_error += character_error
+                within_one_character += character_error <= 1
+                within_two_characters += character_error <= 2
 
-        for record, prediction, target in zip(batch["records"], predictions, targets):
-            domain = record["domain"]
-            domain_counts[domain] += 1
-            domain_correct[domain] += int(prediction == target)
+            for record, prediction, target in zip(batch["records"], predictions, targets):
+                domain = record["domain"]
+                domain_counts[domain] += 1
+                domain_correct[domain] += int(prediction == target)
 
     return {
         "loss": total_loss / total_count,
@@ -389,8 +422,9 @@ def predict_record(
         shuffle=False,
         seed=0,
     ))
-    Tensor.training = False
-    logits = model(batch["token_ids"], batch["token_mask"], batch["gap_mask"])
+    model.eval()
+    with torch.inference_mode():
+        logits = model(batch["token_ids"], batch["token_mask"], batch["gap_mask"])
     valid_count = len(record["tokens"]) - 1
     valid_logits = logits.numpy()[0, :valid_count]
     shifted = valid_logits - valid_logits.max()
@@ -416,23 +450,38 @@ def predict_record(
     }
 
 
-def clone_state(model: BoundaryChooser) -> dict[str, np.ndarray]:
-    return {
-        name: value.numpy().copy()
-        for name, value in get_state_dict(model).items()
-    }
+def clone_state(model: BoundaryChooser) -> dict[str, torch.Tensor]:
+    return copy.deepcopy(model.state_dict())
 
 
-def restore_state(model: BoundaryChooser, state: dict[str, np.ndarray]) -> None:
-    load_state_dict(
-        model,
-        {name: Tensor(value) for name, value in state.items()},
-        verbose=False,
-    )
+def restore_state(model: BoundaryChooser, state: dict[str, torch.Tensor]) -> None:
+    model.load_state_dict(state)
+
+
+def save_browser_compatible_checkpoint(
+    model: BoundaryChooser,
+    checkpoint_path: Path,
+) -> None:
+    """Write PyTorch weights using the existing tinygrad safetensors writer."""
+    os.environ["DEBUG"] = "0"
+    os.environ.setdefault("CLANG", "1")
+    from tinygrad import Tensor as TinyTensor
+    from tinygrad.nn.state import safe_save
+
+    checkpoint_state = {}
+    for name, value in model.state_dict().items():
+        array = value.detach().cpu().numpy().astype(np.float32, copy=True)
+        if name.endswith(("first.weight", "second.weight")):
+            # Browser inference and the previous tinygrad model use Conv2d's
+            # [out, in, 1, kernel] representation for these 1-D convolutions.
+            array = np.expand_dims(array, axis=2)
+        checkpoint_state[name] = TinyTensor(array, device="CLANG")
+    safe_save(checkpoint_state, str(checkpoint_path))
 
 
 def main() -> None:
     args = parse_arguments()
+    configure_cpu(args.threads, args.interop_threads)
     seed_everything(args.seed)
     raw_records = {
         split: read_json_lines(args.data_dir / f"{split}.jsonl")
@@ -456,23 +505,26 @@ def main() -> None:
     )
 
     model = BoundaryChooser(len(vocabulary), args.channels)
-    optimizer = optim.AdamW(
-        get_parameters(model),
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
         lr=args.learning_rate,
         weight_decay=1e-4,
+        foreach=True,
     )
     args.artifact_dir.mkdir(parents=True, exist_ok=True)
     checkpoint_path = args.artifact_dir / "boundary-smoke.safetensors"
     vocabulary_path = args.artifact_dir / "boundary-smoke-vocabulary.json"
     best_validation = -math.inf
     best_epoch = 0
-    best_state: dict[str, np.ndarray] | None = None
+    best_state: dict[str, torch.Tensor] | None = None
     history = []
 
     for epoch in range(1, args.epochs + 1):
-        Tensor.training = True
+        model.train()
         running_loss = 0.0
         seen_weight = 0.0
+        seen_examples = 0
+        epoch_started = time.perf_counter()
         for batch in iterate_batches(
             records["train"],
             args.batch_size,
@@ -480,16 +532,18 @@ def main() -> None:
             shuffle=True,
             seed=args.seed + epoch,
         ):
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             logits = model(batch["token_ids"], batch["token_mask"], batch["gap_mask"])
-            per_sample_loss = logits.sparse_categorical_crossentropy(batch["targets"])
-            loss = (
-                per_sample_loss * batch["sample_weights"]
-            ).sum() / batch["sample_weight_sum"]
+            per_sample_loss = F.cross_entropy(logits, batch["targets"], reduction="none")
+            weighted_losses = per_sample_loss * batch["sample_weights"]
+            loss = weighted_losses.sum() / batch["sample_weight_sum"]
             loss.backward()
             optimizer.step()
-            running_loss += float(loss.numpy()) * batch["sample_weight_sum"]
+            running_loss += loss.item() * batch["sample_weight_sum"]
             seen_weight += batch["sample_weight_sum"]
+            seen_examples += len(batch["records"])
+
+        training_seconds = time.perf_counter() - epoch_started
 
         validation = evaluate(
             model,
@@ -502,12 +556,15 @@ def main() -> None:
             "train_loss": running_loss / seen_weight,
             "validation_loss": validation["loss"],
             "validation_accuracy": validation["accuracy"],
+            "training_seconds": training_seconds,
+            "training_examples_per_second": seen_examples / training_seconds,
         }
         history.append(row)
         print(
             f"epoch={epoch:02d} train_loss={row['train_loss']:.4f} "
             f"val_loss={row['validation_loss']:.4f} "
-            f"val_acc={row['validation_accuracy']:.3f}",
+            f"val_acc={row['validation_accuracy']:.3f} "
+            f"samples_s={row['training_examples_per_second']:.0f}",
             flush=True,
         )
 
@@ -519,7 +576,7 @@ def main() -> None:
     if best_state is None:
         raise RuntimeError("Training did not produce a checkpoint")
     restore_state(model, best_state)
-    safe_save(get_state_dict(model), str(checkpoint_path))
+    save_browser_compatible_checkpoint(model, checkpoint_path)
     vocabulary_path.write_text(
         json.dumps(vocabulary, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -550,7 +607,7 @@ def main() -> None:
         }
         for split, items in records.items()
     }
-    parameter_count = sum(math.prod(parameter.shape) for parameter in get_parameters(model))
+    parameter_count = sum(parameter.numel() for parameter in model.parameters())
     metrics = {
         "seed": args.seed,
         "tokenization": data_summary.get("tokenization", "unspecified"),
@@ -565,6 +622,19 @@ def main() -> None:
             "convolutions_per_block": 2,
             "kernel_size": 3,
             "dilation": 1,
+        },
+        "training_backend": {
+            "framework": "PyTorch",
+            "framework_version": torch.__version__,
+            "device": "cpu",
+            "intra_op_threads": torch.get_num_threads(),
+            "inter_op_threads": torch.get_num_interop_threads(),
+            "logical_cpu_count": os.cpu_count(),
+            "gelu_approximation": "tanh",
+            "convolution_implementation": (
+                "equivalent three-tap left/center/right matrix products"
+            ),
+            "optimizer_foreach": True,
         },
         "data_sizes": {split: len(items) for split, items in records.items()},
         "training_weighting": {
@@ -585,7 +655,10 @@ def main() -> None:
         "batching": {
             "maximum_examples_per_batch": args.batch_size,
             "maximum_tokens_per_batch": args.max_tokens_per_batch,
-            "strategy": "power-of-two length buckets with per-batch dynamic padding",
+            "strategy": (
+                "power-of-two length buckets with per-batch dynamic padding; "
+                "batch cap benchmarked for CPU throughput"
+            ),
             "splits": {
                 split: batching_statistics(items, args.batch_size, args.max_tokens_per_batch)
                 for split, items in records.items()

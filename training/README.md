@@ -42,11 +42,23 @@ length bucket. Domains are not part of the weighting calculation. Validation
 and test retain their natural distributions and use ordinary unit weights.
 
 Training batches use power-of-two token-length buckets. Every batch is padded
-only to its own longest sequence, with at most 64 examples and a target budget
-of 2,048 padded tokens. Longer buckets automatically use fewer examples; a
-single sequence longer than the budget is still retained in a one-example
-batch. Side-length and relative-position metadata are kept for auditing but
-are not copied into the model input.
+only to its own longest sequence, with at most 512 examples and a target budget
+of 8,192 padded tokens. That produces 512-example batches for the common
+16-character bucket, 256 for the 32-character bucket, and 128 for the
+64-character bucket. Longer buckets automatically use fewer examples; a single
+sequence longer than the budget is still retained in a one-example batch.
+Side-length and relative-position metadata are kept for auditing but are not
+copied into the model input.
+
+Training uses PyTorch's multithreaded CPU backend. The default is five intra-op
+threads and one inter-op thread: a local backward-pass benchmark on the M5 Pro
+showed that this is faster for these short convolutions than scheduling work
+across all 18 logical CPUs. Each kernel-3 convolution is evaluated as three
+mathematically equivalent left/center/right matrix products, avoiding the high
+overhead of the generic macOS `Conv1d` kernel on short sequences. Thread counts
+remain explicitly configurable with `--threads` and `--interop-threads`. Each
+epoch reports wall-clock training throughput, and the selected CPU settings
+are saved in the metrics artifact.
 
 Downloaded and generated files are ignored by Git. Source URLs and SHA-256
 checksums are saved in `training/data/processed/summary.json`.
@@ -64,12 +76,21 @@ from each domain. Positive values remain available for explicitly capped
 comparison experiments. Every adjacent Han-character gap is a candidate;
 non-Han content is excluded from model input.
 
-The command installs the pinned 751 KB `tinygrad` wheel under the ignored
-`training/.deps/` directory. To prepare and train separately:
+The command installs pinned PyTorch and tinygrad wheels under the ignored
+`training/.deps/` directory. PyTorch performs multithreaded CPU training;
+tinygrad is retained only for writing the existing browser-compatible
+safetensors checkpoint. To prepare and train separately:
 
 ```bash
 node training/prepare_smoke_data.mjs
 python3 training/run_smoke.py
+```
+
+For example, an explicit CPU configuration can be tested with:
+
+```bash
+python3 training/run_smoke.py --threads 5 --interop-threads 1 \
+  --batch-size 512 --max-tokens-per-batch 8192
 ```
 
 The checkpoint and metrics are written under `training/artifacts/`.

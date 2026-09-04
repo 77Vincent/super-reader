@@ -30,15 +30,15 @@
       <section class="settings" aria-label="效果预览">
         <label class="range-label" for="divider-width">
           <span>分割线粗细</span>
-          <output id="divider-output" for="divider-width">2 px</output>
+          <output id="divider-output" for="divider-width">3 px</output>
         </label>
-        <input id="divider-width" type="range" min="1" max="4" step="0.5" value="2">
+        <input id="divider-width" type="range" min="1" max="5" step="1" value="3">
 
         <fieldset class="color-picker">
           <legend>分割线颜色</legend>
           <div class="color-options">
             <label class="color-option" title="亮红">
-              <input type="radio" name="divider-color" value="red">
+              <input type="radio" name="divider-color" value="red" checked>
               <span class="color-swatch color-swatch--red" aria-hidden="true"></span>
               <small>红</small>
             </label>
@@ -58,7 +58,7 @@
               <small>绿</small>
             </label>
             <label class="color-option" title="跟随字体颜色">
-              <input type="radio" name="divider-color" value="text" checked>
+              <input type="radio" name="divider-color" value="text">
               <span class="color-swatch color-swatch--text" aria-hidden="true"></span>
               <small>字体</small>
             </label>

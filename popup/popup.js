@@ -2,8 +2,8 @@
 
 const DEFAULTS = {
   enabled: false,
-  dividerWidth: 2,
-  dividerColor: "text",
+  dividerWidth: 3,
+  dividerColor: "red",
 };
 
 const DIVIDER_COLORS = Object.freeze({
@@ -27,7 +27,10 @@ const settingsPanel = document.querySelector(".settings");
 const preview = document.querySelector(".preview");
 
 function renderDividerWidth(value) {
-  const width = Number(value);
+  const numericWidth = Number(value);
+  const width = Number.isFinite(numericWidth)
+    ? Math.min(5, Math.max(1, Math.round(numericWidth)))
+    : DEFAULTS.dividerWidth;
   dividerInput.value = width;
   dividerOutput.textContent = `${width} px`;
   preview.style.setProperty("--super-reader-divider-width", `${width}px`);

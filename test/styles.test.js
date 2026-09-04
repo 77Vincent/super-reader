@@ -13,7 +13,7 @@ test("extension renders thin vertical separators without underlines", () => {
   assert.match(css, /height:\s*1em/u);
   assert.match(
     css,
-    /border-inline-start:\s*var\(--super-reader-divider-width, 2px\) solid var\(--super-reader-divider-color, currentColor\)/u,
+    /border-inline-start:\s*var\(--super-reader-divider-width, 3px\) solid var\(--super-reader-divider-color, #ff1744\)/u,
   );
   assert.match(css, /margin:\s*0 0\.08em/u);
   assert.match(css, /vertical-align:\s*-0\.15em/u);
@@ -33,7 +33,7 @@ test("HTML demo uses the same vertical separator treatment", () => {
   assert.match(html, /height:\s*1em/u);
   assert.match(
     html,
-    /border-inline-start:\s*var\(--reader-divider-width, 2px\) solid var\(--reader-divider-color, currentColor\)/u,
+    /border-inline-start:\s*var\(--reader-divider-width, 3px\) solid var\(--reader-divider-color, #ff1744\)/u,
   );
   assert.match(html, /margin:\s*0 0\.08em/u);
   assert.match(html, /vertical-align:\s*-0\.15em/u);
@@ -51,21 +51,25 @@ test("HTML demo uses the same vertical separator treatment", () => {
 test("demo and popup expose the same divider-width range", () => {
   const demo = readFileSync(join(projectRoot, "demo.html"), "utf8");
   const popup = readFileSync(join(projectRoot, "popup/popup.html"), "utf8");
+  const popupScript = readFileSync(join(projectRoot, "popup/popup.js"), "utf8");
   const contentScript = readFileSync(join(projectRoot, "src/content.js"), "utf8");
+  const backgroundScript = readFileSync(join(projectRoot, "src/background.js"), "utf8");
 
   for (const source of [demo, popup]) {
     assert.match(
       source,
-      /id="divider-width"[^>]*min="1"[^>]*max="4"[^>]*step="0\.5"/u,
+      /id="divider-width"[^>]*min="1"[^>]*max="5"[^>]*step="1"/u,
     );
-    assert.match(source, /id="divider-width"[^>]*value="2"/u);
+    assert.match(source, /id="divider-width"[^>]*value="3"/u);
   }
-  assert.match(contentScript, /dividerWidth:\s*2/u);
+  for (const script of [popupScript, contentScript, backgroundScript]) {
+    assert.match(script, /dividerWidth:\s*3/u);
+  }
   assert.match(contentScript, /--super-reader-divider-width/u);
-  assert.match(contentScript, /Math\.min\(4, Math\.max\(1, width\)\)/u);
+  assert.match(contentScript, /Math\.min\(5, Math\.max\(1, Math\.round\(width\)\)\)/u);
 });
 
-test("demo and extension expose five matching divider colors with text color as default", () => {
+test("demo and extension expose five matching divider colors with red as default", () => {
   const demo = readFileSync(join(projectRoot, "demo.html"), "utf8");
   const popup = readFileSync(join(projectRoot, "popup/popup.html"), "utf8");
   const popupScript = readFileSync(join(projectRoot, "popup/popup.js"), "utf8");
@@ -85,7 +89,7 @@ test("demo and extension expose five matching divider colors with text color as 
     for (const name of Object.keys(colors)) {
       assert.match(markup, new RegExp(`name="divider-color" value="${name}"`, "u"));
     }
-    assert.match(markup, /name="divider-color" value="text" checked/u);
+    assert.match(markup, /name="divider-color" value="red" checked/u);
   }
 
   for (const script of [demo, popupScript, contentScript]) {
@@ -95,7 +99,7 @@ test("demo and extension expose five matching divider colors with text color as 
     assert.match(script, /drop-shadow/u);
   }
   for (const script of [popupScript, contentScript, backgroundScript]) {
-    assert.match(script, /dividerColor:\s*"text"/u);
+    assert.match(script, /dividerColor:\s*"red"/u);
   }
   assert.match(contentScript, /changes\.dividerColor/u);
   assert.match(popupScript, /chrome\.storage\.sync\.set\(\{ dividerColor:/u);
