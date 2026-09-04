@@ -10,7 +10,7 @@ const DEFAULT_PROCESSED_DIR = join(SCRIPT_DIR, "data", "processed");
 const SEGMENTER = new Intl.Segmenter("zh-CN", { granularity: "word" });
 const HAN_CHARACTER = /\p{Script=Han}/u;
 const PROXY_PUNCTUATION = new Set([
-  "，", ",", "。", ".", "！", "!", "？", "?", "；", ";", "、",
+  "，", ",", "。", ".", "！", "!", "？", "?", "；", ";", "：", ":", "、", "…",
 ]);
 const LENGTH_BUCKET_MAXIMUMS = [8, 16, 32];
 
