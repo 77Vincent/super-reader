@@ -59,7 +59,7 @@ npm run model:export
 
 ```text
 manifest.json        Chrome Manifest V3 配置
-src/boundary-model-data.js  浏览器端模型权重与词表
+src/boundary-model-data.js  浏览器端模型权重与字符表
 src/model-backend.js        无依赖 CNN 推理后端
 src/chunker.js              标点分句、递归边界树与视觉分块
 src/content.js       页面文本处理、恢复与动态内容监听

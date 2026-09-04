@@ -15,9 +15,11 @@ quality claim.
 - validation and test retain their natural position distributions
 - architecture: 3 residual blocks, 2 convolutions per block, kernel 3,
   dilation 1, 48 channels
+- candidate positions: every adjacent Han-character gap
+- non-Han policy: excluded before model input
 - model parameters: 252,068
 - vocabulary size: 4,096
-- maximum sequence length: 301 words
+- maximum sequence length: 365 Han characters
 - train / validation / test pairs: 40,000 / 8,000 / 8,000
 - each split contains equal samples from news, academic, encyclopedia, and
   dialogue sources
@@ -28,38 +30,40 @@ quality claim.
   characters; the longest side is 459 characters
 - dynamic batching: power-of-two length buckets, per-batch padding, at most 64
   examples and a target budget of 2,048 padded tokens
-- training padding efficiency: 73.29% instead of 4.67% under global
-  301-token padding
+- training padding efficiency: 73.09%
 - training epochs: 3
 
 ## Result
 
 | Metric | Value |
 | --- | ---: |
-| Best validation epoch | 3 |
-| Validation top-1 accuracy | 54.98% |
-| Validation MRR | 70.11% |
-| Test top-1 accuracy | 55.88% |
-| Test MRR | 70.62% |
-| Random-choice test baseline | 11.37% |
-| Always choose center | 19.99% |
-| Train-set length lookup | 14.55% |
+| Best validation epoch | 2 |
+| Validation top-1 accuracy | 52.36% |
+| Validation MRR | 66.98% |
+| Test top-1 accuracy | 53.01% |
+| Test MRR | 67.60% |
+| Test mean absolute boundary error | 2.71 chars |
+| Test within ±1 character | 57.78% |
+| Test within ±2 characters | 67.50% |
+| Random-choice test baseline | 6.83% |
+| Always choose center | 14.84% |
+| Train-set length lookup | 8.06% |
 
 Test top-1 accuracy by domain:
 
 | Domain | Accuracy |
 | --- | ---: |
-| Academic | 58.70% |
-| Dialogue | 66.60% |
-| Encyclopedia | 48.80% |
-| News | 49.40% |
+| Academic | 55.25% |
+| Dialogue | 63.75% |
+| Encyclopedia | 47.85% |
+| News | 45.20% |
 
-Increasing the training set from 6,144 to 40,000 pairs raised test accuracy
-from 45.57% to 55.88%, but did not reach the 70% target within three epochs.
-The CNN exceeded both the center and train-length lookup baselines, so its
-result is not explained by those two length shortcuts alone. Dialogue reached
-66.60%, while news and encyclopedia remained below 50%, making those domains
-the main limit on aggregate accuracy.
+This run replaces word-gap candidates with every adjacent Han-character gap.
+It used an average of 20.23 test candidates and reached 53.01% exact accuracy,
+well above the 6.83% random, 14.84% center, and 8.06% length-lookup baselines.
+Validation peaked at epoch 2 and declined slightly at epoch 3, so the exported
+browser model uses the restored epoch-2 checkpoint. Dialogue remained the
+strongest domain, while news and encyclopedia remained below 50%.
 
 Generated checkpoints and detailed metrics live in the ignored
 `training/artifacts/` directory and can be recreated with:

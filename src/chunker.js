@@ -42,14 +42,6 @@
     return runs;
   }
 
-  function createSegmenter(locale) {
-    if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
-      return new Intl.Segmenter(locale || "zh-CN", { granularity: "word" });
-    }
-
-    return null;
-  }
-
   function tokenizeHanCharacters(text) {
     const tokens = [];
     let index = 0;
@@ -220,7 +212,6 @@
     createBoundaryTree,
     chunkText,
     chunkTextByClause,
-    createSegmenter,
     tokenizeHanCharacters,
     splitUnderlineRuns,
     splitClauses,

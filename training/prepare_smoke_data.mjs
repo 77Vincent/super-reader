@@ -328,9 +328,9 @@ function parseArguments(argv) {
     outputDir: DEFAULT_PROCESSED_DIR,
     tokenization: "character",
     docsPerDomain: 0,
-    trainPerDomain: 10000,
-    validationPerDomain: 2000,
-    testPerDomain: 2000,
+    trainPerDomain: 0,
+    validationPerDomain: 0,
+    testPerDomain: 0,
     positionBins: 10,
     seed: 2026090405,
   };
@@ -381,6 +381,11 @@ async function main() {
   });
 
   const deduplicated = filterAndDeduplicate(loaded);
+  const candidatesBySplitAndDomain = {
+    train: new Map(),
+    validation: new Map(),
+    test: new Map(),
+  };
   const samplesBySplitAndDomain = {
     train: new Map(),
     validation: new Map(),
@@ -399,16 +404,32 @@ async function main() {
       const candidates = partition.flatMap((document) => buildAdjacentSamples(document, {
         tokenization: options.tokenization,
       }));
-      const requested = options[`${split}PerDomain`];
+      candidatesBySplitAndDomain[split].set(domain, candidates);
+    }
+  }
+
+  const availableSampleCounts = {};
+  const selectedSamplesPerDomain = {};
+  for (const [split, byDomain] of Object.entries(candidatesBySplitAndDomain)) {
+    availableSampleCounts[split] = Object.fromEntries(
+      Array.from(byDomain, ([domain, candidates]) => [domain, candidates.length]),
+    );
+    const requested = options[`${split}PerDomain`];
+    const selectionCount = requested > 0
+      ? requested
+      : Math.min(...Array.from(byDomain.values(), (candidates) => candidates.length));
+    selectedSamplesPerDomain[split] = selectionCount;
+
+    for (const [domain, candidates] of byDomain) {
       const selectionSeed = `${options.seed}:${split}:${domain}`;
       const selected = split === "train"
         ? selectPositionBalancedSamples(
           candidates,
-          requested,
+          selectionCount,
           selectionSeed,
           options.positionBins,
         )
-        : selectDeterministicSamples(candidates, requested, selectionSeed);
+        : selectDeterministicSamples(candidates, selectionCount, selectionSeed);
       samplesBySplitAndDomain[split].set(
         domain,
         selected,
@@ -448,6 +469,8 @@ async function main() {
     sources: SOURCES.map(({ domain, url, sha256 }) => ({ domain, url, sha256 })),
     duplicate_documents_removed: deduplicated.duplicateCount,
     documents: documentCounts,
+    available_samples: availableSampleCounts,
+    selected_samples_per_domain: selectedSamplesPerDomain,
     samples: sampleCounts,
     relative_position_histograms: Object.fromEntries(
       Object.entries(samplesBySplit).map(([split, samples]) => [

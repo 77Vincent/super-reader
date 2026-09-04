@@ -1,11 +1,11 @@
 # Boundary model smoke test
 
 This experiment checks the complete weak-supervision pipeline without claiming
-production model quality. Its default dataset contains 40,000 training pairs
-and 8,000 pairs in each evaluation split, balanced equally across four domains.
+production model quality. Its default dataset uses the maximum balanced number
+of pairs available in each split, with equal counts across all four domains.
 All eligible source documents participate in the document-level split; `0` for
 `--docs-per-domain` means that no document-count cap is applied. Training runs
-for three epochs by default and retains the checkpoint with the best validation
+for two epochs by default and retains the checkpoint with the best validation
 accuracy.
 
 ## Architecture
@@ -55,9 +55,12 @@ checksums are saved in `training/data/processed/summary.json`.
 npm run smoke:model
 ```
 
-The default production run uses character tokenization: 40,000 training pairs,
-8,000 validation pairs, 8,000 test pairs, and three epochs. Every adjacent Han
-character gap is a candidate; non-Han content is excluded from model input.
+The default production run uses character tokenization, every available pair
+that fits the four-domain balance constraint, and two epochs. Passing `0` for
+any `--train-per-domain`, `--validation-per-domain`, or `--test-per-domain`
+selects the largest count supported by the smallest domain in that split.
+Every adjacent Han-character gap is a candidate; non-Han content is excluded
+from model input.
 
 The command installs the pinned 751 KB `tinygrad` wheel under the ignored
 `training/.deps/` directory. To prepare and train separately:
