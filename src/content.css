@@ -1,0 +1,15 @@
+.super-reader-chunk {
+  text-decoration-thickness: 3px !important;
+  text-underline-offset: 0.2em !important;
+  text-decoration-skip-ink: auto !important;
+}
+
+.super-reader-chunk--a {
+  text-decoration-line: underline !important;
+  text-decoration-color: currentColor !important;
+  text-decoration-style: solid !important;
+}
+
+.super-reader-chunk--b {
+  text-decoration-line: none !important;
+}

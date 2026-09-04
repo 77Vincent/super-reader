@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Super Reader Browser Fixture</title>
+    <link rel="stylesheet" href="../src/content.css">
+    <style>
+      body {
+        max-width: 720px;
+        margin: 48px auto;
+        padding: 0 24px;
+        color: #1e293b;
+        font: 20px/2 "PingFang SC", sans-serif;
+      }
+
+      button {
+        margin-right: 8px;
+        padding: 8px 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>浏览器集成测试</h1>
+    <p id="sample">我一直在思考明天早上的早餐吃什么</p>
+    <div id="dynamic"></div>
+    <button id="add" type="button">添加动态文本</button>
+    <button id="disable" type="button">关闭效果</button>
+
+    <script>
+      const fixtureListeners = [];
+      const fixtureSettings = {
+        enabled: true,
+        targetLength: 7,
+      };
+
+      window.chrome = {
+        runtime: {
+          onMessage: { addListener() {} },
+        },
+        storage: {
+          sync: {
+            get(defaults, callback) {
+              callback({ ...defaults, ...fixtureSettings });
+            },
+          },
+          onChanged: {
+            addListener(listener) {
+              fixtureListeners.push(listener);
+            },
+          },
+        },
+      };
+
+      window.updateFixtureSettings = (changes) => {
+        Object.assign(fixtureSettings, changes);
+        const storageChanges = Object.fromEntries(
+          Object.entries(changes).map(([key, newValue]) => [key, { newValue }]),
+        );
+        fixtureListeners.forEach((listener) => listener(storageChanges, "sync"));
+      };
+    </script>
+    <script src="../src/chunker.js"></script>
+    <script src="../src/content.js"></script>
+    <script>
+      document.querySelector("#add").addEventListener("click", () => {
+        const paragraph = document.createElement("p");
+        paragraph.id = "dynamic-sample";
+        paragraph.textContent = "动态加载的中文内容也应该自动完成视觉分块。";
+        document.querySelector("#dynamic").append(paragraph);
+      });
+
+      document.querySelector("#disable").addEventListener("click", () => {
+        window.updateFixtureSettings({ enabled: false });
+      });
+    </script>
+  </body>
+</html>

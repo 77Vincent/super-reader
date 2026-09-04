@@ -1,0 +1,9 @@
+{
+  "name": "super-reader",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension for alternating-underline Chinese phrase chunking",
+  "scripts": {
+    "test": "node --test"
+  }
+}
