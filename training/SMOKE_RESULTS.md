@@ -15,49 +15,51 @@ quality claim.
 - validation and test retain their natural position distributions
 - architecture: 3 residual blocks, 2 convolutions per block, kernel 3,
   dilation 1, 48 channels
-- model parameters: 219,434
-- vocabulary size: 3,430
-- maximum sequence length: 120 words
-- train / validation / test pairs: 512 / 128 / 128
+- model parameters: 252,068
+- vocabulary size: 4,096
+- maximum sequence length: 301 words
+- train / validation / test pairs: 40,000 / 8,000 / 8,000
 - each split contains equal samples from news, academic, encyclopedia, and
   dialogue sources
 - split unit: source document, before adjacent-pair generation
 - global exact-document deduplication: 18,315 duplicates removed
 - document leakage check: passed
-- generated-data audit: 43 training pairs contain a side longer than 32
-  characters; the longest side is 187 characters
+- generated-data audit: 2,479 training pairs contain a side longer than 32
+  characters; the longest side is 459 characters
 - dynamic batching: power-of-two length buckets, per-batch padding, at most 64
   examples and a target budget of 2,048 padded tokens
-- training padding efficiency: 74.51% instead of 12.18% under global
-  120-token padding
+- training padding efficiency: 73.29% instead of 4.67% under global
+  301-token padding
+- training epochs: 3
 
 ## Result
 
 | Metric | Value |
 | --- | ---: |
-| Best validation epoch | 5 |
-| Validation top-1 accuracy | 23.44% |
-| Validation MRR | 42.09% |
-| Test top-1 accuracy | 26.56% |
-| Test MRR | 45.40% |
-| Random-choice test baseline | 12.34% |
-| Always choose center | 13.28% |
-| Train-set length lookup | 14.84% |
+| Best validation epoch | 3 |
+| Validation top-1 accuracy | 54.98% |
+| Validation MRR | 70.11% |
+| Test top-1 accuracy | 55.88% |
+| Test MRR | 70.62% |
+| Random-choice test baseline | 11.37% |
+| Always choose center | 19.99% |
+| Train-set length lookup | 14.55% |
 
 Test top-1 accuracy by domain:
 
 | Domain | Accuracy |
 | --- | ---: |
-| Academic | 37.50% |
-| Dialogue | 25.00% |
-| Encyclopedia | 21.88% |
-| News | 21.88% |
+| Academic | 58.70% |
+| Dialogue | 66.60% |
+| Encyclopedia | 48.80% |
+| News | 49.40% |
 
-Training loss reached approximately zero after only a few epochs while
-validation loss increased. The 512-pair smoke set is therefore far too small
-for a deployable model. In this run the CNN exceeded both the center and
-train-length lookup baselines, so its result is not explained by those two
-length shortcuts alone; more data and repeated seeds are still required.
+Increasing the training set from 6,144 to 40,000 pairs raised test accuracy
+from 45.57% to 55.88%, but did not reach the 70% target within three epochs.
+The CNN exceeded both the center and train-length lookup baselines, so its
+result is not explained by those two length shortcuts alone. Dialogue reached
+66.60%, while news and encyclopedia remained below 50%, making those domains
+the main limit on aggregate accuracy.
 
 Generated checkpoints and detailed metrics live in the ignored
 `training/artifacts/` directory and can be recreated with:

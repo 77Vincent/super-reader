@@ -68,13 +68,15 @@
 
     const fragment = document.createDocumentFragment();
     chunks.forEach((chunk) => {
-      const runs = chunk.underlined
-        ? SuperReaderChunker.splitUnderlineRuns(chunk.text)
-        : [{ text: chunk.text, underlinable: false }];
+      const runs = SuperReaderChunker.splitUnderlineRuns(chunk.text);
 
       runs.forEach((run) => {
+        if (!run.underlinable) {
+          fragment.append(document.createTextNode(run.text));
+          return;
+        }
         const span = document.createElement("span");
-        const variant = run.underlinable ? "a" : "b";
+        const variant = chunk.underlined ? "a" : "b";
         span.className = `super-reader-chunk super-reader-chunk--${variant}`;
         span.dataset.superReaderChunk = variant;
         span.textContent = run.text;

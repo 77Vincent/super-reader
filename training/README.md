@@ -1,7 +1,12 @@
 # Boundary model smoke test
 
 This experiment checks the complete weak-supervision pipeline without claiming
-production model quality.
+production model quality. Its default dataset contains 40,000 training pairs
+and 8,000 pairs in each evaluation split, balanced equally across four domains.
+All eligible source documents participate in the document-level split; `0` for
+`--docs-per-domain` means that no document-count cap is applied. Training runs
+for three epochs by default and retains the checkpoint with the best validation
+accuracy.
 
 ## Architecture
 

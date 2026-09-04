@@ -1,23 +1,26 @@
 (function exposeChunker(root, factory) {
-  const api = factory();
+  const modelBackend = typeof module === "object" && module.exports
+    ? require("./model-backend.js")
+    : root.SuperReaderModelBackend;
+  const api = factory(modelBackend);
 
   if (typeof module === "object" && module.exports) {
     module.exports = api;
   }
 
   root.SuperReaderChunker = api;
-})(globalThis, function createChunker() {
+})(globalThis, function createChunker(modelBackend) {
   "use strict";
 
   const CLAUSE_END_CHARACTER = /[，,、。！？!?；;：:\n…]/u;
   const OPENING_DOUBLE_QUOTE = /[“]/u;
   const CLOSING_DOUBLE_QUOTE = /[”]/u;
   const TRAILING_CLOSER = /[”’」』）》】〉〕〗〙〛"'）)\]]/u;
-  const COUNTABLE_CHARACTER = /[\p{L}\p{N}]/u;
+  const HAN_CHARACTER = /\p{Script=Han}/u;
 
   function visualLength(text) {
     return Array.from(text).reduce(
-      (length, character) => length + (COUNTABLE_CHARACTER.test(character) ? 1 : 0),
+      (length, character) => length + (HAN_CHARACTER.test(character) ? 1 : 0),
       0,
     );
   }
@@ -26,7 +29,7 @@
     const runs = [];
 
     for (const character of Array.from(text)) {
-      const underlinable = COUNTABLE_CHARACTER.test(character);
+      const underlinable = HAN_CHARACTER.test(character);
       const previous = runs[runs.length - 1];
 
       if (previous?.underlinable === underlinable) {
@@ -48,17 +51,18 @@
   }
 
   function tokenize(text, segmenter) {
-    if (!segmenter) {
-      return Array.from(text, (segment) => ({
-        segment,
-        isWordLike: COUNTABLE_CHARACTER.test(segment),
-      }));
-    }
+    if (!segmenter) return [];
 
-    return Array.from(segmenter.segment(text), ({ segment, isWordLike }) => ({
-      segment,
-      isWordLike: Boolean(isWordLike),
-    }));
+    let fallbackIndex = 0;
+    return Array.from(segmenter.segment(text), ({ segment, index, isWordLike }) => {
+      const tokenIndex = Number.isInteger(index) ? index : fallbackIndex;
+      fallbackIndex = tokenIndex + segment.length;
+      return {
+        segment,
+        index: tokenIndex,
+        isWordLike: Boolean(isWordLike),
+      };
+    });
   }
 
   function splitClauses(text) {
@@ -130,144 +134,65 @@
     return clauses;
   }
 
-  function buildStableUnits(tokens) {
-    const units = [];
-
-    const isSingleCharacterWord = (token) => (
-      token?.isWordLike && visualLength(token.segment) === 1
-    );
-    const isStableWord = (token) => (
-      token?.isWordLike && visualLength(token.segment) >= 2
-    );
-    const pushUnit = (unitTokens) => {
-      units.push({
-        text: unitTokens.map((token) => token.segment).join(""),
-        length: unitTokens.reduce(
-          (length, token) => length + visualLength(token.segment),
-          0,
-        ),
-        wordCount: unitTokens.filter((token) => token.isWordLike).length,
-      });
-    };
-
-    for (let index = 0; index < tokens.length; index += 1) {
-      const token = tokens[index];
-
-      if (!token.isWordLike) {
-        if (units.length === 0) {
-          pushUnit([token]);
-        } else {
-          units[units.length - 1].text += token.segment;
-        }
-        continue;
-      }
-
-      if (!isSingleCharacterWord(token)) {
-        pushUnit([token]);
-        continue;
-      }
-
-      let runEnd = index;
-      while (
-        runEnd < tokens.length &&
-        isSingleCharacterWord(tokens[runEnd])
-      ) {
-        runEnd += 1;
-      }
-
-      const runLength = runEnd - index;
-      const hasStableWordBefore = isStableWord(tokens[index - 1]);
-      const hasStableWordAfter = isStableWord(tokens[runEnd]);
-      const shouldMergeRun = (
-        runLength >= 2 &&
-        runLength < 4 &&
-        hasStableWordBefore &&
-        hasStableWordAfter
-      );
-
-      if (shouldMergeRun) {
-        pushUnit(tokens.slice(index, runEnd));
-      } else {
-        tokens.slice(index, runEnd).forEach((singleToken) => {
-          pushUnit([singleToken]);
-        });
-      }
-
-      index = runEnd - 1;
+  function createBoundaryTree(wordTokens, scores) {
+    const lengthPrefix = [0];
+    for (const token of wordTokens) {
+      lengthPrefix.push(lengthPrefix.at(-1) + visualLength(token.segment));
     }
 
-    return units;
+    function createNode(start, end) {
+      const node = {
+        start,
+        end,
+        length: lengthPrefix[end] - lengthPrefix[start],
+        text: wordTokens.slice(start, end).map((token) => token.segment).join(""),
+      };
+      if (end - start <= 1) return node;
+
+      let boundary = start;
+      for (let gap = start + 1; gap < end - 1; gap += 1) {
+        if (scores[gap] > scores[boundary]) boundary = gap;
+      }
+      node.boundaryAfter = boundary;
+      node.boundaryScore = scores[boundary];
+      node.left = createNode(start, boundary + 1);
+      node.right = createNode(boundary + 1, end);
+      return node;
+    }
+
+    return createNode(0, wordTokens.length);
+  }
+
+  function collectTargetRanges(node, targetLength, ranges) {
+    if (!node.left || !node.right || node.length <= targetLength) {
+      ranges.push({ start: node.start, end: node.end });
+      return;
+    }
+    collectTargetRanges(node.left, targetLength, ranges);
+    collectTargetRanges(node.right, targetLength, ranges);
   }
 
   function chunkClause(text, targetLength, segmenter) {
-    const preferredMinimum = Math.max(2, targetLength - 1);
-    const units = buildStableUnits(tokenize(text, segmenter));
-    const chunks = [];
-    let buffer = "";
-    let bufferLength = 0;
-    let bufferWordCount = 0;
-
-    const flush = () => {
-      if (!buffer) return;
-      chunks.push({
-        text: buffer,
-        length: bufferLength,
-        wordCount: bufferWordCount,
-      });
-      buffer = "";
-      bufferLength = 0;
-      bufferWordCount = 0;
-    };
-
-    for (const unit of units) {
-      const projectedLength = bufferLength + unit.length;
-      const flexibleMaximum = targetLength + Math.ceil(targetLength / 3);
-
-      if (
-        unit.wordCount > 0 &&
-        bufferLength > 0 &&
-        (
-          bufferLength >= targetLength ||
-          projectedLength > flexibleMaximum ||
-          (
-            bufferLength >= preferredMinimum &&
-            projectedLength > targetLength
-          )
-        )
-      ) {
-        flush();
-      }
-
-      buffer += unit.text;
-      bufferLength += unit.length;
-      bufferWordCount += unit.wordCount;
+    const wordTokens = tokenize(text, segmenter).filter(
+      (token) => token.isWordLike && HAN_CHARACTER.test(token.segment),
+    );
+    if (wordTokens.length < 2) return [text];
+    if (!modelBackend || typeof modelBackend.scoreTokens !== "function") {
+      throw new Error("Super Reader model backend must load before the chunker");
     }
 
-    flush();
+    const scores = modelBackend.scoreTokens(wordTokens.map((token) => token.segment));
+    const tree = createBoundaryTree(wordTokens, scores);
+    const ranges = [];
+    collectTargetRanges(tree, targetLength, ranges);
 
-    if (chunks.length > 1) {
-      const tail = chunks[chunks.length - 1];
-      const previous = chunks[chunks.length - 2];
-      const minimumTailLength = Math.max(2, Math.floor(targetLength / 2));
-      const minimumSingleWordLength = Math.max(2, Math.ceil(targetLength / 2));
-      const isOrphan = (
-        tail.length < minimumTailLength ||
-        (
-          tail.wordCount === 1 &&
-          tail.length < minimumSingleWordLength
-        )
-      );
-      const mergedLength = previous.length + tail.length;
-
-      if (isOrphan && mergedLength <= targetLength + preferredMinimum) {
-        previous.text += tail.text;
-        previous.length = mergedLength;
-        previous.wordCount += tail.wordCount;
-        chunks.pop();
-      }
-    }
-
-    return chunks.map((chunk) => chunk.text);
+    return ranges.map((range, index) => {
+      const start = index === 0 ? 0 : wordTokens[range.start].index;
+      const end = index === ranges.length - 1
+        ? text.length
+        : wordTokens[ranges[index + 1].start].index;
+      return text.slice(start, end);
+    });
   }
 
   function chunkTextByClause(text, options = {}) {
@@ -288,14 +213,18 @@
   }
 
   function buildVisualChunks(text, options = {}) {
-    return chunkText(text, options).map((chunk, index) => ({
-      text: chunk,
-      underlined: index % 2 === 0,
-    }));
+    let visualIndex = 0;
+    return chunkText(text, options).map((chunk) => {
+      const processed = HAN_CHARACTER.test(chunk);
+      const underlined = processed && visualIndex % 2 === 0;
+      if (processed) visualIndex += 1;
+      return { text: chunk, underlined, processed };
+    });
   }
 
   return Object.freeze({
     buildVisualChunks,
+    createBoundaryTree,
     chunkText,
     chunkTextByClause,
     createSegmenter,

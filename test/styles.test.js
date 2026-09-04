@@ -27,4 +27,17 @@ test("HTML demo uses the same underlined and plain rhythm", () => {
   assert.match(html, /\.reader-chunk--a\s*\{[^}]*text-decoration-color:\s*currentColor/su);
   assert.match(html, /splitUnderlineRuns\(chunk\.text\)/u);
   assert.doesNotMatch(html, /data-palette|palette-button|下划线样式/u);
+  assert.ok(html.indexOf("src/boundary-model-data.js") < html.indexOf("src/model-backend.js"));
+  assert.ok(html.indexOf("src/model-backend.js") < html.indexOf("src/chunker.js"));
+});
+
+test("extension and demo load the same model backend", () => {
+  const manifest = JSON.parse(readFileSync(join(projectRoot, "manifest.json"), "utf8"));
+
+  assert.deepEqual(manifest.content_scripts[0].js, [
+    "src/boundary-model-data.js",
+    "src/model-backend.js",
+    "src/chunker.js",
+    "src/content.js",
+  ]);
 });

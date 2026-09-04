@@ -4,25 +4,11 @@ const {
   buildVisualChunks,
   chunkText,
   chunkTextByClause,
+  createBoundaryTree,
   splitUnderlineRuns,
   splitClauses,
   visualLength,
 } = require("../src/chunker.js");
-
-function createFixedSegmenter(singletons) {
-  return {
-    segment() {
-      return [
-        { segment: "系统", isWordLike: true },
-        { segment: "能够", isWordLike: true },
-        ...singletons.map((segment) => ({ segment, isWordLike: true })),
-        { segment: "稳定", isWordLike: true },
-        { segment: "运行", isWordLike: true },
-        { segment: "。", isWordLike: false },
-      ];
-    },
-  };
-}
 
 test("combines Chinese words into readable chunks without splitting words", () => {
   const chunks = chunkText("我一直在思考明天早上的早餐吃什么", { targetLength: 7 });
@@ -43,18 +29,17 @@ test("splits at punctuation before making visual chunks", () => {
   const text = "在左侧输入一段中文，看看它如何被重新组织。";
   const clauses = chunkTextByClause(text, { targetLength: 7 });
 
-  assert.deepEqual(clauses, [
-    ["在左侧输入一段中文，"],
-    ["看看它如何被", "重新组织。"],
-  ]);
+  assert.equal(clauses.length, 2);
+  assert.ok(clauses[0].at(-1).endsWith("，"));
+  assert.ok(clauses[1].at(-1).endsWith("。"));
   assert.equal(clauses.flat().join(""), text);
 });
 
-test("does not leave a single word stranded before punctuation", () => {
+test("never joins text across a punctuation boundary", () => {
   const chunks = chunkText("在左侧输入一段中文，", { targetLength: 7 });
 
-  assert.deepEqual(chunks, ["在左侧输入一段中文，"]);
-  assert.ok(!chunks.some((chunk) => chunk === "中文，"));
+  assert.equal(chunks.join(""), "在左侧输入一段中文，");
+  assert.ok(chunks.at(-1).endsWith("，"));
 });
 
 test("keeps closing quotes with the punctuation-delimited clause", () => {
@@ -73,11 +58,10 @@ test("treats paired double quotes as structural boundaries", () => {
     "“连续单字合并”",
     "之前执行。",
   ]);
-  assert.deepEqual(chunkTextByClause(text, { targetLength: 2 }), [
-    ["必须在"],
-    ["“连续", "单字", "合并”"],
-    ["之前", "执行。"],
-  ]);
+  const clauses = chunkTextByClause(text, { targetLength: 2 });
+  assert.equal(clauses.length, 3);
+  assert.equal(clauses.flat().join(""), text);
+  assert.equal(clauses[1].join(""), "“连续单字合并”");
 });
 
 test("treats straight double quotes as structural boundaries", () => {
@@ -109,35 +93,52 @@ test("punctuation ends one visual block before alternation continues", () => {
   );
 });
 
-test("merges short singleton runs between stable word boundaries", () => {
-  const text = "阅读不是更快的速度，而是获得更好的体验。";
-  const clauses = chunkTextByClause(text, { targetLength: 5 });
-  const boundaries = clauses.flat().join("|");
+test("builds a full recursive tree from ranked word gaps", () => {
+  const tokens = ["甲", "乙", "丙", "丁"].map((segment, index) => ({
+    segment,
+    index,
+    isWordLike: true,
+  }));
+  const tree = createBoundaryTree(tokens, [0.2, 0.9, 0.4]);
 
-  assert.equal(clauses.flat().join(""), text);
-  assert.doesNotMatch(boundaries, /更\|快|快\|的/u);
-  assert.ok(boundaries.includes("更快的"));
+  assert.equal(tree.boundaryAfter, 1);
+  assert.equal(tree.left.text, "甲乙");
+  assert.equal(tree.right.text, "丙丁");
+  assert.equal(tree.left.left.text, "甲");
+  assert.equal(tree.left.right.text, "乙");
 });
 
-test("does not rely on a vocabulary list for singleton-run merging", () => {
-  const segmenter = createFixedSegmenter(["甲", "乙", "丙"]);
-  const boundaries = chunkText("系统能够甲乙丙稳定运行。", {
-    targetLength: 3,
-    segmenter,
-  }).join("|");
+test("only emits boundaries exposed by the browser word segmenter", () => {
+  const text = "我一直在思考明天早上的早餐吃什么";
+  const segmenter = new Intl.Segmenter("zh-CN", { granularity: "word" });
+  const validBoundaries = new Set(
+    Array.from(segmenter.segment(text), (item) => item.index).slice(1),
+  );
+  const chunks = chunkText(text, { targetLength: 2, segmenter });
+  let offset = 0;
 
-  assert.doesNotMatch(boundaries, /甲\|乙|乙\|丙/u);
-  assert.ok(boundaries.includes("甲乙丙"));
+  chunks.slice(0, -1).forEach((chunk) => {
+    offset += chunk.length;
+    assert.ok(validBoundaries.has(offset), `unexpected boundary at ${offset}`);
+  });
+  assert.equal(chunks.join(""), text);
 });
 
-test("keeps four-or-more singleton tokens available for normal chunking", () => {
-  const segmenter = createFixedSegmenter(["甲", "乙", "丙", "丁"]);
-  const boundaries = chunkText("系统能够甲乙丙丁稳定运行。", {
-    targetLength: 3,
-    segmenter,
-  }).join("|");
+test("abandons a hard cut when the remaining span is one segmenter word", () => {
+  const text = "超长而不可拆分的浏览器词";
+  const segmenter = {
+    segment() {
+      return [{ segment: text, index: 0, isWordLike: true }];
+    },
+  };
 
-  assert.match(boundaries, /[甲乙丙丁]\|[甲乙丙丁]/u);
+  assert.deepEqual(chunkText(text, { targetLength: 2, segmenter }), [text]);
+});
+
+test("abandons chunking when browser word segmentation is unavailable", () => {
+  const text = "无法确认词语边界时保留整段文字";
+
+  assert.deepEqual(chunkText(text, { targetLength: 2, segmenter: null }), [text]);
 });
 
 test("supports a two-character minimum target without merging valid words", () => {

@@ -236,15 +236,16 @@ function filterAndDeduplicate(documentsByDomain) {
 }
 
 function partitionDocuments(documents, docsPerDomain, seed) {
+  const selectionCount = docsPerDomain > 0 ? docsPerDomain : documents.length;
   const selected = [...documents]
     .sort((left, right) => (
       hashText(`${seed}:${left.fingerprint}`)
         .localeCompare(hashText(`${seed}:${right.fingerprint}`))
     ))
-    .slice(0, docsPerDomain);
+    .slice(0, selectionCount);
 
-  if (selected.length < docsPerDomain) {
-    throw new Error(`Only ${selected.length} eligible documents; need ${docsPerDomain}`);
+  if (selected.length < selectionCount) {
+    throw new Error(`Only ${selected.length} eligible documents; need ${selectionCount}`);
   }
 
   const trainEnd = Math.floor(selected.length * 0.8);
@@ -315,10 +316,10 @@ function positionHistogram(samples, binCount) {
 
 function parseArguments(argv) {
   const options = {
-    docsPerDomain: 400,
-    trainPerDomain: 128,
-    validationPerDomain: 32,
-    testPerDomain: 32,
+    docsPerDomain: 0,
+    trainPerDomain: 10000,
+    validationPerDomain: 2000,
+    testPerDomain: 2000,
     positionBins: 10,
     seed: 2026090405,
   };

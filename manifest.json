@@ -24,7 +24,12 @@
     {
       "matches": ["http://*/*", "https://*/*", "file:///*"],
       "css": ["src/content.css"],
-      "js": ["src/chunker.js", "src/content.js"],
+      "js": [
+        "src/boundary-model-data.js",
+        "src/model-backend.js",
+        "src/chunker.js",
+        "src/content.js"
+      ],
       "run_at": "document_idle"
     }
   ]
