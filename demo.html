@@ -389,6 +389,16 @@
         font-weight: 700;
       }
 
+      .field-label output {
+        color: var(--accent);
+      }
+
+      input[type="range"] {
+        width: 100%;
+        margin: 0;
+        accent-color: var(--accent);
+      }
+
       textarea {
         display: block;
         width: 100%;
@@ -457,11 +467,10 @@
       .reader-chunk--separated::before {
         display: inline-block;
         width: 0;
-        height: 0.82em;
+        height: 1em;
         margin: 0 0.08em;
-        border-inline-start: 1px solid currentColor;
-        opacity: 0.38;
-        vertical-align: -0.08em;
+        border-inline-start: var(--reader-divider-width, 2px) solid currentColor;
+        vertical-align: -0.1em;
         content: "";
       }
 
@@ -719,6 +728,14 @@
                 </div>
               </div>
 
+              <div class="field">
+                <label class="field-label" for="divider-width">
+                  <span>分割线粗细</span>
+                  <output id="divider-output" for="divider-width">2 px</output>
+                </label>
+                <input id="divider-width" type="range" min="1" max="4" step="0.5" value="2">
+              </div>
+
             </aside>
 
             <div class="reader-stage">
@@ -760,6 +777,8 @@
         "use strict";
 
         const sourceInput = document.querySelector("#source-text");
+        const dividerInput = document.querySelector("#divider-width");
+        const dividerOutput = document.querySelector("#divider-output");
         const readerToggle = document.querySelector("#reader-toggle");
         const toggleCopy = document.querySelector("#toggle-copy");
         const readerOutput = document.querySelector("#reader-output");
@@ -773,6 +792,11 @@
           });
 
           readerOutput.replaceChildren();
+          readerOutput.style.setProperty(
+            "--reader-divider-width",
+            dividerInput.value + "px",
+          );
+          dividerOutput.textContent = dividerInput.value + " px";
           chunks.forEach(function appendChunk(chunk) {
             if (!chunk.processed) {
               readerOutput.append(document.createTextNode(chunk.text));
@@ -797,6 +821,7 @@
         }
 
         sourceInput.addEventListener("input", render);
+        dividerInput.addEventListener("input", render);
         readerToggle.addEventListener("change", render);
 
         sampleButtons.forEach(function bindSample(button) {

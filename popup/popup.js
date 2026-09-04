@@ -2,15 +2,27 @@
 
 const DEFAULTS = {
   enabled: false,
+  dividerWidth: 2,
 };
 
 const enabledInput = document.querySelector("#enabled");
+const dividerInput = document.querySelector("#divider-width");
+const dividerOutput = document.querySelector("#divider-output");
 const switchState = document.querySelector("#switch-state");
 const pageStatus = document.querySelector("#page-status");
 const settingsPanel = document.querySelector(".settings");
+const preview = document.querySelector(".preview");
+
+function renderDividerWidth(value) {
+  const width = Number(value);
+  dividerInput.value = width;
+  dividerOutput.textContent = `${width} px`;
+  preview.style.setProperty("--super-reader-divider-width", `${width}px`);
+}
 
 function render(settings) {
   enabledInput.checked = settings.enabled;
+  renderDividerWidth(settings.dividerWidth);
   switchState.textContent = settings.enabled ? "已开启" : "已关闭";
   settingsPanel.setAttribute("aria-disabled", String(!settings.enabled));
 }
@@ -73,6 +85,15 @@ enabledInput.addEventListener("change", async () => {
   await chrome.storage.sync.set({ enabled });
   switchState.textContent = enabled ? "已开启" : "已关闭";
   settingsPanel.setAttribute("aria-disabled", String(!enabled));
+  await ensureCurrentPageReady();
+});
+
+dividerInput.addEventListener("input", () => {
+  renderDividerWidth(dividerInput.value);
+});
+
+dividerInput.addEventListener("change", async () => {
+  await chrome.storage.sync.set({ dividerWidth: Number(dividerInput.value) });
   await ensureCurrentPageReady();
 });
 

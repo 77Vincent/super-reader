@@ -2,6 +2,7 @@
 
 const DEFAULTS = {
   enabled: false,
+  dividerWidth: 2,
 };
 
 function updateBadge(enabled) {

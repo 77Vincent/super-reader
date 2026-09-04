@@ -135,7 +135,27 @@ header p {
   padding: 15px;
 }
 
+.range-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.range-label output {
+  color: #4f46e5;
+}
+
+#divider-width {
+  width: 100%;
+  margin: 0;
+  accent-color: #4f46e5;
+}
+
 .preview {
+  margin-top: 13px;
   padding: 12px 10px;
   border-radius: 9px;
   color: #334155;
@@ -147,11 +167,10 @@ header p {
 .preview-chunk--separated::before {
   display: inline-block;
   width: 0;
-  height: 0.8em;
+  height: 1em;
   margin: 0 0.08em;
-  border-inline-start: 1px solid currentColor;
-  opacity: 0.38;
-  vertical-align: -0.06em;
+  border-inline-start: var(--super-reader-divider-width, 2px) solid currentColor;
+  vertical-align: -0.1em;
   content: "";
 }
 

@@ -6,6 +6,7 @@
 
   const DEFAULTS = {
     enabled: false,
+    dividerWidth: 2,
   };
 
   const IGNORED_TAGS = new Set([
@@ -35,6 +36,11 @@
     pendingRoots: new Set(),
     flushScheduled: false,
   };
+
+  function normalizeDividerWidth(value) {
+    const width = Number(value);
+    return Number.isFinite(width) ? Math.min(4, Math.max(1, width)) : 1;
+  }
 
   function isIgnored(element) {
     if (!(element instanceof Element)) return true;
@@ -75,6 +81,10 @@
         ? "super-reader-chunk super-reader-chunk--separated"
         : "super-reader-chunk";
       span.dataset.superReaderChunk = "true";
+      span.style.setProperty(
+        "--super-reader-divider-width",
+        `${state.settings.dividerWidth}px`,
+      );
       span.textContent = chunk.text;
       fragment.append(span);
     });
@@ -169,26 +179,47 @@
     restoreDocument();
   }
 
+  function updateDividerWidth() {
+    document.querySelectorAll(".super-reader-chunk").forEach((span) => {
+      span.style.setProperty(
+        "--super-reader-divider-width",
+        `${state.settings.dividerWidth}px`,
+      );
+    });
+  }
+
   function applySettings(nextSettings) {
     const wasEnabled = state.enabled;
+    const dividerWidth = Object.prototype.hasOwnProperty.call(nextSettings, "dividerWidth")
+      ? normalizeDividerWidth(nextSettings.dividerWidth)
+      : state.settings.dividerWidth;
+    const dividerWidthChanged = dividerWidth !== state.settings.dividerWidth;
     state.settings = {
       enabled: Object.prototype.hasOwnProperty.call(nextSettings, "enabled")
         ? Boolean(nextSettings.enabled)
         : state.settings.enabled,
+      dividerWidth,
     };
 
     if (wasEnabled && !state.settings.enabled) {
       disable();
     } else if (!wasEnabled && state.settings.enabled) {
       enable();
+    } else if (state.enabled && dividerWidthChanged) {
+      updateDividerWidth();
     }
   }
 
   chrome.storage.sync.get(DEFAULTS, applySettings);
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== "sync" || !changes.enabled) return;
-    applySettings({ enabled: changes.enabled.newValue });
+    if (areaName !== "sync") return;
+    const nextSettings = {};
+    if (changes.enabled) nextSettings.enabled = changes.enabled.newValue;
+    if (changes.dividerWidth) {
+      nextSettings.dividerWidth = changes.dividerWidth.newValue;
+    }
+    if (Object.keys(nextSettings).length) applySettings(nextSettings);
   });
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
