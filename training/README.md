@@ -2,11 +2,11 @@
 
 This experiment checks the complete weak-supervision pipeline without claiming
 production model quality. Its default dataset uses every eligible pair in each
-split without equalizing or downsampling source domains. All eligible source
+split without equalizing or downsampling source domains. All retained source
 documents participate in the document-level split; `0` for
-`--docs-per-domain` means that no document-count cap is applied. Training runs
-for two epochs by default and retains the checkpoint with the best validation
-accuracy.
+`--docs-per-domain` means that no additional document-count cap is applied.
+Training runs for two epochs by default and retains the checkpoint with the
+best validation accuracy.
 
 ## Architecture
 
@@ -18,17 +18,29 @@ accuracy.
 
 ## Data
 
-The preparation script downloads four small public CLUE task archives:
+The preparation script downloads four small public CLUE task archives plus the
+latest Chinese Wikipedia current-article dump:
 
 - TNEWS for news text;
 - CSL for academic abstracts;
 - CMRC2018 for encyclopedia passages;
-- C3 for dialogue.
+- C3 for dialogue;
+- Chinese Wikipedia for broader encyclopedia prose.
+
+Wikipedia uses Wikimedia's rolling `latest` multistream dump and companion
+index. It contains current article content rather than revision history. The
+compressed files currently require about 3.6 GB, are streamed to disk, and are
+verified against Wikimedia's current MD5 manifest. The index provides a
+deterministic sample across the whole dump instead of taking only its first
+pages. By default, 5,000 main-namespace, non-redirect articles are retained;
+change the count with `--wikipedia-docs`, or pass `0` to disable this source.
+Wikipedia text remains subject to its CC BY-SA license and attribution terms.
 
 Documents are normalized and globally deduplicated before being split. Each
 document belongs to exactly one of train, validation, or test. Adjacent `A+B`
 pairs are generated only after that split. Every eligible pair is retained, so
-the four source domains keep their natural sample counts.
+the five source domains keep their natural sample counts after Wikipedia's
+article-level sampling.
 
 There is no minimum or maximum length for either side: even a one-character
 side remains valid, and long sides are never cropped. Punctuation and
@@ -85,6 +97,14 @@ safetensors checkpoint. To prepare and train separately:
 node training/prepare_smoke_data.mjs
 python3 training/run_smoke.py
 ```
+
+For example, to prepare 10,000 Wikipedia articles:
+
+```bash
+node training/prepare_smoke_data.mjs --wikipedia-docs 10000
+```
+
+Data preparation requires the `unzip` and `bzip2` command-line tools.
 
 For example, an explicit CPU configuration can be tested with:
 

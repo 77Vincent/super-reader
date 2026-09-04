@@ -1,7 +1,17 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import {
+  mkdir,
+  open,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -43,7 +53,22 @@ const SOURCES = [
     sha256: "20dfa683c57c9795129e22d8dd0c299d6b2a29fbc84758ef2ebdb8b2904d7e12",
     entries: ["d-train.json", "m-train.json"],
   },
+  {
+    domain: "wikipedia",
+    filename: "zhwiki-latest-pages-articles-multistream.xml.bz2",
+    url: "https://dumps.wikimedia.org/zhwiki/latest/zhwiki-latest-pages-articles-multistream.xml.bz2",
+    checksumUrl: "https://dumps.wikimedia.org/zhwiki/latest/zhwiki-latest-md5sums.txt",
+    checksumSuffix: "pages-articles-multistream.xml.bz2",
+    index: {
+      filename: "zhwiki-latest-pages-articles-multistream-index.txt.bz2",
+      url: "https://dumps.wikimedia.org/zhwiki/latest/zhwiki-latest-pages-articles-multistream-index.txt.bz2",
+      checksumUrl: "https://dumps.wikimedia.org/zhwiki/latest/zhwiki-latest-md5sums.txt",
+      checksumSuffix: "pages-articles-multistream-index.txt.bz2",
+    },
+  },
 ];
+
+const CHECKSUM_MANIFESTS = new Map();
 
 function hashText(text) {
   return createHash("sha256").update(text).digest("hex");
@@ -156,7 +181,160 @@ function readZipEntry(zipPath, entry) {
   });
 }
 
-function documentsFromSource(source, zipPath) {
+function decodeXmlEntities(text) {
+  return text.replace(/&(?:#(\d+)|#x([\da-f]+)|(amp|lt|gt|quot|apos));/giu, (
+    entity,
+    decimal,
+    hexadecimal,
+    named,
+  ) => {
+    if (decimal) return String.fromCodePoint(Number.parseInt(decimal, 10));
+    if (hexadecimal) return String.fromCodePoint(Number.parseInt(hexadecimal, 16));
+    return {
+      amp: "&",
+      lt: "<",
+      gt: ">",
+      quot: "\"",
+      apos: "'",
+    }[named.toLowerCase()];
+  });
+}
+
+function removeBalancedMarkup(text, opening, closing) {
+  let result = "";
+  let depth = 0;
+
+  for (let index = 0; index < text.length;) {
+    if (text.startsWith(opening, index)) {
+      depth += 1;
+      index += opening.length;
+      continue;
+    }
+    if (depth > 0 && text.startsWith(closing, index)) {
+      depth -= 1;
+      index += closing.length;
+      continue;
+    }
+    if (depth === 0) result += text[index];
+    index += 1;
+  }
+
+  return result;
+}
+
+export function cleanWikipediaMarkup(wikitext) {
+  let text = String(wikitext || "")
+    .replace(/<!--[\s\S]*?-->/gu, " ")
+    .replace(/<ref\b[^>]*\/>/giu, " ")
+    .replace(/<ref\b[^>]*>[\s\S]*?<\/ref\s*>/giu, " ")
+    .replace(/<(math|code|timeline|gallery|mapframe|syntaxhighlight)\b[^>]*>[\s\S]*?<\/\1\s*>/giu, " ");
+
+  text = removeBalancedMarkup(text, "{{", "}}");
+  text = removeBalancedMarkup(text, "{|", "|}");
+  text = text
+    .replace(/\[\[(?:File|Image|文件|檔案|图像|圖像|Category|分类|分類):[^\]]*\]\]/giu, " ")
+    .replace(/\[\[[^\]|]+\|([^\]]+)\]\]/gu, "$1")
+    .replace(/\[\[([^\]]+)\]\]/gu, "$1")
+    .replace(/\[(?:https?|ftp):\/\/\S+(?:\s+([^\]]+))?\]/giu, "$1")
+    .replace(/(?:https?|ftp):\/\/\S+/giu, " ")
+    .replace(/<[^>]+>/gu, " ")
+    .replace(/'{2,5}/gu, "")
+    .replace(/^\s*(?:={2,}|[*#:;]+|\|-?|!+).*$/gmu, " ")
+    .replace(/__(?:TOC|NOTOC|FORCETOC|NOEDITSECTION|NEWSECTIONLINK|NONEWSECTIONLINK)__/giu, " ")
+    .replace(/&nbsp;/giu, " ");
+
+  return normalizeDocument(text);
+}
+
+export function wikipediaDocumentsFromXml(xml, streamOffset = 0) {
+  const documents = [];
+  const pages = String(xml).match(/<page>[\s\S]*?<\/page>/gu) || [];
+
+  for (const page of pages) {
+    const namespace = page.match(/<ns>(-?\d+)<\/ns>/u)?.[1];
+    if (namespace !== "0" || /<redirect\b/iu.test(page)) continue;
+
+    const pageId = page.match(/<id>(\d+)<\/id>/u)?.[1];
+    const title = decodeXmlEntities(page.match(/<title>([\s\S]*?)<\/title>/u)?.[1] || "");
+    const encodedText = page.match(/<text\b[^>]*>([\s\S]*?)<\/text>/u)?.[1] || "";
+    const text = cleanWikipediaMarkup(decodeXmlEntities(encodedText));
+    if (!pageId || !text || /^#(?:REDIRECT|重定向|重新導向)/iu.test(text)) continue;
+
+    documents.push({
+      id: `wikipedia:${pageId}`,
+      domain: "wikipedia",
+      title,
+      text,
+      stream_offset: streamOffset,
+    });
+  }
+
+  return documents;
+}
+
+function readWikipediaStreamOffsets(indexPath) {
+  const index = execFileSync("bzip2", ["-dc", indexPath], {
+    encoding: "utf8",
+    maxBuffer: 512 * 1024 * 1024,
+  });
+  const offsets = new Set();
+  for (const line of index.split(/\r?\n/u)) {
+    const separator = line.indexOf(":");
+    if (separator < 1) continue;
+    const offset = Number(line.slice(0, separator));
+    if (Number.isSafeInteger(offset) && offset >= 0) offsets.add(offset);
+  }
+  return Array.from(offsets).sort((left, right) => left - right);
+}
+
+async function readWikipediaDocuments(paths, limit, seed) {
+  if (!Number.isSafeInteger(limit) || limit < 1) return [];
+
+  const offsets = readWikipediaStreamOffsets(paths.index.path);
+  const dumpSize = (await stat(paths.primary.path)).size;
+  const nextOffset = new Map(offsets.map((offset, index) => [
+    offset,
+    offsets[index + 1] ?? dumpSize,
+  ]));
+  const rankedOffsets = [...offsets].sort((left, right) => (
+    hashText(`${seed}:wikipedia:${left}`)
+      .localeCompare(hashText(`${seed}:wikipedia:${right}`))
+  ));
+  const dump = await open(paths.primary.path, "r");
+  const documents = [];
+
+  try {
+    for (const offset of rankedOffsets) {
+      const length = nextOffset.get(offset) - offset;
+      const compressed = Buffer.allocUnsafe(length);
+      const { bytesRead } = await dump.read(compressed, 0, length, offset);
+      if (bytesRead !== length) {
+        throw new Error(`Short read in Wikipedia dump at byte ${offset}`);
+      }
+      const xml = execFileSync("bzip2", ["-dc"], {
+        input: compressed,
+        encoding: "utf8",
+        maxBuffer: 256 * 1024 * 1024,
+      });
+      documents.push(...wikipediaDocumentsFromXml(xml, offset));
+      if (documents.length >= limit) break;
+    }
+  } finally {
+    await dump.close();
+  }
+
+  if (documents.length < limit) {
+    throw new Error(`Only ${documents.length} Wikipedia articles; need ${limit}`);
+  }
+  return documents.slice(0, limit);
+}
+
+async function documentsFromSource(source, downloaded, options) {
+  if (source.domain === "wikipedia") {
+    return readWikipediaDocuments(downloaded, options.wikipediaDocs, options.seed);
+  }
+
+  const zipPath = downloaded.primary.path;
   if (source.domain === "news") {
     return parseJsonLines(readZipEntry(zipPath, source.entries[0])).map((row, index) => ({
       id: `news:${index}`,
@@ -194,30 +372,84 @@ function documentsFromSource(source, zipPath) {
   });
 }
 
+async function checksumForSource(source) {
+  if (source.sha256) return { algorithm: "sha256", value: source.sha256 };
+
+  let manifest = CHECKSUM_MANIFESTS.get(source.checksumUrl);
+  if (!manifest) {
+    const response = await fetch(source.checksumUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to download ${source.checksumUrl}: ${response.status}`);
+    }
+    manifest = await response.text();
+    CHECKSUM_MANIFESTS.set(source.checksumUrl, manifest);
+  }
+
+  const match = manifest
+    .split(/\r?\n/u)
+    .map((line) => line.trim().match(/^([\da-f]+)\s+(.+)$/iu))
+    .find((parts) => parts && parts[2].endsWith(`-${source.checksumSuffix}`));
+  if (!match) {
+    throw new Error(`No checksum for ${source.checksumSuffix} in ${source.checksumUrl}`);
+  }
+  return { algorithm: "md5", value: match[1].toLowerCase() };
+}
+
+function hashFile(path, algorithm) {
+  return new Promise((resolveHash, rejectHash) => {
+    const hash = createHash(algorithm);
+    const stream = createReadStream(path);
+    stream.on("error", rejectHash);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolveHash(hash.digest("hex")));
+  });
+}
+
 async function ensureDownload(source) {
   await mkdir(RAW_DIR, { recursive: true });
   const path = join(RAW_DIR, source.filename);
-  let current = null;
+  const temporaryPath = `${path}.part`;
+  const checksum = await checksumForSource(source);
+  let currentHash = null;
 
   try {
-    current = await readFile(path);
+    currentHash = await hashFile(path, checksum.algorithm);
   } catch {
     // Download below.
   }
 
-  if (!current || hashText(current) !== source.sha256) {
+  if (currentHash !== checksum.value) {
+    console.log(`Downloading ${source.url}`);
     const response = await fetch(source.url);
-    if (!response.ok) {
+    if (!response.ok || !response.body) {
       throw new Error(`Failed to download ${source.url}: ${response.status}`);
     }
-    current = Buffer.from(await response.arrayBuffer());
-    if (hashText(current) !== source.sha256) {
+    try {
+      await pipeline(Readable.fromWeb(response.body), createWriteStream(temporaryPath));
+      currentHash = await hashFile(temporaryPath, checksum.algorithm);
+    } catch (error) {
+      await rm(temporaryPath, { force: true });
+      throw error;
+    }
+    if (currentHash !== checksum.value) {
+      await rm(temporaryPath, { force: true });
       throw new Error(`Checksum mismatch for ${source.filename}`);
     }
-    await writeFile(path, current);
+    await rename(temporaryPath, path);
   }
 
-  return path;
+  return {
+    path,
+    filename: source.filename,
+    url: source.url,
+    checksum: `${checksum.algorithm}:${checksum.value}`,
+  };
+}
+
+async function ensureSourceDownloads(source) {
+  const primary = await ensureDownload(source);
+  const index = source.index ? await ensureDownload(source.index) : null;
+  return { primary, index };
 }
 
 function filterAndDeduplicate(documentsByDomain) {
@@ -380,6 +612,7 @@ function parseArguments(argv) {
     outputDir: DEFAULT_PROCESSED_DIR,
     tokenization: "character",
     docsPerDomain: 0,
+    wikipediaDocs: 5000,
     trainPerDomain: 0,
     validationPerDomain: 0,
     testPerDomain: 0,
@@ -425,12 +658,16 @@ function verifyNoDocumentLeakage(samplesBySplit) {
 
 async function main() {
   const options = parseArguments(process.argv.slice(2));
-  const downloaded = await Promise.all(SOURCES.map(ensureDownload));
+  const downloaded = await Promise.all(SOURCES.map(ensureSourceDownloads));
   const loaded = new Map();
 
-  SOURCES.forEach((source, index) => {
-    loaded.set(source.domain, documentsFromSource(source, downloaded[index]));
-  });
+  for (let index = 0; index < SOURCES.length; index += 1) {
+    const source = SOURCES[index];
+    loaded.set(
+      source.domain,
+      await documentsFromSource(source, downloaded[index], options),
+    );
+  }
 
   const deduplicated = filterAndDeduplicate(loaded);
   const candidatesBySplitAndDomain = {
@@ -526,7 +763,12 @@ async function main() {
       length_bucket_maximums: LENGTH_BUCKET_MAXIMUMS,
       position_bins: options.positionBins,
     },
-    sources: SOURCES.map(({ domain, url, sha256 }) => ({ domain, url, sha256 })),
+    sources: SOURCES.map((source, index) => ({
+      domain: source.domain,
+      downloads: [downloaded[index].primary, downloaded[index].index]
+        .filter(Boolean)
+        .map(({ filename, url, checksum }) => ({ filename, url, checksum })),
+    })),
     duplicate_documents_removed: deduplicated.duplicateCount,
     documents: documentCounts,
     available_samples: availableSampleCounts,

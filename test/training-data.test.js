@@ -41,6 +41,46 @@ test("colons and ellipses create training boundaries", async () => {
   );
 });
 
+test("Wikipedia XML keeps article text and removes wiki markup", async () => {
+  const { wikipediaDocumentsFromXml } = await import(
+    "../training/prepare_smoke_data.mjs"
+  );
+  const xml = `<mediawiki>
+    <page>
+      <title>阅读</title><ns>0</ns><id>42</id>
+      <revision><id>99</id><text xml:space="preserve">'''阅读'''是[[语言|文字]]活动。{{来源请求}}它帮助理解。&lt;ref&gt;引用&lt;/ref&gt;</text></revision>
+    </page>
+    <page>
+      <title>模板</title><ns>10</ns><id>43</id>
+      <revision><text>不应保留。</text></revision>
+    </page>
+    <page>
+      <title>跳转</title><ns>0</ns><id>44</id><redirect title="阅读" />
+      <revision><text>#REDIRECT [[阅读]]</text></revision>
+    </page>
+  </mediawiki>`;
+
+  assert.deepEqual(wikipediaDocumentsFromXml(xml, 123), [{
+    id: "wikipedia:42",
+    domain: "wikipedia",
+    title: "阅读",
+    text: "阅读是文字活动。它帮助理解。",
+    stream_offset: 123,
+  }]);
+});
+
+test("training uses the latest Chinese Wikipedia current-article dump", () => {
+  const { readFileSync } = require("node:fs");
+  const preparation = readFileSync("training/prepare_smoke_data.mjs", "utf8");
+
+  assert.match(
+    preparation,
+    /zhwiki\/latest\/zhwiki-latest-pages-articles-multistream\.xml\.bz2/u,
+  );
+  assert.match(preparation, /wikipediaDocs:\s*5000/u);
+  assert.doesNotMatch(preparation, /zhwiki-latest-pages-meta-history/u);
+});
+
 test("training input removes all punctuation while keeping the source signal", async () => {
   const { buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
   const [sample] = buildAdjacentSamples({
