@@ -814,9 +814,12 @@
           });
 
           const isEnabled = readerToggle.checked;
+          const processedChunkCount = chunks.filter(function isProcessed(chunk) {
+            return chunk.processed;
+          }).length;
           readerOutput.classList.toggle("is-plain", !isEnabled);
           toggleCopy.textContent = isEnabled ? "效果已开启" : "效果已关闭";
-          chunkCount.innerHTML = "<strong>" + (isEnabled ? chunks.length : 1) + "</strong> 个视觉块";
+          chunkCount.innerHTML = "<strong>" + (isEnabled ? processedChunkCount : 1) + "</strong> 个视觉块";
         }
 
         sourceInput.addEventListener("input", render);

@@ -174,19 +174,25 @@ test("never loses whitespace or mixed-language content", () => {
   assert.equal(chunks.join(""), text);
 });
 
-test("visual length counts letters and numbers but ignores punctuation", () => {
-  assert.equal(visualLength("你好，Reader 2.0！"), 10);
+test("visual length counts only Chinese characters", () => {
+  assert.equal(visualLength("你好，Reader 2.0！"), 2);
 });
 
-test("underline runs exclude punctuation, symbols, and whitespace", () => {
-  assert.deepEqual(splitUnderlineRuns("你好，Reader 2.0！"), [
+test("underline runs exclude all non-Chinese content", () => {
+  assert.deepEqual(splitUnderlineRuns("你好，Reader 2.0！世界"), [
     { text: "你好", underlinable: true },
-    { text: "，", underlinable: false },
-    { text: "Reader", underlinable: true },
-    { text: " ", underlinable: false },
-    { text: "2", underlinable: true },
-    { text: ".", underlinable: false },
-    { text: "0", underlinable: true },
-    { text: "！", underlinable: false },
+    { text: "，Reader 2.0！", underlinable: false },
+    { text: "世界", underlinable: true },
   ]);
+});
+
+test("non-Chinese chunks neither receive underlines nor advance alternation", () => {
+  const chunks = buildVisualChunks("中文。Synthetic English.汉字。", { targetLength: 7 });
+  const chineseChunks = chunks.filter((chunk) => chunk.processed);
+  const englishChunk = chunks.find((chunk) => chunk.text.includes("Synthetic"));
+
+  assert.deepEqual(chineseChunks.map((chunk) => chunk.underlined), [true, false]);
+  assert.equal(englishChunk.processed, false);
+  assert.equal(englishChunk.underlined, false);
+  assert.equal(chunks.map((chunk) => chunk.text).join(""), "中文。Synthetic English.汉字。");
 });

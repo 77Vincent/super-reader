@@ -13,7 +13,7 @@ accuracy.
 - word embedding with 48 channels;
 - three residual blocks;
 - two `Conv1d(kernel_size=3, dilation=1)` layers per block;
-- one score for every adjacent word gap;
+- one score for every adjacent Han-character gap;
 - masked softmax cross-entropy with exactly one target gap.
 
 ## Data
@@ -55,6 +55,10 @@ checksums are saved in `training/data/processed/summary.json`.
 npm run smoke:model
 ```
 
+The default production run uses character tokenization: 40,000 training pairs,
+8,000 validation pairs, 8,000 test pairs, and three epochs. Every adjacent Han
+character gap is a candidate; non-Han content is excluded from model input.
+
 The command installs the pinned 751 KB `tinygrad` wheel under the ignored
 `training/.deps/` directory. To prepare and train separately:
 
@@ -66,3 +70,17 @@ python3 training/run_smoke.py
 The checkpoint and metrics are written under `training/artifacts/`.
 The checked-in summary of the latest completed run is in
 [`SMOKE_RESULTS.md`](SMOKE_RESULTS.md).
+
+## Candidate-tokenization comparison
+
+To compare `Intl.Segmenter` word gaps with every adjacent Han-character gap on
+the same medium-size sample set, run:
+
+```bash
+npm run smoke:compare
+```
+
+Both modes exclude non-Han content. The controlled comparison uses 16,000
+training pairs, 4,000 validation pairs, 4,000 test pairs, and three epochs per
+mode. Its latest result and methodological caveats are documented in
+[`TOKENIZATION_COMPARISON.md`](TOKENIZATION_COMPARISON.md).

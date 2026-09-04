@@ -7,6 +7,7 @@
     "test": "node --test",
     "smoke:data": "node training/prepare_smoke_data.mjs",
     "smoke:model": "npm run smoke:data && python3 training/run_smoke.py",
-    "model:export": "python3 training/export_browser_model.py"
+    "model:export": "python3 training/export_browser_model.py",
+    "smoke:compare": "python3 training/run_tokenization_comparison.py"
   }
 }

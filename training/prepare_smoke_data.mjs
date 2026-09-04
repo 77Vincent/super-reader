@@ -1,14 +1,14 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const RAW_DIR = join(SCRIPT_DIR, "data", "raw");
-const PROCESSED_DIR = join(SCRIPT_DIR, "data", "processed");
+const DEFAULT_PROCESSED_DIR = join(SCRIPT_DIR, "data", "processed");
 const SEGMENTER = new Intl.Segmenter("zh-CN", { granularity: "word" });
-const CONTENT_CHARACTER = /[\p{L}\p{N}]/u;
+const HAN_CHARACTER = /\p{Script=Han}/u;
 const PROXY_PUNCTUATION = new Set([
   "，", ",", "。", ".", "！", "!", "？", "?", "；", ";", "、",
 ]);
@@ -62,15 +62,22 @@ function cleanFragment(text) {
     .trim();
 }
 
-function tokenize(text) {
+function tokenize(text, tokenization) {
+  if (tokenization === "character") {
+    return Array.from(text).filter((character) => HAN_CHARACTER.test(character));
+  }
+
   return Array.from(SEGMENTER.segment(text))
-    .filter((item) => item.isWordLike)
-    .map((item) => item.segment);
+    .filter((item) => item.isWordLike && HAN_CHARACTER.test(item.segment))
+    .map((item) => Array.from(item.segment)
+      .filter((character) => HAN_CHARACTER.test(character))
+      .join(""))
+    .filter(Boolean);
 }
 
 function contentCharacterLength(text) {
   return Array.from(text)
-    .filter((character) => CONTENT_CHARACTER.test(character)).length;
+    .filter((character) => HAN_CHARACTER.test(character)).length;
 }
 
 export function splitIntoFragments(text) {
@@ -97,7 +104,8 @@ export function splitIntoFragments(text) {
   return fragments;
 }
 
-export function buildAdjacentSamples(document) {
+export function buildAdjacentSamples(document, options = {}) {
+  const tokenization = options.tokenization || "character";
   const fragments = splitIntoFragments(document.text);
   const samples = [];
 
@@ -107,8 +115,8 @@ export function buildAdjacentSamples(document) {
     const leftCharacterLength = contentCharacterLength(leftText);
     const rightCharacterLength = contentCharacterLength(rightText);
 
-    const left = tokenize(leftText);
-    const right = tokenize(rightText);
+    const left = tokenize(leftText, tokenization);
+    const right = tokenize(rightText, tokenization);
     if (left.length === 0 || right.length === 0) continue;
 
     const tokens = [...left, ...right];
@@ -126,6 +134,7 @@ export function buildAdjacentSamples(document) {
       relative_boundary_position: (
         leftCharacterLength / (leftCharacterLength + rightCharacterLength)
       ),
+      tokenization,
     });
   }
 
@@ -316,6 +325,8 @@ function positionHistogram(samples, binCount) {
 
 function parseArguments(argv) {
   const options = {
+    outputDir: DEFAULT_PROCESSED_DIR,
+    tokenization: "character",
     docsPerDomain: 0,
     trainPerDomain: 10000,
     validationPerDomain: 2000,
@@ -330,10 +341,16 @@ function parseArguments(argv) {
     if (!key.startsWith("--") || value === undefined) continue;
     const optionName = key.slice(2).replace(/-([a-z])/gu, (_, letter) => letter.toUpperCase());
     if (Object.hasOwn(options, optionName)) {
-      options[optionName] = Number(value);
+      options[optionName] = ["outputDir", "tokenization"].includes(optionName)
+        ? value
+        : Number(value);
       index += 1;
     }
   }
+  if (!["word", "character"].includes(options.tokenization)) {
+    throw new Error(`Unknown tokenization mode: ${options.tokenization}`);
+  }
+  options.outputDir = resolve(options.outputDir);
   return options;
 }
 
@@ -379,7 +396,9 @@ async function main() {
 
     for (const [split, partition] of Object.entries(partitions)) {
       documentCounts[domain][split] = partition.length;
-      const candidates = partition.flatMap(buildAdjacentSamples);
+      const candidates = partition.flatMap((document) => buildAdjacentSamples(document, {
+        tokenization: options.tokenization,
+      }));
       const requested = options[`${split}PerDomain`];
       const selectionSeed = `${options.seed}:${split}:${domain}`;
       const selected = split === "train"
@@ -412,13 +431,18 @@ async function main() {
   }
 
   verifyNoDocumentLeakage(samplesBySplit);
-  await mkdir(PROCESSED_DIR, { recursive: true });
+  await mkdir(options.outputDir, { recursive: true });
   await Promise.all(Object.entries(samplesBySplit).map(([split, samples]) => (
-    writeJsonLines(join(PROCESSED_DIR, `${split}.jsonl`), samples)
+    writeJsonLines(join(options.outputDir, `${split}.jsonl`), samples)
   )));
 
   const summary = {
     seed: options.seed,
+    tokenization: options.tokenization,
+    candidate_positions: options.tokenization === "word"
+      ? "between adjacent Intl.Segmenter word tokens"
+      : "between every adjacent Han character",
+    non_han_policy: "excluded before model input",
     max_side_characters: null,
     training_position_bins: options.positionBins,
     sources: SOURCES.map(({ domain, url, sha256 }) => ({ domain, url, sha256 })),
@@ -434,7 +458,7 @@ async function main() {
     leakage_check: "passed",
   };
   await writeFile(
-    join(PROCESSED_DIR, "summary.json"),
+    join(options.outputDir, "summary.json"),
     `${JSON.stringify(summary, null, 2)}\n`,
   );
   console.log(JSON.stringify(summary, null, 2));

@@ -227,6 +227,9 @@ def evaluate(
     total_count = 0
     total_correct = 0
     reciprocal_rank = 0.0
+    absolute_character_error = 0
+    within_one_character = 0
+    within_two_characters = 0
     domain_counts: dict[str, int] = defaultdict(int)
     domain_correct: dict[str, int] = defaultdict(int)
 
@@ -252,6 +255,15 @@ def evaluate(
             rank = int(np.where(ranks[row] == target)[0][0]) + 1
             reciprocal_rank += 1.0 / rank
 
+            record = batch["records"][row]
+            prediction = int(predictions[row])
+            predicted_character_position = len("".join(record["tokens"][: prediction + 1]))
+            target_character_position = len("".join(record["tokens"][: int(target) + 1]))
+            character_error = abs(predicted_character_position - target_character_position)
+            absolute_character_error += character_error
+            within_one_character += character_error <= 1
+            within_two_characters += character_error <= 2
+
         for record, prediction, target in zip(batch["records"], predictions, targets):
             domain = record["domain"]
             domain_counts[domain] += 1
@@ -261,6 +273,9 @@ def evaluate(
         "loss": total_loss / total_count,
         "accuracy": total_correct / total_count,
         "mean_reciprocal_rank": reciprocal_rank / total_count,
+        "mean_absolute_character_error": absolute_character_error / total_count,
+        "within_one_character_accuracy": within_one_character / total_count,
+        "within_two_characters_accuracy": within_two_characters / total_count,
         "per_domain_accuracy": {
             domain: domain_correct[domain] / count
             for domain, count in sorted(domain_counts.items())
@@ -418,6 +433,12 @@ def main() -> None:
         split: read_json_lines(args.data_dir / f"{split}.jsonl")
         for split in ("train", "validation", "test")
     }
+    summary_path = args.data_dir / "summary.json"
+    data_summary = (
+        json.loads(summary_path.read_text(encoding="utf-8"))
+        if summary_path.exists()
+        else {}
+    )
     vocabulary = build_vocabulary(raw_records["train"], args.vocab_size)
     records = {
         split: encode_records(split_records, vocabulary)
@@ -525,6 +546,8 @@ def main() -> None:
     parameter_count = sum(math.prod(parameter.shape) for parameter in get_parameters(model))
     metrics = {
         "seed": args.seed,
+        "tokenization": data_summary.get("tokenization", "unspecified"),
+        "candidate_positions": data_summary.get("candidate_positions", "unspecified"),
         "best_epoch": best_epoch,
         "parameter_count": parameter_count,
         "vocabulary_size": len(vocabulary),
@@ -537,6 +560,10 @@ def main() -> None:
             "dilation": 1,
         },
         "data_sizes": {split: len(items) for split, items in records.items()},
+        "average_candidate_gaps": {
+            split: sum(len(record["tokens"]) - 1 for record in items) / len(items)
+            for split, items in records.items()
+        },
         "batching": {
             "maximum_examples_per_batch": args.batch_size,
             "maximum_tokens_per_batch": args.max_tokens_per_batch,

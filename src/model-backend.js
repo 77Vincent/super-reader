@@ -225,6 +225,8 @@
         bestEpoch: modelData.bestEpoch,
         checkpointSha256: modelData.checkpointSha256,
         testAccuracy: modelData.testAccuracy,
+        tokenization: modelData.tokenization,
+        candidatePositions: modelData.candidatePositions,
         vocabularySize: Object.keys(modelData.vocabulary).length,
       });
     },

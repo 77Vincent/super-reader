@@ -32,7 +32,6 @@
     enabled: false,
     observer: null,
     settings: { ...DEFAULTS },
-    segmenter: SuperReaderChunker.createSegmenter("zh-CN"),
     pendingRoots: new Set(),
     flushScheduled: false,
   };
@@ -62,7 +61,6 @@
 
     const chunks = SuperReaderChunker.buildVisualChunks(textNode.nodeValue, {
       targetLength: state.settings.targetLength,
-      segmenter: state.segmenter,
     });
     if (!chunks.length) return;
 

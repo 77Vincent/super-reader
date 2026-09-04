@@ -75,3 +75,39 @@ test("training selection balances relative boundary-position buckets", async () 
 
   assert.deepEqual(histogram, Array(10).fill(3));
 });
+
+test("comparison modes keep the same text and gold boundary but change candidates", async () => {
+  const { buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
+  const document = {
+    id: "fixture:comparison",
+    domain: "fixture",
+    text: "阅读不是更快地扫过文字，模型开始工作。",
+  };
+  const [word] = buildAdjacentSamples(document, { tokenization: "word" });
+  const [character] = buildAdjacentSamples(document, { tokenization: "character" });
+
+  assert.equal(word.id, character.id);
+  assert.equal(word.tokens.join(""), character.tokens.join(""));
+  assert.equal(
+    word.tokens.slice(0, word.target_index + 1).join(""),
+    character.tokens.slice(0, character.target_index + 1).join(""),
+  );
+  assert.ok(word.tokens.some((token) => token.length > 1));
+  assert.ok(character.tokens.every((token) => Array.from(token).length === 1));
+  assert.ok(character.tokens.length > word.tokens.length);
+});
+
+test("both comparison modes exclude non-Chinese tokens", async () => {
+  const { buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
+  const document = {
+    id: "fixture:han-only",
+    domain: "fixture",
+    text: "Synthetic 中文 20，AI 模型。",
+  };
+
+  for (const tokenization of ["word", "character"]) {
+    const [sample] = buildAdjacentSamples(document, { tokenization });
+    assert.equal(sample.tokens.join(""), "中文模型");
+    assert.ok(sample.tokens.every((token) => /^\p{Script=Han}+$/u.test(token)));
+  }
+});

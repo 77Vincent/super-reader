@@ -12,7 +12,7 @@
 })(globalThis, function createChunker(modelBackend) {
   "use strict";
 
-  const CLAUSE_END_CHARACTER = /[，,、。！？!?；;：:\n…]/u;
+  const CLAUSE_END_CHARACTER = /[，,、。.！？!?；;：:\n…]/u;
   const OPENING_DOUBLE_QUOTE = /[“]/u;
   const CLOSING_DOUBLE_QUOTE = /[”]/u;
   const TRAILING_CLOSER = /[”’」』）》】〉〕〗〙〛"'）)\]]/u;
@@ -50,19 +50,18 @@
     return null;
   }
 
-  function tokenize(text, segmenter) {
-    if (!segmenter) return [];
+  function tokenizeHanCharacters(text) {
+    const tokens = [];
+    let index = 0;
 
-    let fallbackIndex = 0;
-    return Array.from(segmenter.segment(text), ({ segment, index, isWordLike }) => {
-      const tokenIndex = Number.isInteger(index) ? index : fallbackIndex;
-      fallbackIndex = tokenIndex + segment.length;
-      return {
-        segment,
-        index: tokenIndex,
-        isWordLike: Boolean(isWordLike),
-      };
-    });
+    for (const character of text) {
+      if (HAN_CHARACTER.test(character)) {
+        tokens.push({ segment: character, index });
+      }
+      index += character.length;
+    }
+
+    return tokens;
   }
 
   function splitClauses(text) {
@@ -134,9 +133,9 @@
     return clauses;
   }
 
-  function createBoundaryTree(wordTokens, scores) {
+  function createBoundaryTree(tokens, scores) {
     const lengthPrefix = [0];
-    for (const token of wordTokens) {
+    for (const token of tokens) {
       lengthPrefix.push(lengthPrefix.at(-1) + visualLength(token.segment));
     }
 
@@ -145,7 +144,7 @@
         start,
         end,
         length: lengthPrefix[end] - lengthPrefix[start],
-        text: wordTokens.slice(start, end).map((token) => token.segment).join(""),
+        text: tokens.slice(start, end).map((token) => token.segment).join(""),
       };
       if (end - start <= 1) return node;
 
@@ -160,7 +159,7 @@
       return node;
     }
 
-    return createNode(0, wordTokens.length);
+    return createNode(0, tokens.length);
   }
 
   function collectTargetRanges(node, targetLength, ranges) {
@@ -172,25 +171,23 @@
     collectTargetRanges(node.right, targetLength, ranges);
   }
 
-  function chunkClause(text, targetLength, segmenter) {
-    const wordTokens = tokenize(text, segmenter).filter(
-      (token) => token.isWordLike && HAN_CHARACTER.test(token.segment),
-    );
-    if (wordTokens.length < 2) return [text];
+  function chunkClause(text, targetLength) {
+    const tokens = tokenizeHanCharacters(text);
+    if (tokens.length < 2) return [text];
     if (!modelBackend || typeof modelBackend.scoreTokens !== "function") {
       throw new Error("Super Reader model backend must load before the chunker");
     }
 
-    const scores = modelBackend.scoreTokens(wordTokens.map((token) => token.segment));
-    const tree = createBoundaryTree(wordTokens, scores);
+    const scores = modelBackend.scoreTokens(tokens.map((token) => token.segment));
+    const tree = createBoundaryTree(tokens, scores);
     const ranges = [];
     collectTargetRanges(tree, targetLength, ranges);
 
     return ranges.map((range, index) => {
-      const start = index === 0 ? 0 : wordTokens[range.start].index;
+      const start = index === 0 ? 0 : tokens[range.start].index;
       const end = index === ranges.length - 1
         ? text.length
-        : wordTokens[ranges[index + 1].start].index;
+        : tokens[ranges[index + 1].start].index;
       return text.slice(start, end);
     });
   }
@@ -199,12 +196,8 @@
     if (!text) return [];
 
     const targetLength = Math.min(12, Math.max(2, Number(options.targetLength) || 7));
-    const segmenter = options.segmenter === undefined
-      ? createSegmenter(options.locale)
-      : options.segmenter;
-
     return splitClauses(text).map((clause) => (
-      chunkClause(clause, targetLength, segmenter)
+      chunkClause(clause, targetLength)
     ));
   }
 
@@ -228,6 +221,7 @@
     chunkText,
     chunkTextByClause,
     createSegmenter,
+    tokenizeHanCharacters,
     splitUnderlineRuns,
     splitClauses,
     visualLength,

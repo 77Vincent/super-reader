@@ -71,6 +71,8 @@ def main() -> None:
         "checkpointSha256": hashlib.sha256(checkpoint_bytes).hexdigest(),
         "bestEpoch": metrics["best_epoch"],
         "testAccuracy": metrics["test"]["accuracy"],
+        "tokenization": metrics.get("tokenization", "unspecified"),
+        "candidatePositions": metrics.get("candidate_positions", "unspecified"),
         "vocabulary": vocabulary,
         "tensors": tensors,
         "weightsBase64": base64.b64encode(b"".join(chunks)).decode("ascii"),
