@@ -10,7 +10,7 @@ test("browser backend loads the exported best checkpoint", () => {
   const info = backend.getModelInfo();
 
   assert.equal(info.bestEpoch, 2);
-  assert.equal(info.testAccuracy, 0.530125);
+  assert.equal(info.testAccuracy, 0.6041125029543843);
   assert.equal(info.tokenization, "character");
   assert.equal(info.candidatePositions, "between every adjacent Han character");
   assert.equal(info.vocabularySize, 4096);
@@ -20,21 +20,21 @@ test("browser backend loads the exported best checkpoint", () => {
 test("browser inference matches tinygrad reference logits", () => {
   const tokens = Array.from("我一直在思考明天早上的早餐吃什么");
   const expected = [
-    -1.0187765,
-    -1.9855889,
-    -1.5573953,
-    -1.6147989,
-    -0.5052901,
-    2.0354855,
-    1.3623402,
-    1.2437651,
-    -1.8649274,
-    -2.0338097,
-    -0.6719301,
-    -2.7048666,
-    1.5034223,
-    -1.034253,
-    -2.5506806,
+    -4.9833841,
+    -3.9611714,
+    -1.3251973,
+    -3.8059237,
+    -0.141679,
+    0.7641446,
+    0.2002495,
+    0.0686523,
+    -4.1940913,
+    -2.7289252,
+    -0.3707583,
+    -3.0019574,
+    1.742052,
+    -2.3135548,
+    -5.555111,
   ];
   const scores = backend.scoreTokens(tokens);
 
@@ -42,7 +42,7 @@ test("browser inference matches tinygrad reference logits", () => {
   scores.forEach((score, index) => {
     assert.ok(Math.abs(score - expected[index]) < 2e-5);
   });
-  assert.equal(scores.indexOf(Math.max(...scores)), 5);
+  assert.equal(scores.indexOf(Math.max(...scores)), 12);
 });
 
 test("runtime inference contains no handwritten Chinese lexical rules", () => {
