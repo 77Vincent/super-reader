@@ -97,8 +97,7 @@ export function splitIntoFragments(text) {
   return fragments;
 }
 
-export function buildAdjacentSamples(document, options = {}) {
-  const maxSideCharacters = options.maxSideCharacters ?? 32;
+export function buildAdjacentSamples(document) {
   const fragments = splitIntoFragments(document.text);
   const samples = [];
 
@@ -107,10 +106,6 @@ export function buildAdjacentSamples(document, options = {}) {
     const rightText = fragments[index + 1].text;
     const leftCharacterLength = contentCharacterLength(leftText);
     const rightCharacterLength = contentCharacterLength(rightText);
-    if (
-      leftCharacterLength > maxSideCharacters
-      || rightCharacterLength > maxSideCharacters
-    ) continue;
 
     const left = tokenize(leftText);
     const right = tokenize(rightText);
@@ -128,6 +123,9 @@ export function buildAdjacentSamples(document, options = {}) {
       punctuation: fragments[index].punctuation,
       left_character_length: leftCharacterLength,
       right_character_length: rightCharacterLength,
+      relative_boundary_position: (
+        leftCharacterLength / (leftCharacterLength + rightCharacterLength)
+      ),
     });
   }
 
@@ -258,7 +256,7 @@ function partitionDocuments(documents, docsPerDomain, seed) {
   };
 }
 
-function selectBalancedSamples(samples, count, seed) {
+function selectDeterministicSamples(samples, count, seed) {
   const selected = [...samples]
     .sort((left, right) => (
       hashText(`${seed}:${left.id}`).localeCompare(hashText(`${seed}:${right.id}`))
@@ -271,14 +269,58 @@ function selectBalancedSamples(samples, count, seed) {
   return selected;
 }
 
+function positionBin(sample, binCount) {
+  return Math.min(
+    binCount - 1,
+    Math.floor(sample.relative_boundary_position * binCount),
+  );
+}
+
+export function selectPositionBalancedSamples(samples, count, seed, binCount = 10) {
+  const bins = Array.from({ length: binCount }, () => []);
+  for (const sample of samples) bins[positionBin(sample, binCount)].push(sample);
+  for (const bin of bins) {
+    bin.sort((left, right) => (
+      hashText(`${seed}:${left.id}`).localeCompare(hashText(`${seed}:${right.id}`))
+    ));
+  }
+
+  const selected = [];
+  const cursors = Array(binCount).fill(0);
+  const startBin = Number.parseInt(hashText(String(seed)).slice(0, 8), 16) % binCount;
+
+  while (selected.length < count) {
+    let madeProgress = false;
+    for (let offset = 0; offset < binCount && selected.length < count; offset += 1) {
+      const binIndex = (startBin + offset) % binCount;
+      if (cursors[binIndex] >= bins[binIndex].length) continue;
+      selected.push(bins[binIndex][cursors[binIndex]]);
+      cursors[binIndex] += 1;
+      madeProgress = true;
+    }
+    if (!madeProgress) break;
+  }
+
+  if (selected.length < count) {
+    throw new Error(`Only ${selected.length} pair samples; need ${count}`);
+  }
+  return selected;
+}
+
+function positionHistogram(samples, binCount) {
+  const histogram = Array(binCount).fill(0);
+  for (const sample of samples) histogram[positionBin(sample, binCount)] += 1;
+  return histogram;
+}
+
 function parseArguments(argv) {
   const options = {
     docsPerDomain: 400,
     trainPerDomain: 128,
     validationPerDomain: 32,
     testPerDomain: 32,
-    maxSideCharacters: 32,
-    seed: 2026090432,
+    positionBins: 10,
+    seed: 2026090405,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -336,13 +378,20 @@ async function main() {
 
     for (const [split, partition] of Object.entries(partitions)) {
       documentCounts[domain][split] = partition.length;
-      const candidates = partition.flatMap((document) => buildAdjacentSamples(document, {
-        maxSideCharacters: options.maxSideCharacters,
-      }));
+      const candidates = partition.flatMap(buildAdjacentSamples);
       const requested = options[`${split}PerDomain`];
+      const selectionSeed = `${options.seed}:${split}:${domain}`;
+      const selected = split === "train"
+        ? selectPositionBalancedSamples(
+          candidates,
+          requested,
+          selectionSeed,
+          options.positionBins,
+        )
+        : selectDeterministicSamples(candidates, requested, selectionSeed);
       samplesBySplitAndDomain[split].set(
         domain,
-        selectBalancedSamples(candidates, requested, `${options.seed}:${split}:${domain}`),
+        selected,
       );
     }
   }
@@ -369,11 +418,18 @@ async function main() {
 
   const summary = {
     seed: options.seed,
-    max_side_characters: options.maxSideCharacters,
+    max_side_characters: null,
+    training_position_bins: options.positionBins,
     sources: SOURCES.map(({ domain, url, sha256 }) => ({ domain, url, sha256 })),
     duplicate_documents_removed: deduplicated.duplicateCount,
     documents: documentCounts,
     samples: sampleCounts,
+    relative_position_histograms: Object.fromEntries(
+      Object.entries(samplesBySplit).map(([split, samples]) => [
+        split,
+        positionHistogram(samples, options.positionBins),
+      ]),
+    ),
     leakage_check: "passed",
   };
   await writeFile(

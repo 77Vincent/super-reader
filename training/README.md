@@ -25,11 +25,21 @@ document belongs to exactly one of train, validation, or test. Adjacent `A+B`
 pairs are generated only after that split, and every split contains an equal
 number of samples from all four domains.
 
-For each adjacent pair, punctuation and whitespace are excluded from the
-length count. If either `A` or `B` contains more than 32 content characters,
-the whole pair is discarded rather than cropped. A side of exactly 32
-characters is allowed, and there is no minimum length: even a one-character
-side remains a valid training example.
+There is no minimum or maximum length for either side: even a one-character
+side remains valid, and long sides are never cropped. Punctuation and
+whitespace are excluded from the recorded side lengths.
+
+Within each source domain, training samples are selected round-robin from ten
+equal-width buckets of `A_length / (A_length + B_length)`. This suppresses the
+shortcut of always choosing a boundary near the middle. Validation and test
+retain their natural position distributions.
+
+Training batches use power-of-two token-length buckets. Every batch is padded
+only to its own longest sequence, with at most 64 examples and a target budget
+of 2,048 padded tokens. Longer buckets automatically use fewer examples; a
+single sequence longer than the budget is still retained in a one-example
+batch. Side-length and relative-position metadata are kept for auditing but
+are not copied into the model input.
 
 Downloaded and generated files are ignored by Git. Source URLs and SHA-256
 checksums are saved in `training/data/processed/summary.json`.

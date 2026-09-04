@@ -30,10 +30,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--artifact-dir", type=Path, default=DEFAULT_ARTIFACT_DIR)
     parser.add_argument("--epochs", type=int, default=24)
     parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--max-tokens-per-batch", type=int, default=2048)
     parser.add_argument("--channels", type=int, default=48)
     parser.add_argument("--vocab-size", type=int, default=4096)
     parser.add_argument("--learning-rate", type=float, default=3e-3)
-    parser.add_argument("--seed", type=int, default=2026090432)
+    parser.add_argument("--seed", type=int, default=2026090405)
     return parser.parse_args()
 
 
@@ -66,30 +67,74 @@ def encode_records(
     unknown = vocabulary[UNKNOWN_TOKEN]
     return [
         {
-            **record,
+            "id": record["id"],
+            "domain": record["domain"],
+            "document_id": record["document_id"],
+            "tokens": record["tokens"],
+            "target_index": record["target_index"],
             "token_ids": [vocabulary.get(token, unknown) for token in record["tokens"]],
         }
         for record in records
     ]
 
 
+def bucket_ceiling(length: int) -> int:
+    return 1 << (length - 1).bit_length()
+
+
+def make_batch_indices(
+    records: list[dict[str, Any]],
+    batch_size: int,
+    max_tokens_per_batch: int,
+    *,
+    shuffle: bool,
+    seed: int,
+) -> list[list[int]]:
+    randomizer = random.Random(seed)
+    buckets: dict[int, list[int]] = defaultdict(list)
+    for index, record in enumerate(records):
+        buckets[bucket_ceiling(len(record["token_ids"]))].append(index)
+
+    batches = []
+    for ceiling in sorted(buckets):
+        indices = buckets[ceiling]
+        if shuffle:
+            randomizer.shuffle(indices)
+        effective_batch_size = max(
+            1,
+            min(batch_size, max_tokens_per_batch // ceiling),
+        )
+        batches.extend(
+            indices[offset : offset + effective_batch_size]
+            for offset in range(0, len(indices), effective_batch_size)
+        )
+
+    if shuffle:
+        randomizer.shuffle(batches)
+    return batches
+
+
 def iterate_batches(
     records: list[dict[str, Any]],
     batch_size: int,
-    maximum_length: int,
+    max_tokens_per_batch: int,
     *,
     shuffle: bool,
     seed: int,
 ) -> Iterator[dict[str, Any]]:
-    indices = list(range(len(records)))
-    if shuffle:
-        random.Random(seed).shuffle(indices)
-
-    for offset in range(0, len(indices), batch_size):
-        selected = [records[index] for index in indices[offset : offset + batch_size]]
-        token_ids = np.zeros((len(selected), maximum_length), dtype=np.int32)
-        token_mask = np.zeros((len(selected), maximum_length), dtype=np.float32)
-        gap_mask = np.zeros((len(selected), maximum_length - 1), dtype=np.bool_)
+    batches = make_batch_indices(
+        records,
+        batch_size,
+        max_tokens_per_batch,
+        shuffle=shuffle,
+        seed=seed,
+    )
+    for indices in batches:
+        selected = [records[index] for index in indices]
+        batch_length = max(len(record["token_ids"]) for record in selected)
+        token_ids = np.zeros((len(selected), batch_length), dtype=np.int32)
+        token_mask = np.zeros((len(selected), batch_length), dtype=np.float32)
+        gap_mask = np.zeros((len(selected), batch_length - 1), dtype=np.bool_)
         targets = np.zeros(len(selected), dtype=np.int32)
 
         for row, record in enumerate(selected):
@@ -175,7 +220,7 @@ def evaluate(
     model: BoundaryChooser,
     records: list[dict[str, Any]],
     batch_size: int,
-    maximum_length: int,
+    max_tokens_per_batch: int,
 ) -> dict[str, Any]:
     Tensor.training = False
     total_loss = 0.0
@@ -188,7 +233,7 @@ def evaluate(
     for batch in iterate_batches(
         records,
         batch_size,
-        maximum_length,
+        max_tokens_per_batch,
         shuffle=False,
         seed=0,
     ):
@@ -227,6 +272,71 @@ def random_baseline(records: list[dict[str, Any]]) -> float:
     return sum(1.0 / (len(record["tokens"]) - 1) for record in records) / len(records)
 
 
+def center_baseline(records: list[dict[str, Any]]) -> float:
+    correct = sum(
+        record["target_index"] == (len(record["tokens"]) - 1) // 2
+        for record in records
+    )
+    return correct / len(records)
+
+
+def build_length_prior(records: list[dict[str, Any]]) -> dict[int, int]:
+    counts: dict[int, Counter[int]] = defaultdict(Counter)
+    for record in records:
+        counts[len(record["tokens"])][record["target_index"]] += 1
+
+    return {
+        length: min(
+            target_counts,
+            key=lambda target: (
+                -target_counts[target],
+                abs(target - (length - 1) / 2),
+                target,
+            ),
+        )
+        for length, target_counts in counts.items()
+    }
+
+
+def length_prior_baseline(
+    records: list[dict[str, Any]],
+    prior: dict[int, int],
+) -> float:
+    correct = 0
+    for record in records:
+        length = len(record["tokens"])
+        prediction = prior.get(length, (length - 1) // 2)
+        correct += prediction == record["target_index"]
+    return correct / len(records)
+
+
+def batching_statistics(
+    records: list[dict[str, Any]],
+    batch_size: int,
+    max_tokens_per_batch: int,
+) -> dict[str, Any]:
+    batches = make_batch_indices(
+        records,
+        batch_size,
+        max_tokens_per_batch,
+        shuffle=False,
+        seed=0,
+    )
+    real_tokens = sum(len(record["token_ids"]) for record in records)
+    padded_tokens = sum(
+        len(indices) * max(len(records[index]["token_ids"]) for index in indices)
+        for indices in batches
+    )
+    return {
+        "batch_count": len(batches),
+        "smallest_batch_size": min(map(len, batches)),
+        "largest_batch_size": max(map(len, batches)),
+        "real_tokens": real_tokens,
+        "padded_tokens": padded_tokens,
+        "padding_efficiency": real_tokens / padded_tokens,
+    }
+
+
 def recursive_tree(
     tokens: list[str],
     scores: list[float],
@@ -250,12 +360,12 @@ def recursive_tree(
 def predict_record(
     model: BoundaryChooser,
     record: dict[str, Any],
-    maximum_length: int,
+    max_tokens_per_batch: int,
 ) -> dict[str, Any]:
     batch = next(iterate_batches(
         [record],
         batch_size=1,
-        maximum_length=maximum_length,
+        max_tokens_per_batch=max_tokens_per_batch,
         shuffle=False,
         seed=0,
     ))
@@ -340,7 +450,7 @@ def main() -> None:
         for batch in iterate_batches(
             records["train"],
             args.batch_size,
-            maximum_length,
+            args.max_tokens_per_batch,
             shuffle=True,
             seed=args.seed + epoch,
         ):
@@ -357,7 +467,7 @@ def main() -> None:
             model,
             records["validation"],
             args.batch_size,
-            maximum_length,
+            args.max_tokens_per_batch,
         )
         row = {
             "epoch": epoch,
@@ -391,18 +501,27 @@ def main() -> None:
         model,
         records["validation"],
         args.batch_size,
-        maximum_length,
+        args.max_tokens_per_batch,
     )
     test = evaluate(
         model,
         records["test"],
         args.batch_size,
-        maximum_length,
+        args.max_tokens_per_batch,
     )
     predictions = [
-        predict_record(model, record, maximum_length)
+        predict_record(model, record, args.max_tokens_per_batch)
         for record in records["test"][:4]
     ]
+    length_prior = build_length_prior(records["train"])
+    baselines = {
+        split: {
+            "random_accuracy": random_baseline(items),
+            "center_accuracy": center_baseline(items),
+            "train_length_lookup_accuracy": length_prior_baseline(items, length_prior),
+        }
+        for split, items in records.items()
+    }
     parameter_count = sum(math.prod(parameter.shape) for parameter in get_parameters(model))
     metrics = {
         "seed": args.seed,
@@ -418,8 +537,18 @@ def main() -> None:
             "dilation": 1,
         },
         "data_sizes": {split: len(items) for split, items in records.items()},
+        "batching": {
+            "maximum_examples_per_batch": args.batch_size,
+            "maximum_tokens_per_batch": args.max_tokens_per_batch,
+            "strategy": "power-of-two length buckets with per-batch dynamic padding",
+            "splits": {
+                split: batching_statistics(items, args.batch_size, args.max_tokens_per_batch)
+                for split, items in records.items()
+            },
+        },
         "validation": validation,
         "test": test,
+        "baselines": baselines,
         "test_random_baseline_accuracy": random_baseline(records["test"]),
         "history": history,
         "sample_predictions": predictions,
@@ -437,7 +566,7 @@ def main() -> None:
         "parameters": parameter_count,
         "validation_accuracy": validation["accuracy"],
         "test_accuracy": test["accuracy"],
-        "random_baseline": metrics["test_random_baseline_accuracy"],
+        "test_baselines": baselines["test"],
         "test_per_domain": test["per_domain_accuracy"],
     }, ensure_ascii=False, indent=2))
 
