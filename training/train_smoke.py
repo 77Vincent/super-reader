@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train the three-block residual boundary chooser on a multithreaded CPU."""
+"""Train the residual boundary chooser on a multithreaded CPU."""
 
 from __future__ import annotations
 
@@ -41,7 +41,13 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument("--batch-size", type=int, default=512)
     parser.add_argument("--max-tokens-per-batch", type=int, default=8192)
-    parser.add_argument("--channels", type=int, default=48)
+    parser.add_argument("--channels", type=int, default=64)
+    parser.add_argument(
+        "--residual-blocks",
+        type=int,
+        default=4,
+        help="Residual blocks; each block contains two kernel-3 convolutions",
+    )
     parser.add_argument("--vocab-size", type=int, default=4096)
     parser.add_argument("--learning-rate", type=float, default=3e-3)
     parser.add_argument("--seed", type=int, default=2026090405)
@@ -236,13 +242,15 @@ class ResidualConvBlock(nn.Module):
 
 
 class BoundaryChooser(nn.Module):
-    def __init__(self, vocabulary_size: int, channels: int):
+    def __init__(self, vocabulary_size: int, channels: int, residual_blocks: int):
         super().__init__()
         self.embedding = nn.Embedding(vocabulary_size, channels)
         # tinygrad's Embedding used by the earlier trainer initializes with
         # Glorot uniform; preserve that scale instead of PyTorch's N(0, 1).
         nn.init.xavier_uniform_(self.embedding.weight)
-        self.blocks = nn.ModuleList(ResidualConvBlock(channels) for _ in range(3))
+        self.blocks = nn.ModuleList(
+            ResidualConvBlock(channels) for _ in range(residual_blocks)
+        )
         self.boundary_hidden = nn.Linear(channels * 4, channels)
         self.boundary_output = nn.Linear(channels, 1)
 
@@ -521,6 +529,7 @@ def resume_configuration(args: argparse.Namespace) -> dict[str, Any]:
         "batch_size": args.batch_size,
         "max_tokens_per_batch": args.max_tokens_per_batch,
         "channels": args.channels,
+        "residual_blocks": args.residual_blocks,
         "vocab_size": args.vocab_size,
         "learning_rate": args.learning_rate,
         "seed": args.seed,
@@ -550,6 +559,8 @@ def main() -> None:
     args = parse_arguments()
     if args.epochs < 1:
         raise ValueError("--epochs must be positive")
+    if args.channels < 1 or args.residual_blocks < 1:
+        raise ValueError("--channels and --residual-blocks must be positive")
     configure_cpu(args.threads, args.interop_threads)
     seed_everything(args.seed)
     raw_records = {
@@ -591,7 +602,11 @@ def main() -> None:
         for record in split_records
     )
 
-    model = BoundaryChooser(len(vocabulary), args.channels)
+    model = BoundaryChooser(
+        len(vocabulary),
+        args.channels,
+        args.residual_blocks,
+    )
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=args.learning_rate,
@@ -861,7 +876,7 @@ def main() -> None:
         "maximum_sequence_length": maximum_length,
         "architecture": {
             "channels": args.channels,
-            "residual_blocks": 3,
+            "residual_blocks": args.residual_blocks,
             "convolutions_per_block": 2,
             "kernel_size": 3,
             "dilation": 1,

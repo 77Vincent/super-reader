@@ -246,6 +246,9 @@ test("CPU training uses benchmarked threads and equivalent three-tap matrix prod
   assert.match(training, /self\.weight\[:, :, 1\]/u);
   assert.match(training, /self\.weight\[:, :, 2\]/u);
   assert.match(training, /foreach=True/u);
+  assert.match(training, /--channels", type=int, default=64/u);
+  assert.match(training, /--residual-blocks/u);
+  assert.match(training, /default=4/u);
 });
 
 test("training saves atomic resumable state at safe interrupt boundaries", () => {

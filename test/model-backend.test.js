@@ -14,6 +14,9 @@ test("browser backend loads the exported best checkpoint", () => {
   assert.equal(info.tokenization, "character");
   assert.equal(info.candidatePositions, "between every adjacent Han character");
   assert.equal(info.vocabularySize, 4096);
+  assert.equal(info.channels, 48);
+  assert.equal(info.residualBlocks, 3);
+  assert.equal(info.convolutionLayers, 6);
   assert.match(info.checkpointSha256, /^[a-f0-9]{64}$/u);
 });
 

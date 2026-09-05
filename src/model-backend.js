@@ -12,7 +12,15 @@
 })(globalThis, function createModelBackend(modelData) {
   "use strict";
 
-  const CHANNELS = 48;
+  const tensorDescriptors = modelData && modelData.tensors ? modelData.tensors : {};
+  const CHANNELS = modelData && modelData.architecture
+    ? modelData.architecture.channels
+    : tensorDescriptors["embedding.weight"].shape[1];
+  const RESIDUAL_BLOCKS = modelData && modelData.architecture
+    ? modelData.architecture.residualBlocks
+    : Object.keys(tensorDescriptors)
+      .filter((name) => /^blocks\.\d+\.normalization\.weight$/u.test(name))
+      .length;
   const FEATURE_CHANNELS = CHANNELS * 4;
   const LAYER_NORM_EPSILON = 1e-5;
   const GELU_FACTOR = Math.sqrt(2 / Math.PI);
@@ -122,7 +130,7 @@
   function createModel() {
     const vocabulary = modelData.vocabulary;
     const embedding = tensor("embedding.weight");
-    const blocks = Array.from({ length: 3 }, (_, index) => ({
+    const blocks = Array.from({ length: RESIDUAL_BLOCKS }, (_, index) => ({
       normalizationWeight: tensor(`blocks.${index}.normalization.weight`),
       normalizationBias: tensor(`blocks.${index}.normalization.bias`),
       firstWeight: tensor(`blocks.${index}.first.weight`),
@@ -228,6 +236,9 @@
         tokenization: modelData.tokenization,
         candidatePositions: modelData.candidatePositions,
         vocabularySize: Object.keys(modelData.vocabulary).length,
+        channels: CHANNELS,
+        residualBlocks: RESIDUAL_BLOCKS,
+        convolutionLayers: RESIDUAL_BLOCKS * 2,
       });
     },
     scoreTokens(tokens) {

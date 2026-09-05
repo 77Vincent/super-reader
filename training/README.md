@@ -10,8 +10,8 @@ best validation accuracy.
 
 ## Architecture
 
-- Han-character embedding with 48 channels;
-- three residual blocks;
+- Han-character embedding with 64 channels;
+- four residual blocks (eight convolution layers total);
 - two `Conv1d(kernel_size=3, dilation=1)` layers per block;
 - one score for every adjacent Han-character gap;
 - masked softmax cross-entropy with exactly one target gap.

@@ -30,11 +30,13 @@ def main() -> None:
     vocabulary = json.loads(VOCABULARY_PATH.read_text(encoding="utf-8"))
     metrics = json.loads(METRICS_PATH.read_text(encoding="utf-8"))
     state = safe_load(str(CHECKPOINT_PATH))
+    architecture = metrics["architecture"]
+    residual_blocks = int(architecture["residual_blocks"])
     tensor_names = [
         "embedding.weight",
         *(
             name
-            for block in range(3)
+            for block in range(residual_blocks)
             for name in (
                 f"blocks.{block}.normalization.weight",
                 f"blocks.{block}.normalization.bias",
@@ -73,6 +75,13 @@ def main() -> None:
         "testAccuracy": metrics["test"]["accuracy"],
         "tokenization": metrics.get("tokenization", "unspecified"),
         "candidatePositions": metrics.get("candidate_positions", "unspecified"),
+        "architecture": {
+            "channels": int(architecture["channels"]),
+            "residualBlocks": residual_blocks,
+            "convolutionsPerBlock": int(architecture["convolutions_per_block"]),
+            "kernelSize": int(architecture["kernel_size"]),
+            "dilation": int(architecture["dilation"]),
+        },
         "vocabulary": vocabulary,
         "tensors": tensors,
         "weightsBase64": base64.b64encode(b"".join(chunks)).decode("ascii"),
