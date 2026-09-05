@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import base64
 import hashlib
 import json
@@ -22,14 +23,25 @@ METRICS_PATH = SCRIPT_DIR / "artifacts" / "smoke-metrics.json"
 OUTPUT_PATH = PROJECT_DIR / "src" / "boundary-model-data.js"
 
 
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--artifact-dir", type=Path, default=SCRIPT_DIR / "artifacts")
+    parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_arguments()
     os.environ["DEBUG"] = "0"
     sys.path.insert(0, str(DEPENDENCY_DIR))
     from tinygrad.nn.state import safe_load
 
-    vocabulary = json.loads(VOCABULARY_PATH.read_text(encoding="utf-8"))
-    metrics = json.loads(METRICS_PATH.read_text(encoding="utf-8"))
-    state = safe_load(str(CHECKPOINT_PATH))
+    checkpoint_path = args.artifact_dir / CHECKPOINT_PATH.name
+    vocabulary_path = args.artifact_dir / VOCABULARY_PATH.name
+    metrics_path = args.artifact_dir / METRICS_PATH.name
+    vocabulary = json.loads(vocabulary_path.read_text(encoding="utf-8"))
+    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    state = safe_load(str(checkpoint_path))
     architecture = metrics["architecture"]
     residual_blocks = int(architecture["residual_blocks"])
     tensor_names = [
@@ -67,7 +79,7 @@ def main() -> None:
         }
         float_offset += int(flat.size)
 
-    checkpoint_bytes = CHECKPOINT_PATH.read_bytes()
+    checkpoint_bytes = checkpoint_path.read_bytes()
     payload = {
         "format": "super-reader-f32-v1",
         "checkpointSha256": hashlib.sha256(checkpoint_bytes).hexdigest(),
@@ -93,13 +105,13 @@ def main() -> None:
         "  root.SuperReaderBoundaryModelData = data;\n"
         f"}})(globalThis,{serialized});\n"
     )
-    OUTPUT_PATH.write_text(output, encoding="utf-8")
+    args.output.write_text(output, encoding="utf-8")
     print(json.dumps({
-        "output": str(OUTPUT_PATH),
+        "output": str(args.output),
         "checkpoint_sha256": payload["checkpointSha256"],
         "tensor_count": len(tensors),
         "float_count": float_offset,
-        "output_bytes": OUTPUT_PATH.stat().st_size,
+        "output_bytes": args.output.stat().st_size,
     }, indent=2))
 
 

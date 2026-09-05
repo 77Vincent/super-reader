@@ -7,6 +7,8 @@
     "test": "node --test",
     "smoke:data": "node --max-old-space-size=20480 training/prepare_smoke_data.mjs --tokenization character",
     "smoke:model": "npm run smoke:data && python3 training/run_smoke.py --epochs 2",
+    "full:data": "node --max-old-space-size=4096 training/prepare_full_wikipedia_data.mjs",
+    "full:model": "python3 training/run_sharded.py --epochs 3 --channels 128 --residual-blocks 4 --initialize-from training/artifacts/data-scale-wiki-250k-8conv-64ch-6ep/training-state.pt",
     "model:export": "python3 training/export_browser_model.py",
     "smoke:compare": "python3 training/run_tokenization_comparison.py"
   }

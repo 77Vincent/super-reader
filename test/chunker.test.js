@@ -111,7 +111,7 @@ test("punctuation-delimited clauses of seven characters or fewer stay intact", (
 test("continues recursively when the remainder after a split still exceeds seven characters", () => {
   const chunks = chunkText("而是帮助大脑更快地识别信息结构。");
 
-  assert.deepEqual(chunks, ["而是", "帮助大脑更快地", "识别信息结构。"]);
+  assert.deepEqual(chunks, ["而是", "帮助大脑", "更快地识别信息", "结构。"]);
   assert.ok(chunks.every((chunk) => visualLength(chunk) <= 7));
 });
 

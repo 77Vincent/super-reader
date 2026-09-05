@@ -136,6 +136,39 @@ python3 training/run_smoke.py \
 The resume command rejects changed data or incompatible training arguments.
 A second Ctrl+C forces immediate exit and may skip the safe-stop save.
 
+Export a completed run directly from its artifact directory:
+
+```bash
+python3 training/export_browser_model.py \
+  --artifact-dir training/artifacts/data-scale-wiki-250k-8conv-64ch-6ep
+```
+
+## Full-Wikipedia, memory-bounded run
+
+The full-data path scans every block of the downloaded Chinese Wikipedia dump
+without retaining the corpus in memory. It writes 128 compact shards, seeds a
+256 MB Bloom filter with validation and test boundaries before admitting any
+training pair, checkpoints preparation every 100 dump blocks, and caps each
+article at 128 evenly distributed boundaries. Samples longer than 2,048 Han
+characters are excluded to bound the largest possible batch. The existing
+validation and test documents remain holdouts.
+
+```bash
+npm run full:data
+npm run full:model
+```
+
+The full model uses 128 channels and four residual blocks (eight kernel-3
+convolution layers). It initializes the overlapping 64 channels and all four
+blocks from the retained 75.50% checkpoint, then learns the added capacity.
+Training loads one shard at a time and writes a resumable checkpoint every four
+shards. An existing training state is never overwritten implicitly. Resume a
+stopped or completed run with:
+
+```bash
+npm run full:model -- --resume
+```
+
 ## Candidate-tokenization comparison
 
 To compare `Intl.Segmenter` word gaps with every adjacent Han-character gap on

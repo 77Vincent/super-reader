@@ -265,6 +265,25 @@ test("training saves atomic resumable state at safe interrupt boundaries", () =>
   assert.match(documentation, /--epochs 6 --resume/u);
 });
 
+test("full Wikipedia preparation and training stay memory bounded", () => {
+  const { readFileSync } = require("node:fs");
+  const preparation = readFileSync(
+    "training/prepare_full_wikipedia_data.mjs",
+    "utf8",
+  );
+  const training = readFileSync("training/train_sharded.py", "utf8");
+
+  assert.match(preparation, /wiki-full-sharded-128/u);
+  assert.match(preparation, /maxSamplesPerDocument:\s*128/u);
+  assert.match(preparation, /BLOOM_BYTES = 256 \* 1024 \* 1024/u);
+  assert.match(preparation, /preparation-state\.json/u);
+  assert.match(preparation, /maxSequenceLength:\s*2048/u);
+  assert.match(training, /read_training_shard/u);
+  assert.match(training, /--channels", type=int, default=128/u);
+  assert.match(training, /"sharded_streaming": True/u);
+  assert.match(training, /Training state already exists/u);
+});
+
 test("comparison modes keep the same text and gold boundary but change candidates", async () => {
   const { buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
   const document = {
