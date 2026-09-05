@@ -601,6 +601,50 @@ export function selectPositionBalancedSamples(samples, count, seed, binCount = 1
   return selected;
 }
 
+function sampleBoundarySignature(sample) {
+  const left = sample.tokens.slice(0, sample.target_index + 1).join("");
+  const right = sample.tokens.slice(sample.target_index + 1).join("");
+  return `${left}\u0000${right}`;
+}
+
+export function deduplicateSampleBoundaries(samplesBySplit, seed) {
+  const seen = new Set();
+  const deduplicated = {};
+  const removed = {};
+
+  // Holdouts claim repeated boundaries first so evaluation examples can never
+  // be learned from an identical training pair. Test precedes validation to
+  // keep the final metric independent from validation-driven model choices.
+  for (const split of ["test", "validation", "train"]) {
+    const samples = [...(samplesBySplit[split] || [])].sort((left, right) => (
+      hashText(`${seed}:sample-deduplication:${left.id}`)
+        .localeCompare(hashText(`${seed}:sample-deduplication:${right.id}`))
+    ));
+    const kept = [];
+    let removedCount = 0;
+
+    for (const sample of samples) {
+      const signature = sampleBoundarySignature(sample);
+      if (seen.has(signature)) {
+        removedCount += 1;
+        continue;
+      }
+      seen.add(signature);
+      kept.push(sample);
+    }
+    deduplicated[split] = kept;
+    removed[split] = removedCount;
+  }
+
+  return {
+    samplesBySplit: deduplicated,
+    removed: {
+      ...removed,
+      total: Object.values(removed).reduce((total, count) => total + count, 0),
+    },
+  };
+}
+
 function positionHistogram(samples, binCount) {
   const histogram = Array(binCount).fill(0);
   for (const sample of samples) histogram[positionBin(sample, binCount)] += 1;
@@ -612,7 +656,7 @@ function parseArguments(argv) {
     outputDir: DEFAULT_PROCESSED_DIR,
     tokenization: "character",
     docsPerDomain: 0,
-    wikipediaDocs: 5000,
+    wikipediaDocs: 250000,
     trainPerDomain: 0,
     validationPerDomain: 0,
     testPerDomain: 0,
@@ -640,7 +684,25 @@ function parseArguments(argv) {
 }
 
 async function writeJsonLines(path, records) {
-  await writeFile(path, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
+  const temporaryPath = `${path}.part`;
+  const output = await open(temporaryPath, "w");
+  const recordsPerChunk = 5000;
+  let complete = false;
+
+  try {
+    for (let index = 0; index < records.length; index += recordsPerChunk) {
+      const chunk = records
+        .slice(index, index + recordsPerChunk)
+        .map((record) => JSON.stringify(record))
+        .join("\n");
+      await output.write(`${chunk}\n`);
+    }
+    complete = true;
+  } finally {
+    await output.close();
+    if (!complete) await rm(temporaryPath, { force: true });
+  }
+  await rename(temporaryPath, path);
 }
 
 function verifyNoDocumentLeakage(samplesBySplit) {
@@ -652,6 +714,20 @@ function verifyNoDocumentLeakage(samplesBySplit) {
         throw new Error(`Document leakage: ${sample.document_id} in ${previous} and ${split}`);
       }
       owners.set(sample.document_id, split);
+    }
+  }
+}
+
+function verifyNoSampleLeakage(samplesBySplit) {
+  const owners = new Map();
+  for (const [split, samples] of Object.entries(samplesBySplit)) {
+    for (const sample of samples) {
+      const signature = sampleBoundarySignature(sample);
+      const previous = owners.get(signature);
+      if (previous) {
+        throw new Error(`Sample boundary leakage: ${sample.id} duplicates ${previous.id}`);
+      }
+      owners.set(signature, { id: sample.id, split });
     }
   }
 }
@@ -695,6 +771,19 @@ async function main() {
       }));
       candidatesBySplitAndDomain[split].set(domain, candidates);
     }
+  }
+
+  const sampleDeduplication = deduplicateSampleBoundaries(
+    Object.fromEntries(Object.entries(candidatesBySplitAndDomain).map(([split, byDomain]) => [
+      split,
+      Array.from(byDomain.values()).flat(),
+    ])),
+    options.seed,
+  );
+  for (const [split, samples] of Object.entries(sampleDeduplication.samplesBySplit)) {
+    const byDomain = new Map(SOURCES.map((source) => [source.domain, []]));
+    for (const sample of samples) byDomain.get(sample.domain).push(sample);
+    candidatesBySplitAndDomain[split] = byDomain;
   }
 
   const availableSampleCounts = {};
@@ -743,6 +832,7 @@ async function main() {
   }
 
   verifyNoDocumentLeakage(samplesBySplit);
+  verifyNoSampleLeakage(samplesBySplit);
   await mkdir(options.outputDir, { recursive: true });
   await Promise.all(Object.entries(samplesBySplit).map(([split, samples]) => (
     writeJsonLines(join(options.outputDir, `${split}.jsonl`), samples)
@@ -770,6 +860,7 @@ async function main() {
         .map(({ filename, url, checksum }) => ({ filename, url, checksum })),
     })),
     duplicate_documents_removed: deduplicated.duplicateCount,
+    duplicate_sample_boundaries_removed: sampleDeduplication.removed,
     documents: documentCounts,
     available_samples: availableSampleCounts,
     selected_samples_per_domain: selectedSamplesPerDomain,
@@ -780,7 +871,7 @@ async function main() {
         positionHistogram(samples, options.positionBins),
       ]),
     ),
-    leakage_check: "passed",
+    leakage_check: "passed (document IDs and sample boundaries)",
   };
   await writeFile(
     join(options.outputDir, "summary.json"),

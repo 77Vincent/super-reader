@@ -77,7 +77,7 @@ test("training uses the latest Chinese Wikipedia current-article dump", () => {
     preparation,
     /zhwiki\/latest\/zhwiki-latest-pages-articles-multistream\.xml\.bz2/u,
   );
-  assert.match(preparation, /wikipediaDocs:\s*5000/u);
+  assert.match(preparation, /wikipediaDocs:\s*250000/u);
   assert.doesNotMatch(preparation, /zhwiki-latest-pages-meta-history/u);
 });
 
@@ -118,6 +118,45 @@ test("one-character fragments remain valid training sides", async () => {
   assert.equal(sample.target_index, 0);
   assert.equal(sample.left_character_length, 1);
   assert.equal(sample.right_character_length, 1);
+});
+
+test("sample boundaries are unique within and across data splits", async () => {
+  const { deduplicateSampleBoundaries } = await import(
+    "../training/prepare_smoke_data.mjs"
+  );
+  const sample = (id, text, targetIndex, domain = "fixture") => ({
+    id,
+    domain,
+    tokens: Array.from(text),
+    target_index: targetIndex,
+  });
+  const result = deduplicateSampleBoundaries({
+    train: [
+      sample("train:shared-test", "共同边界", 1),
+      sample("train:shared-validation", "验证边界", 1),
+      sample("train:unique", "训练独有", 1),
+      sample("train:duplicate", "训练独有", 1),
+    ],
+    validation: [sample("validation:shared", "验证边界", 1)],
+    test: [sample("test:shared", "共同边界", 1)],
+  }, 42);
+
+  assert.deepEqual(
+    result.samplesBySplit.test.map(({ id }) => id),
+    ["test:shared"],
+  );
+  assert.deepEqual(
+    result.samplesBySplit.validation.map(({ id }) => id),
+    ["validation:shared"],
+  );
+  assert.equal(result.samplesBySplit.train.length, 1);
+  assert.match(result.samplesBySplit.train[0].id, /^train:(?:unique|duplicate)$/u);
+  assert.deepEqual(result.removed, {
+    test: 0,
+    validation: 0,
+    train: 3,
+    total: 3,
+  });
 });
 
 test("training selection balances relative boundary-position buckets", async () => {

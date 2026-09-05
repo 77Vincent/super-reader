@@ -32,15 +32,17 @@ index. It contains current article content rather than revision history. The
 compressed files currently require about 3.6 GB, are streamed to disk, and are
 verified against Wikimedia's current MD5 manifest. The index provides a
 deterministic sample across the whole dump instead of taking only its first
-pages. By default, 5,000 main-namespace, non-redirect articles are retained;
+pages. By default, 250,000 main-namespace, non-redirect articles are retained;
 change the count with `--wikipedia-docs`, or pass `0` to disable this source.
 Wikipedia text remains subject to its CC BY-SA license and attribution terms.
 
 Documents are normalized and globally deduplicated before being split. Each
 document belongs to exactly one of train, validation, or test. Adjacent `A+B`
-pairs are generated only after that split. Every eligible pair is retained, so
-the five source domains keep their natural sample counts after Wikipedia's
-article-level sampling.
+pairs are generated only after that split. Identical text-and-boundary pairs
+are then deduplicated with test, validation, and training priority in that
+order, preventing a holdout boundary from appearing in training. Every
+remaining eligible pair is retained, so the five source domains keep their
+natural sample counts after Wikipedia's article-level sampling.
 
 There is no minimum or maximum length for either side: even a one-character
 side remains valid, and long sides are never cropped. Punctuation and
@@ -98,10 +100,11 @@ node training/prepare_smoke_data.mjs
 python3 training/run_smoke.py
 ```
 
-For example, to prepare 10,000 Wikipedia articles:
+For example, to prepare 500,000 Wikipedia articles:
 
 ```bash
-node training/prepare_smoke_data.mjs --wikipedia-docs 10000
+node --max-old-space-size=20480 training/prepare_smoke_data.mjs \
+  --wikipedia-docs 500000
 ```
 
 Data preparation requires the `unzip` and `bzip2` command-line tools.
