@@ -5,14 +5,16 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import math
 import os
 import random
+import signal
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 import numpy as np
 import torch
@@ -32,6 +34,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--artifact-dir", type=Path, default=DEFAULT_ARTIFACT_DIR)
     parser.add_argument("--epochs", type=int, default=2)
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from artifact-dir/training-state.pt",
+    )
     parser.add_argument("--batch-size", type=int, default=512)
     parser.add_argument("--max-tokens-per-batch", type=int, default=8192)
     parser.add_argument("--channels", type=int, default=48)
@@ -147,15 +154,21 @@ def iterate_batches(
     *,
     shuffle: bool,
     seed: int,
+    batch_indices: list[list[int]] | None = None,
+    start_batch: int = 0,
 ) -> Iterator[dict[str, Any]]:
-    batches = make_batch_indices(
-        records,
-        batch_size,
-        max_tokens_per_batch,
-        shuffle=shuffle,
-        seed=seed,
+    batches = (
+        batch_indices
+        if batch_indices is not None
+        else make_batch_indices(
+            records,
+            batch_size,
+            max_tokens_per_batch,
+            shuffle=shuffle,
+            seed=seed,
+        )
     )
-    for indices in batches:
+    for indices in batches[start_batch:]:
         selected = [records[index] for index in indices]
         batch_length = max(len(record["token_ids"]) for record in selected)
         token_ids = np.zeros((len(selected), batch_length), dtype=np.int64)
@@ -253,11 +266,16 @@ class BoundaryChooser(nn.Module):
         return logits.masked_fill(~gap_mask, -1e9)
 
 
+class TrainingStopRequested(Exception):
+    """Raised at a safe batch boundary after an interrupt request."""
+
+
 def evaluate(
     model: BoundaryChooser,
     records: list[dict[str, Any]],
     batch_size: int,
     max_tokens_per_batch: int,
+    should_stop: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     model.eval()
     total_loss = 0.0
@@ -278,6 +296,8 @@ def evaluate(
             shuffle=False,
             seed=0,
         ):
+            if should_stop is not None and should_stop():
+                raise TrainingStopRequested
             logits = model(batch["token_ids"], batch["token_mask"], batch["gap_mask"])
             loss = F.cross_entropy(logits, batch["targets"])
             predictions_tensor = logits.argmax(dim=1)
@@ -479,8 +499,57 @@ def save_browser_compatible_checkpoint(
     safe_save(checkpoint_state, str(checkpoint_path))
 
 
+def data_identity(
+    raw_records: dict[str, list[dict[str, Any]]],
+    summary_path: Path,
+) -> dict[str, Any]:
+    return {
+        "split_sizes": {
+            split: len(records)
+            for split, records in raw_records.items()
+        },
+        "summary_sha256": (
+            hashlib.sha256(summary_path.read_bytes()).hexdigest()
+            if summary_path.exists()
+            else None
+        ),
+    }
+
+
+def resume_configuration(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "batch_size": args.batch_size,
+        "max_tokens_per_batch": args.max_tokens_per_batch,
+        "channels": args.channels,
+        "vocab_size": args.vocab_size,
+        "learning_rate": args.learning_rate,
+        "seed": args.seed,
+    }
+
+
+def save_training_state(path: Path, state: dict[str, Any]) -> None:
+    """Atomically save all state needed to continue at the next safe batch."""
+    temporary_path = path.with_name(f"{path.name}.part")
+    try:
+        torch.save(state, temporary_path)
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def load_training_state(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        raise FileNotFoundError(f"Resume checkpoint does not exist: {path}")
+    state = torch.load(path, map_location="cpu", weights_only=True)
+    if state.get("format_version") != 1:
+        raise ValueError(f"Unsupported resume checkpoint format: {path}")
+    return state
+
+
 def main() -> None:
     args = parse_arguments()
+    if args.epochs < 1:
+        raise ValueError("--epochs must be positive")
     configure_cpu(args.threads, args.interop_threads)
     seed_everything(args.seed)
     raw_records = {
@@ -493,7 +562,25 @@ def main() -> None:
         if summary_path.exists()
         else {}
     )
-    vocabulary = build_vocabulary(raw_records["train"], args.vocab_size)
+    args.artifact_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = args.artifact_dir / "boundary-smoke.safetensors"
+    vocabulary_path = args.artifact_dir / "boundary-smoke-vocabulary.json"
+    training_state_path = args.artifact_dir / "training-state.pt"
+    current_data_identity = data_identity(raw_records, summary_path)
+    current_configuration = resume_configuration(args)
+    resume_state = load_training_state(training_state_path) if args.resume else None
+
+    if resume_state is not None:
+        if resume_state["configuration"] != current_configuration:
+            raise ValueError(
+                "Resume checkpoint configuration differs from the current arguments"
+            )
+        if resume_state["data_identity"] != current_data_identity:
+            raise ValueError("Resume checkpoint was created from different training data")
+        vocabulary = resume_state["vocabulary"]
+    else:
+        vocabulary = build_vocabulary(raw_records["train"], args.vocab_size)
+
     records = {
         split: encode_records(split_records, vocabulary)
         for split, split_records in raw_records.items()
@@ -511,26 +598,129 @@ def main() -> None:
         weight_decay=1e-4,
         foreach=True,
     )
-    args.artifact_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = args.artifact_dir / "boundary-smoke.safetensors"
-    vocabulary_path = args.artifact_dir / "boundary-smoke-vocabulary.json"
     best_validation = -math.inf
     best_epoch = 0
     best_state: dict[str, torch.Tensor] | None = None
-    history = []
+    history: list[dict[str, Any]] = []
+    start_epoch = 1
+    start_batch = 0
+    resumed_running_loss = 0.0
+    resumed_seen_weight = 0.0
+    resumed_seen_examples = 0
+    resumed_training_seconds = 0.0
 
-    for epoch in range(1, args.epochs + 1):
+    if resume_state is not None:
+        model.load_state_dict(resume_state["model_state"])
+        optimizer.load_state_dict(resume_state["optimizer_state"])
+        best_validation = resume_state["best_validation"]
+        best_epoch = resume_state["best_epoch"]
+        best_state = resume_state["best_state"]
+        history = resume_state["history"]
+        progress = resume_state["progress"]
+        start_epoch = progress["epoch"]
+        start_batch = progress["next_batch"]
+        resumed_running_loss = progress["running_loss"]
+        resumed_seen_weight = progress["seen_weight"]
+        resumed_seen_examples = progress["seen_examples"]
+        resumed_training_seconds = progress["training_seconds"]
+        if start_epoch > args.epochs + 1:
+            raise ValueError(
+                f"Resume checkpoint is already at epoch {start_epoch - 1}, "
+                f"beyond requested --epochs {args.epochs}"
+            )
+        print(
+            f"resumed epoch={start_epoch:02d} next_batch={start_batch} "
+            f"completed_epochs={len(history)}",
+            flush=True,
+        )
+
+    stop_control = {"requested": False, "signals": 0}
+
+    def handle_stop_request(signum: int, _frame: Any) -> None:
+        stop_control["signals"] += 1
+        if stop_control["signals"] == 1:
+            stop_control["requested"] = True
+            print(
+                "stop requested; saving at the next safe batch boundary "
+                "(send the signal again to force exit)",
+                flush=True,
+            )
+            return
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+
+    signal.signal(signal.SIGINT, handle_stop_request)
+    signal.signal(signal.SIGTERM, handle_stop_request)
+
+    def persist_training_state(
+        *,
+        epoch: int,
+        next_batch: int,
+        running_loss: float,
+        seen_weight: float,
+        seen_examples: int,
+        training_seconds: float,
+    ) -> None:
+        save_training_state(training_state_path, {
+            "format_version": 1,
+            "configuration": current_configuration,
+            "data_identity": current_data_identity,
+            "vocabulary": vocabulary,
+            "model_state": model.state_dict(),
+            "optimizer_state": optimizer.state_dict(),
+            "best_validation": best_validation,
+            "best_epoch": best_epoch,
+            "best_state": best_state,
+            "history": history,
+            "progress": {
+                "epoch": epoch,
+                "next_batch": next_batch,
+                "running_loss": running_loss,
+                "seen_weight": seen_weight,
+                "seen_examples": seen_examples,
+                "training_seconds": training_seconds,
+            },
+        })
+
+    for epoch in range(start_epoch, args.epochs + 1):
         model.train()
-        running_loss = 0.0
-        seen_weight = 0.0
-        seen_examples = 0
-        epoch_started = time.perf_counter()
-        for batch in iterate_batches(
+        if epoch == start_epoch:
+            epoch_start_batch = start_batch
+            running_loss = resumed_running_loss
+            seen_weight = resumed_seen_weight
+            seen_examples = resumed_seen_examples
+            previous_training_seconds = resumed_training_seconds
+        else:
+            epoch_start_batch = 0
+            running_loss = 0.0
+            seen_weight = 0.0
+            seen_examples = 0
+            previous_training_seconds = 0.0
+
+        training_batches = make_batch_indices(
             records["train"],
             args.batch_size,
             args.max_tokens_per_batch,
             shuffle=True,
             seed=args.seed + epoch,
+        )
+        if epoch_start_batch > len(training_batches):
+            raise ValueError(
+                f"Resume batch {epoch_start_batch} exceeds epoch batch count "
+                f"{len(training_batches)}"
+            )
+        epoch_started = time.perf_counter()
+        for batch_index, batch in enumerate(
+            iterate_batches(
+                records["train"],
+                args.batch_size,
+                args.max_tokens_per_batch,
+                shuffle=True,
+                seed=args.seed + epoch,
+                batch_indices=training_batches,
+                start_batch=epoch_start_batch,
+            ),
+            start=epoch_start_batch,
         ):
             optimizer.zero_grad(set_to_none=True)
             logits = model(batch["token_ids"], batch["token_mask"], batch["gap_mask"])
@@ -543,14 +733,51 @@ def main() -> None:
             seen_weight += batch["sample_weight_sum"]
             seen_examples += len(batch["records"])
 
-        training_seconds = time.perf_counter() - epoch_started
+            if stop_control["requested"]:
+                training_seconds = (
+                    previous_training_seconds
+                    + time.perf_counter() - epoch_started
+                )
+                persist_training_state(
+                    epoch=epoch,
+                    next_batch=batch_index + 1,
+                    running_loss=running_loss,
+                    seen_weight=seen_weight,
+                    seen_examples=seen_examples,
+                    training_seconds=training_seconds,
+                )
+                print(
+                    f"training stopped; resume checkpoint={training_state_path} "
+                    f"epoch={epoch} next_batch={batch_index + 1}",
+                    flush=True,
+                )
+                return
 
-        validation = evaluate(
-            model,
-            records["validation"],
-            args.batch_size,
-            args.max_tokens_per_batch,
-        )
+        training_seconds = previous_training_seconds + time.perf_counter() - epoch_started
+
+        try:
+            validation = evaluate(
+                model,
+                records["validation"],
+                args.batch_size,
+                args.max_tokens_per_batch,
+                should_stop=lambda: stop_control["requested"],
+            )
+        except TrainingStopRequested:
+            persist_training_state(
+                epoch=epoch,
+                next_batch=len(training_batches),
+                running_loss=running_loss,
+                seen_weight=seen_weight,
+                seen_examples=seen_examples,
+                training_seconds=training_seconds,
+            )
+            print(
+                f"training stopped during validation; "
+                f"resume checkpoint={training_state_path} epoch={epoch}",
+                flush=True,
+            )
+            return
         row = {
             "epoch": epoch,
             "train_loss": running_loss / seen_weight,
@@ -572,6 +799,22 @@ def main() -> None:
             best_validation = validation["accuracy"]
             best_epoch = epoch
             best_state = clone_state(model)
+
+        persist_training_state(
+            epoch=epoch + 1,
+            next_batch=0,
+            running_loss=0.0,
+            seen_weight=0.0,
+            seen_examples=0,
+            training_seconds=0.0,
+        )
+        if stop_control["requested"]:
+            print(
+                f"training stopped after epoch {epoch}; "
+                f"resume checkpoint={training_state_path}",
+                flush=True,
+            )
+            return
 
     if best_state is None:
         raise RuntimeError("Training did not produce a checkpoint")
@@ -635,6 +878,7 @@ def main() -> None:
                 "equivalent three-tap left/center/right matrix products"
             ),
             "optimizer_foreach": True,
+            "resumable_checkpoint": str(training_state_path),
         },
         "data_sizes": {split: len(items) for split, items in records.items()},
         "training_weighting": {
@@ -679,6 +923,7 @@ def main() -> None:
 
     print(json.dumps({
         "checkpoint": str(checkpoint_path),
+        "resume_checkpoint": str(training_state_path),
         "metrics": str(metrics_path),
         "best_epoch": best_epoch,
         "parameters": parameter_count,

@@ -248,6 +248,20 @@ test("CPU training uses benchmarked threads and equivalent three-tap matrix prod
   assert.match(training, /foreach=True/u);
 });
 
+test("training saves atomic resumable state at safe interrupt boundaries", () => {
+  const { readFileSync } = require("node:fs");
+  const training = readFileSync("training/train_smoke.py", "utf8");
+  const documentation = readFileSync("training/README.md", "utf8");
+
+  assert.match(training, /"--resume"/u);
+  assert.match(training, /training-state\.pt/u);
+  assert.match(training, /"optimizer_state": optimizer\.state_dict\(\)/u);
+  assert.match(training, /"next_batch": next_batch/u);
+  assert.match(training, /os\.replace\(temporary_path, path\)/u);
+  assert.match(training, /signal\.SIGINT/u);
+  assert.match(documentation, /--epochs 6 --resume/u);
+});
+
 test("comparison modes keep the same text and gold boundary but change candidates", async () => {
   const { buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
   const document = {

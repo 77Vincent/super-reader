@@ -120,6 +120,22 @@ The checkpoint and metrics are written under `training/artifacts/`.
 The checked-in summary of the latest completed run is in
 [`SMOKE_RESULTS.md`](SMOKE_RESULTS.md).
 
+Training also writes an atomic resumable checkpoint to
+`training-state.pt` after every completed epoch. Pressing Ctrl+C once requests
+a safe stop: the current batch finishes, then the model, optimizer, best model,
+history, epoch, and next batch position are saved. Resume from the same
+artifact directory with the same data and model arguments; `--epochs` is the
+desired total epoch count:
+
+```bash
+python3 training/run_smoke.py \
+  --artifact-dir training/artifacts/data-scale-wiki-250k-6ep \
+  --epochs 6 --resume
+```
+
+The resume command rejects changed data or incompatible training arguments.
+A second Ctrl+C forces immediate exit and may skip the safe-stop save.
+
 ## Candidate-tokenization comparison
 
 To compare `Intl.Segmenter` word gaps with every adjacent Han-character gap on
