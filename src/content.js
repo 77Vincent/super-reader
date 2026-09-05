@@ -39,6 +39,21 @@
     "MATH",
     "CANVAS",
   ]);
+  const FLOW_BREAK_TAGS = new Set(["BR", "WBR"]);
+  const INLINE_FLOW_DISPLAYS = new Set([
+    "contents",
+    "inline",
+    "ruby",
+    "ruby-base",
+    "ruby-base-container",
+    "ruby-text",
+    "ruby-text-container",
+  ]);
+  const OBSERVER_OPTIONS = Object.freeze({
+    characterData: true,
+    childList: true,
+    subtree: true,
+  });
 
   const state = {
     enabled: false,
@@ -85,76 +100,189 @@
     return false;
   }
 
-  function shouldProcess(textNode) {
-    if (!textNode.isConnected || !textNode.parentElement) return false;
-    if (isIgnored(textNode.parentElement)) return false;
-
-    const text = textNode.nodeValue;
-    if (!text || !/[\u3400-\u9fff]/u.test(text)) return false;
-
-    return SuperReaderChunker.visualLength(text) >= 2;
+  function isReadableTextNode(textNode) {
+    return (
+      textNode?.nodeType === Node.TEXT_NODE &&
+      textNode.isConnected &&
+      Boolean(textNode.parentElement) &&
+      !isIgnored(textNode.parentElement) &&
+      Boolean(textNode.nodeValue)
+    );
   }
 
-  function processTextNode(textNode) {
-    if (!shouldProcess(textNode)) return;
+  function isInlineFlowElement(element) {
+    return INLINE_FLOW_DISPLAYS.has(getComputedStyle(element).display);
+  }
 
-    const chunks = SuperReaderChunker.buildVisualChunks(textNode.nodeValue, {
-      segmenter: state.segmenter,
-    });
-    if (!chunks.length) return;
+  function resolveProcessingScope(root) {
+    let element = root?.nodeType === Node.TEXT_NODE
+      ? root.parentElement
+      : root;
+    if (!(element instanceof Element) || !element.isConnected || isIgnored(element)) {
+      return null;
+    }
 
-    const fragment = document.createDocumentFragment();
-    chunks.forEach((chunk) => {
-      if (!chunk.processed) {
-        fragment.append(document.createTextNode(chunk.text));
+    while (
+      element.parentElement &&
+      element !== document.body &&
+      element !== document.documentElement &&
+      isInlineFlowElement(element)
+    ) {
+      element = element.parentElement;
+      if (isIgnored(element)) return null;
+    }
+
+    return element;
+  }
+
+  function collectTextRuns(scope) {
+    const runs = [];
+    let currentRun = [];
+
+    const flush = () => {
+      if (currentRun.length) runs.push(currentRun);
+      currentRun = [];
+    };
+
+    const visit = (node, isScope = false) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        if (isReadableTextNode(node)) currentRun.push(node);
+        else flush();
         return;
       }
 
-      const span = document.createElement("span");
-      span.className = chunk.separated
-        ? "super-reader-chunk super-reader-chunk--separated"
-        : "super-reader-chunk";
-      span.dataset.superReaderChunk = "true";
-      applyDividerStyle(span);
-      span.textContent = chunk.text;
-      fragment.append(span);
+      if (!(node instanceof Element)) return;
+      if (!isScope && isIgnored(node)) {
+        flush();
+        return;
+      }
+      if (FLOW_BREAK_TAGS.has(node.tagName)) {
+        flush();
+        return;
+      }
+
+      const createsFlowBoundary = !isScope && !isInlineFlowElement(node);
+      if (createsFlowBoundary) flush();
+      Array.from(node.childNodes).forEach((child) => visit(child));
+      if (createsFlowBoundary) flush();
+    };
+
+    visit(scope, true);
+    flush();
+    return runs;
+  }
+
+  function createDividerMarker() {
+    const marker = document.createElement("span");
+    marker.className = "super-reader-chunk super-reader-chunk--separated";
+    marker.dataset.superReaderDivider = "true";
+    marker.setAttribute("aria-hidden", "true");
+    applyDividerStyle(marker);
+    return marker;
+  }
+
+  function dividerOffsets(chunks) {
+    const offsets = [];
+    let offset = 0;
+
+    chunks.forEach((chunk) => {
+      if (chunk.separated) offsets.push(offset);
+      offset += chunk.text.length;
+    });
+    return offsets;
+  }
+
+  function insertDividerMarkers(textNodes, offsets) {
+    const placements = new Map();
+    let sourceOffset = 0;
+    let nodeIndex = 0;
+    const entries = textNodes.map((textNode) => {
+      const start = sourceOffset;
+      sourceOffset += textNode.nodeValue.length;
+      return { textNode, start, end: sourceOffset };
     });
 
-    textNode.replaceWith(fragment);
+    offsets.forEach((offset) => {
+      while (nodeIndex < entries.length && offset >= entries[nodeIndex].end) {
+        nodeIndex += 1;
+      }
+      const entry = entries[nodeIndex];
+      if (!entry || offset < entry.start) return;
+      const localOffset = offset - entry.start;
+      const positions = placements.get(entry.textNode) || [];
+      positions.push(localOffset);
+      placements.set(entry.textNode, positions);
+    });
+
+    placements.forEach((positions, textNode) => {
+      [...new Set(positions)]
+        .sort((left, right) => right - left)
+        .forEach((localOffset) => {
+          if (!textNode.isConnected || !textNode.parentNode) return;
+          const reference = localOffset === 0
+            ? textNode
+            : textNode.splitText(localOffset);
+          reference.before(createDividerMarker());
+        });
+    });
+  }
+
+  function processTextRun(textNodes) {
+    const text = textNodes.map((textNode) => textNode.nodeValue).join("");
+    if (!/[\u3400-\u9fff]/u.test(text)) return;
+    if (SuperReaderChunker.visualLength(text) < 2) return;
+
+    const chunks = SuperReaderChunker.buildVisualChunks(text, {
+      segmenter: state.segmenter,
+    });
+    insertDividerMarkers(textNodes, dividerOffsets(chunks));
+  }
+
+  function removeDividerMarkers(scope) {
+    const parents = new Set();
+    scope.querySelectorAll("[data-super-reader-divider='true']").forEach((marker) => {
+      if (marker.parentNode) parents.add(marker.parentNode);
+      marker.remove();
+    });
+    parents.forEach((parent) => parent.normalize());
   }
 
   function processRoot(root) {
     if (!state.enabled || !root || !root.isConnected) return;
+    const scope = resolveProcessingScope(root);
+    if (!scope) return;
 
-    if (root.nodeType === Node.TEXT_NODE) {
-      processTextNode(root);
-      return;
-    }
-
-    if (!(root instanceof Element) || isIgnored(root)) return;
-
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        return shouldProcess(node)
-          ? NodeFilter.FILTER_ACCEPT
-          : NodeFilter.FILTER_REJECT;
-      },
-    });
-    const textNodes = [];
-    while (walker.nextNode()) textNodes.push(walker.currentNode);
-    textNodes.forEach(processTextNode);
+    removeDividerMarkers(scope);
+    collectTextRuns(scope).forEach(processTextRun);
   }
 
   function flushPendingRoots() {
     state.flushScheduled = false;
     const roots = Array.from(state.pendingRoots);
     state.pendingRoots.clear();
-    roots.forEach(processRoot);
+    if (!state.enabled || !roots.length) return;
+
+    const observer = state.observer;
+    observer?.disconnect();
+    try {
+      roots.forEach(processRoot);
+    } finally {
+      observer?.takeRecords();
+      if (observer && observer === state.observer && state.enabled) {
+        observer.observe(document.documentElement, OBSERVER_OPTIONS);
+      }
+    }
   }
 
   function queueRoot(root) {
-    if (!root || !root.isConnected) return;
-    state.pendingRoots.add(root);
+    const scope = resolveProcessingScope(root);
+    if (!scope) return;
+
+    for (const pendingScope of state.pendingRoots) {
+      if (pendingScope === scope || pendingScope.contains(scope)) return;
+      if (scope.contains(pendingScope)) state.pendingRoots.delete(pendingScope);
+    }
+    state.pendingRoots.add(scope);
     if (state.flushScheduled) return;
     state.flushScheduled = true;
     queueMicrotask(flushPendingRoots);
@@ -170,13 +298,10 @@
           queueRoot(mutation.target);
         }
         mutation.addedNodes.forEach(queueRoot);
+        if (mutation.removedNodes.length) queueRoot(mutation.target);
       }
     });
-    state.observer.observe(document.documentElement, {
-      characterData: true,
-      childList: true,
-      subtree: true,
-    });
+    state.observer.observe(document.documentElement, OBSERVER_OPTIONS);
   }
 
   function stopObserver() {
@@ -192,7 +317,12 @@
 
     document.querySelectorAll(".super-reader-chunk").forEach((span) => {
       if (span.parentNode) parents.add(span.parentNode);
-      span.replaceWith(document.createTextNode(span.textContent || ""));
+      if (span.dataset.superReaderDivider === "true") {
+        span.remove();
+      } else {
+        // Clean up text-wrapping spans created by earlier extension versions.
+        span.replaceWith(document.createTextNode(span.textContent || ""));
+      }
     });
 
     parents.forEach((parent) => parent.normalize());

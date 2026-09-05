@@ -26,6 +26,18 @@ test("extension renders thin vertical separators without underlines", () => {
   assert.doesNotMatch(contentScript, /splitUnderlineRuns|underlined|chunk--a|chunk--b/u);
 });
 
+test("extension chunks inline-formatted paragraph text as one model input", () => {
+  const contentScript = readFileSync(join(projectRoot, "src/content.js"), "utf8");
+  const fixture = readFileSync(join(projectRoot, "test/browser-fixture.html"), "utf8");
+
+  assert.match(contentScript, /function collectTextRuns\(scope\)/u);
+  assert.match(contentScript, /textNodes\.map\(\(textNode\) => textNode\.nodeValue\)\.join\(""\)/u);
+  assert.match(contentScript, /SuperReaderChunker\.buildVisualChunks\(text,/u);
+  assert.match(contentScript, /textNode\.splitText\(localOffset\)/u);
+  assert.match(contentScript, /marker\.dataset\.superReaderDivider = "true"/u);
+  assert.match(fixture, /id="inline-sample"[^>]*>[^<]*<strong>[^<]+<\/strong>/u);
+});
+
 test("HTML demo uses the same vertical separator treatment", () => {
   const html = readFileSync(join(projectRoot, "demo.html"), "utf8");
 

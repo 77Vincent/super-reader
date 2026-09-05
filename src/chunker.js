@@ -15,12 +15,7 @@
   const HAN_CHARACTER = /\p{Script=Han}/u;
   const CLAUSE_END_CHARACTER = /[，,、。.！？!?；;：:\n…（）()\/／]/u;
   const TRAILING_CLOSER = /[”’」』）》】〉〕〗〙〛"'）)\]]/u;
-  const SPLIT_LENGTH_THRESHOLD = 10;
-  const MODEL_CANDIDATE_MIN_RELATIVE_SCORE = 0.05;
-  const MODEL_CANDIDATE_LOGIT_MARGIN = -Math.log(
-    MODEL_CANDIDATE_MIN_RELATIVE_SCORE,
-  );
-  const CENTER_DISTANCE_TOLERANCE = 1;
+  const SPLIT_LENGTH_THRESHOLD = 8;
 
   function visualLength(text) {
     return Array.from(text).reduce(
@@ -94,20 +89,6 @@
     return clauses;
   }
 
-  function selectBestBoundary(scores, isAllowed = () => true) {
-    if (!Array.isArray(scores) || scores.length === 0) return null;
-
-    let bestIndex = null;
-    for (let index = 0; index < scores.length; index += 1) {
-      if (!Number.isFinite(scores[index]) || !isAllowed(index)) continue;
-      if (bestIndex === null || scores[index] > scores[bestIndex]) {
-        bestIndex = index;
-      }
-    }
-
-    return bestIndex;
-  }
-
   function boundaryFallsInsideWord(text, boundary, segmenter) {
     if (!segmenter) return false;
 
@@ -121,52 +102,27 @@
     return false;
   }
 
-  function selectCenteredModelBoundary(scores, isAllowed = () => true) {
-    const bestIndex = selectBestBoundary(scores, isAllowed);
-    if (bestIndex === null) return null;
+  function selectBestBoundary(scores, isAllowed = () => true) {
+    if (!Array.isArray(scores) || scores.length === 0) return null;
 
-    const minimumCandidateScore =
-      scores[bestIndex] - MODEL_CANDIDATE_LOGIT_MARGIN;
-    const center = (scores.length + 1) / 2;
-    let closestDistance = Infinity;
-
+    let bestIndex = null;
+    let bestCombinedScore = -Infinity;
     for (let index = 0; index < scores.length; index += 1) {
-      if (
-        Number.isFinite(scores[index]) &&
-        isAllowed(index) &&
-        scores[index] >= minimumCandidateScore
-      ) {
-        closestDistance = Math.min(
-          closestDistance,
-          Math.abs(index + 1 - center),
-        );
+      if (!Number.isFinite(scores[index]) || !isAllowed(index)) continue;
+      const leftLength = index + 1;
+      const rightLength = scores.length - index;
+      const balance = Math.min(leftLength, rightLength) /
+        Math.max(leftLength, rightLength);
+      // log(softmax(logit)) differs from the logit by one shared constant,
+      // so ranking P(model) * B(balance) is equivalent to this sum.
+      const combinedScore = scores[index] + Math.log(balance);
+      if (bestIndex === null || combinedScore > bestCombinedScore) {
+        bestIndex = index;
+        bestCombinedScore = combinedScore;
       }
     }
 
-    let selectedIndex = null;
-
-    for (let index = 0; index < scores.length; index += 1) {
-      const distance = Math.abs(index + 1 - center);
-      if (
-        !Number.isFinite(scores[index]) ||
-        !isAllowed(index) ||
-        scores[index] < minimumCandidateScore ||
-        distance > closestDistance + CENTER_DISTANCE_TOLERANCE
-      ) {
-        continue;
-      }
-
-      if (
-        selectedIndex === null ||
-        scores[index] > scores[selectedIndex] ||
-        (scores[index] === scores[selectedIndex] &&
-          distance < Math.abs(selectedIndex + 1 - center))
-      ) {
-        selectedIndex = index;
-      }
-    }
-
-    return selectedIndex;
+    return bestIndex;
   }
 
   function chunkByModel(text, segmenter) {
@@ -186,14 +142,11 @@
       const scores = modelBackend.scoreTokens(
         tokens.slice(start, end).map((token) => token.segment),
       );
-      const boundaryIndex = selectCenteredModelBoundary(
-        scores,
-        (candidateIndex) => {
-          const boundaryAfter = start + candidateIndex;
-          const rightToken = tokens[boundaryAfter + 1];
-          return !boundaryFallsInsideWord(text, rightToken.index, segmenter);
-        },
-      );
+      const boundaryIndex = selectBestBoundary(scores, (candidateIndex) => {
+        const boundaryAfter = start + candidateIndex;
+        const rightToken = tokens[boundaryAfter + 1];
+        return !boundaryFallsInsideWord(text, rightToken.index, segmenter);
+      });
       if (boundaryIndex === null) {
         ranges.push({ start, end });
         return;
@@ -242,12 +195,11 @@
   }
 
   return Object.freeze({
-    buildVisualChunks,
     boundaryFallsInsideWord,
+    buildVisualChunks,
     chunkText,
     chunkTextByClause,
     createSegmenter,
-    selectCenteredModelBoundary,
     selectBestBoundary,
     splitClauses,
     tokenizeHanCharacters,

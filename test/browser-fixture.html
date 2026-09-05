@@ -23,6 +23,7 @@
   <body>
     <h1>浏览器集成测试</h1>
     <p id="sample">我一直在思考明天早上的早餐吃什么</p>
+    <p id="inline-sample">婴儿安全座椅更多推荐放在<strong>驾驶侧后方（左侧）</strong>，但实际生活中选择放在<strong>副驾驶对侧后方（右侧）</strong>的家庭也非常多，两边各有其不可替代的优势。</p>
     <div id="dynamic"></div>
     <button id="add" type="button">添加动态文本</button>
     <button id="disable" type="button">关闭效果</button>
@@ -74,6 +75,22 @@
       document.querySelector("#disable").addEventListener("click", () => {
         window.updateFixtureSettings({ enabled: false });
       });
+
+      if (new URLSearchParams(location.search).has("exercise")) {
+        document.querySelector("#add").click();
+        setTimeout(() => {
+          document.body.dataset.dynamicDividerCount = String(
+            document.querySelectorAll("#dynamic-sample [data-super-reader-divider]").length,
+          );
+          document.querySelector("#disable").click();
+          document.body.dataset.remainingDividerCount = String(
+            document.querySelectorAll("[data-super-reader-divider]").length,
+          );
+          document.body.dataset.inlineStrongCount = String(
+            document.querySelectorAll("#inline-sample strong").length,
+          );
+        });
+      }
     </script>
   </body>
 </html>
