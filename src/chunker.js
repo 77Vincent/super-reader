@@ -14,10 +14,12 @@
 
   const HAN_CHARACTER = /\p{Script=Han}/u;
   const CLAUSE_END_CHARACTER = /[，,、。.！？!?；;：:\n…]/u;
-  const OPENING_DOUBLE_QUOTE = /[“]/u;
-  const CLOSING_DOUBLE_QUOTE = /[”]/u;
   const TRAILING_CLOSER = /[”’」』）》】〉〕〗〙〛"'）)\]]/u;
-  const MAX_UNSPLIT_LENGTH = 7;
+  const SPLIT_LENGTH_THRESHOLD = 10;
+  const MODEL_CANDIDATE_MIN_RELATIVE_SCORE = 0.05;
+  const MODEL_CANDIDATE_LOGIT_MARGIN = -Math.log(
+    MODEL_CANDIDATE_MIN_RELATIVE_SCORE,
+  );
 
   function visualLength(text) {
     return Array.from(text).reduce(
@@ -63,27 +65,9 @@
 
     for (let index = 0; index < characters.length; index += 1) {
       const character = characters[index];
-      const isOpeningDoubleQuote =
-        OPENING_DOUBLE_QUOTE.test(character) ||
-        (character === '"' && !isInsideStraightDoubleQuote);
-
-      if (isOpeningDoubleQuote) {
-        flush();
-        buffer = character;
-        if (character === '"') isInsideStraightDoubleQuote = true;
-        continue;
-      }
-
       buffer += character;
-
-      const isClosingDoubleQuote =
-        CLOSING_DOUBLE_QUOTE.test(character) ||
-        (character === '"' && isInsideStraightDoubleQuote);
-
-      if (isClosingDoubleQuote) {
-        if (character === '"') isInsideStraightDoubleQuote = false;
-        flush();
-        continue;
+      if (character === '"') {
+        isInsideStraightDoubleQuote = !isInsideStraightDoubleQuote;
       }
 
       if (!CLAUSE_END_CHARACTER.test(character)) continue;
@@ -136,17 +120,52 @@
     return false;
   }
 
+  function selectCenteredModelBoundary(scores, isAllowed = () => true) {
+    const bestIndex = selectBestBoundary(scores, isAllowed);
+    if (bestIndex === null) return null;
+
+    const minimumCandidateScore =
+      scores[bestIndex] - MODEL_CANDIDATE_LOGIT_MARGIN;
+    const center = (scores.length + 1) / 2;
+    let selectedIndex = null;
+
+    for (let index = 0; index < scores.length; index += 1) {
+      if (
+        !Number.isFinite(scores[index]) ||
+        !isAllowed(index) ||
+        scores[index] < minimumCandidateScore
+      ) {
+        continue;
+      }
+
+      if (selectedIndex === null) {
+        selectedIndex = index;
+        continue;
+      }
+
+      const distance = Math.abs(index + 1 - center);
+      const selectedDistance = Math.abs(selectedIndex + 1 - center);
+      if (
+        distance < selectedDistance ||
+        (distance === selectedDistance && scores[index] > scores[selectedIndex])
+      ) {
+        selectedIndex = index;
+      }
+    }
+
+    return selectedIndex;
+  }
+
   function chunkByModel(text, segmenter) {
     const tokens = tokenizeHanCharacters(text);
     if (tokens.length < 2) return [text];
     if (!modelBackend || typeof modelBackend.scoreTokens !== "function") {
       throw new Error("Super Reader model backend must load before the chunker");
     }
-
     const ranges = [];
 
     function visit(start, end) {
-      if (end - start <= MAX_UNSPLIT_LENGTH) {
+      if (end - start <= SPLIT_LENGTH_THRESHOLD) {
         ranges.push({ start, end });
         return;
       }
@@ -154,11 +173,14 @@
       const scores = modelBackend.scoreTokens(
         tokens.slice(start, end).map((token) => token.segment),
       );
-      const boundaryIndex = selectBestBoundary(scores, (candidateIndex) => {
-        const boundaryAfter = start + candidateIndex;
-        const sourceBoundary = tokens[boundaryAfter + 1].index;
-        return !boundaryFallsInsideWord(text, sourceBoundary, segmenter);
-      });
+      const boundaryIndex = selectCenteredModelBoundary(
+        scores,
+        (candidateIndex) => {
+          const boundaryAfter = start + candidateIndex;
+          const sourceBoundary = tokens[boundaryAfter + 1].index;
+          return !boundaryFallsInsideWord(text, sourceBoundary, segmenter);
+        },
+      );
       if (boundaryIndex === null) {
         ranges.push({ start, end });
         return;
@@ -212,6 +234,7 @@
     chunkText,
     chunkTextByClause,
     createSegmenter,
+    selectCenteredModelBoundary,
     selectBestBoundary,
     splitClauses,
     tokenizeHanCharacters,

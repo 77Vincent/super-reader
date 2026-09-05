@@ -6,6 +6,7 @@ const {
   chunkText,
   chunkTextByClause,
   selectBestBoundary,
+  selectCenteredModelBoundary,
   splitClauses,
   tokenizeHanCharacters,
   visualLength,
@@ -16,7 +17,7 @@ test("model chunks preserve the complete source text", () => {
   assert.equal(chunkText(text).join(""), text);
 });
 
-test("punctuation creates hard clause boundaries before model recursion", () => {
+test("punctuation creates hard clause boundaries before model planning", () => {
   const text = "我们需要对齐模型的输入结构。如果可以的话，请告诉我。";
   const expectedClauses = [
     "我们需要对齐模型的输入结构。",
@@ -48,9 +49,9 @@ test("keeps closing quotes with the punctuation-delimited clause", () => {
   ]);
 });
 
-test("treats paired double quotes as hard structural boundaries", () => {
+test("keeps paired Chinese quotes inside the surrounding punctuation clause", () => {
   const text = "必须在“连续单字合并”之前执行。";
-  const expectedClauses = ["必须在", "“连续单字合并”", "之前执行。"];
+  const expectedClauses = [text];
   const modelChunksByClause = chunkTextByClause(text);
 
   assert.deepEqual(splitClauses(text), expectedClauses);
@@ -60,12 +61,10 @@ test("treats paired double quotes as hard structural boundaries", () => {
   );
 });
 
-test("treats straight double quotes as hard structural boundaries", () => {
-  assert.deepEqual(splitClauses('在"quoted words"之后。'), [
-    "在",
-    '"quoted words"',
-    "之后。",
-  ]);
+test("keeps straight double quotes inside the surrounding punctuation clause", () => {
+  const text = '在"quoted words"之后。';
+
+  assert.deepEqual(splitClauses(text), [text]);
 });
 
 test("treats punctuation and newlines as hard boundaries", () => {
@@ -91,28 +90,77 @@ test("selects the highest-scoring allowed boundary", () => {
   assert.equal(selectBestBoundary([1, 3, 2], () => false), null);
 });
 
-test("only asks the model to split clauses longer than seven Han characters", () => {
-  assert.deepEqual(chunkText("甲乙丙丁戊己庚", { segmenter: null }), [
-    "甲乙丙丁戊己庚",
+test("uses balance only among boundaries accepted by the model", () => {
+  const centerIsPlausible = [10, 0, 0, 7.1, 0, 0, 0];
+  const centerIsRejected = [10, 0, 0, 6.9, 0, 0, 0];
+
+  assert.equal(selectCenteredModelBoundary(centerIsPlausible), 3);
+  assert.equal(selectCenteredModelBoundary(centerIsRejected), 0);
+});
+
+test("only asks the model to split clauses longer than ten Han characters", () => {
+  assert.deepEqual(chunkText("甲乙丙丁戊己庚辛壬癸", { segmenter: null }), [
+    "甲乙丙丁戊己庚辛壬癸",
   ]);
-  assert.deepEqual(chunkText("春天来了我们出发", { segmenter: null }), [
-    "春天来了",
-    "我们出发",
+  assert.ok(
+    chunkText("甲乙丙丁戊己庚辛壬癸子", { segmenter: null }).length > 1,
+  );
+});
+
+test("punctuation-delimited clauses of ten characters or fewer stay intact", () => {
+  assert.deepEqual(chunkText("甲乙丙丁戊，己庚辛壬癸。", { segmenter: null }), [
+    "甲乙丙丁戊，",
+    "己庚辛壬癸。",
   ]);
 });
 
-test("punctuation-delimited clauses of seven characters or fewer stay intact", () => {
-  assert.deepEqual(chunkText("甲乙丙丁，戊己庚辛。", { segmenter: null }), [
-    "甲乙丙丁，",
-    "戊己庚辛。",
-  ]);
+test("recursively splits either result when it remains longer than ten characters", () => {
+  const chunks = chunkText("同一个无标点子句内的短语块用细竖线分隔；");
+
+  assert.deepEqual(chunks, ["同一个无标点子句", "内的短语块", "用细竖线分隔；"]);
+  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 10));
 });
 
-test("continues recursively when the remainder after a split still exceeds seven characters", () => {
+test("keeps model-approved terms together instead of forcing equal lengths", () => {
   const chunks = chunkText("而是帮助大脑更快地识别信息结构。");
 
-  assert.deepEqual(chunks, ["而是", "帮助大脑", "更快地识别信息", "结构。"]);
-  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 7));
+  assert.deepEqual(chunks, ["而是帮助大脑", "更快地识别信息结构。"]);
+});
+
+test("the demo fallback clauses stay intact at the ten-character threshold", () => {
+  const chunks = chunkText("在左侧输入一段中文，看看它如何被重新组织。");
+
+  assert.deepEqual(chunks, [
+    "在左侧输入一段中文，",
+    "看看它如何被重新组织。",
+  ]);
+  assert.deepEqual(chunks.map(visualLength), [9, 10]);
+});
+
+test("selects the most centered model-approved boundary for a technical phrase", () => {
+  assert.deepEqual(chunkText("因此它被称为一种数值积分方法"), [
+    "因此它被称为",
+    "一种数值积分方法",
+  ]);
+  assert.deepEqual(chunkText('"无数个小矩形累加"'), ['"无数个小矩形累加"']);
+});
+
+test("keeps the technical terms intact in the reported Euler-method example", () => {
+  const text = '欧拉法是在积分无法直接计算时，用"无数个小矩形累加"来近似积分，因此它被称为一种数值积分方法（numerical integration method）。';
+
+  assert.deepEqual(splitClauses(text), [
+    "欧拉法是在积分无法直接计算时，",
+    '用"无数个小矩形累加"来近似积分，',
+    "因此它被称为一种数值积分方法（numerical integration method）。",
+  ]);
+  assert.deepEqual(chunkText(text), [
+    "欧拉法是在积分",
+    "无法直接计算时，",
+    '用"无数个小矩形',
+    '累加"来近似积分，',
+    "因此它被称为",
+    "一种数值积分方法（numerical integration method）。",
+  ]);
 });
 
 test("detects a predicted boundary strictly inside a Segmenter word", () => {
@@ -127,7 +175,7 @@ test("detects a predicted boundary strictly inside a Segmenter word", () => {
 });
 
 test("keeps a clause intact when every model boundary is inside a word", () => {
-  const text = "春天来了我们出发";
+  const text = "春天来了我们出发继续前进";
   const wholeWordSegmenter = {
     segment() {
       return [{ segment: text, index: 0, isWordLike: true }];
@@ -147,9 +195,9 @@ test("falls back to a valid model boundary when the winner is inside a word", ()
 });
 
 test("Segmenter is only a guard and the model can run without it", () => {
-  assert.deepEqual(chunkText("春天来了我们出发", { segmenter: null }), [
-    "春天来了",
-    "我们出发",
+  assert.deepEqual(chunkText("而是帮助大脑更快地识别信息结构。", { segmenter: null }), [
+    "而是帮助大脑",
+    "更快地识别信息结构。",
   ]);
 });
 
@@ -167,9 +215,9 @@ test("visual chunks preserve punctuation-delimited boundaries", () => {
 });
 
 test("vertical separators appear only at model boundaries inside one clause", () => {
-  assert.deepEqual(buildVisualChunks("春天来了我们出发。"), [
-    { text: "春天来了", processed: true, separated: false },
-    { text: "我们出发。", processed: true, separated: true },
+  assert.deepEqual(buildVisualChunks("而是帮助大脑更快地识别信息结构。"), [
+    { text: "而是帮助大脑", processed: true, separated: false },
+    { text: "更快地识别信息结构。", processed: true, separated: true },
   ]);
   assert.deepEqual(buildVisualChunks("春天来了，我们出发。"), [
     { text: "春天来了，", processed: true, separated: false },

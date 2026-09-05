@@ -63,7 +63,7 @@ npm run model:export
 manifest.json        Chrome Manifest V3 配置
 src/boundary-model-data.js  浏览器端模型权重与字符表
 src/model-backend.js        无依赖 CNN 推理后端
-src/chunker.js              标点分句、递归模型切分与视觉分块
+src/chunker.js              标点分句、模型候选边界与递归视觉分块
 src/content.js       页面文本处理、恢复与动态内容监听
 src/content.css      竖向分隔线视觉样式
 src/background.js    默认设置、快捷键与工具栏状态
