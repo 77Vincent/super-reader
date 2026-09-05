@@ -78,6 +78,18 @@ test("treats punctuation and newlines as hard boundaries", () => {
   ]);
 });
 
+test("treats parentheses and slashes as hard clause boundaries", () => {
+  const text = "语料库（或包含项目）用于训练/微调。";
+
+  assert.deepEqual(splitClauses(text), [
+    "语料库（",
+    "或包含项目）",
+    "用于训练/",
+    "微调。",
+  ]);
+  assert.equal(buildVisualChunks(text).some((chunk) => chunk.separated), false);
+});
+
 test("always selects the model's highest-scoring boundary without a threshold", () => {
   assert.equal(selectBestBoundary([]), null);
   assert.equal(selectBestBoundary([0, 0]), 0);
@@ -93,9 +105,11 @@ test("selects the highest-scoring allowed boundary", () => {
 test("uses balance only among boundaries accepted by the model", () => {
   const centerIsPlausible = [10, 0, 0, 7.1, 0, 0, 0];
   const centerIsRejected = [10, 0, 0, 6.9, 0, 0, 0];
+  const strongerNeighbor = [0, 0, 0, 7, 8, 0, 0];
 
   assert.equal(selectCenteredModelBoundary(centerIsPlausible), 3);
   assert.equal(selectCenteredModelBoundary(centerIsRejected), 0);
+  assert.equal(selectCenteredModelBoundary(strongerNeighbor), 4);
 });
 
 test("only asks the model to split clauses longer than ten Han characters", () => {
@@ -151,7 +165,8 @@ test("keeps the technical terms intact in the reported Euler-method example", ()
   assert.deepEqual(splitClauses(text), [
     "欧拉法是在积分无法直接计算时，",
     '用"无数个小矩形累加"来近似积分，',
-    "因此它被称为一种数值积分方法（numerical integration method）。",
+    "因此它被称为一种数值积分方法（",
+    "numerical integration method）。",
   ]);
   assert.deepEqual(chunkText(text), [
     "欧拉法是在积分",
@@ -159,8 +174,21 @@ test("keeps the technical terms intact in the reported Euler-method example", ()
     '用"无数个小矩形',
     '累加"来近似积分，',
     "因此它被称为",
-    "一种数值积分方法（numerical integration method）。",
+    "一种数值积分方法（",
+    "numerical integration method）。",
   ]);
+});
+
+test("does not trade a one-character balance gain for broken compound words", () => {
+  const text = "婴儿安全座椅更多推荐放在副驾驶后侧（驾驶侧的对侧），虽然在纯粹的碰撞安全性上驾驶员后侧略占优势，但综合日常便利性与上下车安全，副驾驶后侧是现实生活中更普及、更实用的选择。";
+  const rendered = buildVisualChunks(text)
+    .map((chunk) => `${chunk.separated ? "｜" : ""}${chunk.text}`)
+    .join("");
+
+  assert.doesNotMatch(rendered, /便利｜性/u);
+  assert.doesNotMatch(rendered, /现实｜生活/u);
+  assert.match(rendered, /便利性｜与/u);
+  assert.match(rendered, /后侧｜是现实生活/u);
 });
 
 test("detects a predicted boundary strictly inside a Segmenter word", () => {

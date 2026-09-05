@@ -13,13 +13,14 @@
   "use strict";
 
   const HAN_CHARACTER = /\p{Script=Han}/u;
-  const CLAUSE_END_CHARACTER = /[，,、。.！？!?；;：:\n…]/u;
+  const CLAUSE_END_CHARACTER = /[，,、。.！？!?；;：:\n…（）()\/／]/u;
   const TRAILING_CLOSER = /[”’」』）》】〉〕〗〙〛"'）)\]]/u;
   const SPLIT_LENGTH_THRESHOLD = 10;
   const MODEL_CANDIDATE_MIN_RELATIVE_SCORE = 0.05;
   const MODEL_CANDIDATE_LOGIT_MARGIN = -Math.log(
     MODEL_CANDIDATE_MIN_RELATIVE_SCORE,
   );
+  const CENTER_DISTANCE_TOLERANCE = 1;
 
   function visualLength(text) {
     return Array.from(text).reduce(
@@ -127,27 +128,39 @@
     const minimumCandidateScore =
       scores[bestIndex] - MODEL_CANDIDATE_LOGIT_MARGIN;
     const center = (scores.length + 1) / 2;
-    let selectedIndex = null;
+    let closestDistance = Infinity;
 
     for (let index = 0; index < scores.length; index += 1) {
       if (
+        Number.isFinite(scores[index]) &&
+        isAllowed(index) &&
+        scores[index] >= minimumCandidateScore
+      ) {
+        closestDistance = Math.min(
+          closestDistance,
+          Math.abs(index + 1 - center),
+        );
+      }
+    }
+
+    let selectedIndex = null;
+
+    for (let index = 0; index < scores.length; index += 1) {
+      const distance = Math.abs(index + 1 - center);
+      if (
         !Number.isFinite(scores[index]) ||
         !isAllowed(index) ||
-        scores[index] < minimumCandidateScore
+        scores[index] < minimumCandidateScore ||
+        distance > closestDistance + CENTER_DISTANCE_TOLERANCE
       ) {
         continue;
       }
 
-      if (selectedIndex === null) {
-        selectedIndex = index;
-        continue;
-      }
-
-      const distance = Math.abs(index + 1 - center);
-      const selectedDistance = Math.abs(selectedIndex + 1 - center);
       if (
-        distance < selectedDistance ||
-        (distance === selectedDistance && scores[index] > scores[selectedIndex])
+        selectedIndex === null ||
+        scores[index] > scores[selectedIndex] ||
+        (scores[index] === scores[selectedIndex] &&
+          distance < Math.abs(selectedIndex + 1 - center))
       ) {
         selectedIndex = index;
       }
@@ -177,8 +190,8 @@
         scores,
         (candidateIndex) => {
           const boundaryAfter = start + candidateIndex;
-          const sourceBoundary = tokens[boundaryAfter + 1].index;
-          return !boundaryFallsInsideWord(text, sourceBoundary, segmenter);
+          const rightToken = tokens[boundaryAfter + 1];
+          return !boundaryFallsInsideWord(text, rightToken.index, segmenter);
         },
       );
       if (boundaryIndex === null) {
