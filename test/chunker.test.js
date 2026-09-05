@@ -77,16 +77,32 @@ test("treats punctuation and newlines as hard boundaries", () => {
   ]);
 });
 
-test("treats parentheses and slashes as hard clause boundaries", () => {
-  const text = "语料库（或包含项目）用于训练/微调。";
+test("treats parentheses, slashes, and title marks as hard clause boundaries", () => {
+  const text = "语料库（或包含项目）用于训练/微调《家庭晚餐》。";
 
   assert.deepEqual(splitClauses(text), [
     "语料库（",
     "或包含项目）",
     "用于训练/",
-    "微调。",
+    "微调《",
+    "家庭晚餐》。",
   ]);
   assert.equal(buildVisualChunks(text).some((chunk) => chunk.separated), false);
+});
+
+test("title marks pre-split a title without drawing a divider beside it", () => {
+  const text = "美國重口食人族電影《家庭晚餐》，";
+
+  assert.deepEqual(splitClauses(text), [
+    "美國重口食人族電影《",
+    "家庭晚餐》，",
+  ]);
+  assert.doesNotMatch(
+    buildVisualChunks(text)
+      .map((chunk) => `${chunk.separated ? "｜" : ""}${chunk.text}`)
+      .join(""),
+    /《｜|｜《|》｜|｜》/u,
+  );
 });
 
 test("multiplies model confidence by unsquared boundary balance", () => {

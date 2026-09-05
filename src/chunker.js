@@ -13,7 +13,7 @@
   "use strict";
 
   const HAN_CHARACTER = /\p{Script=Han}/u;
-  const CLAUSE_END_CHARACTER = /[，,、。.！？!?；;：:\n…（）()\/／]/u;
+  const CLAUSE_END_CHARACTER = /[，,、。.！？!?；;：:\n…（）()《》〈〉\/／]/u;
   const TRAILING_CLOSER = /[”’」』）》】〉〕〗〙〛"'）)\]]/u;
   const SPLIT_LENGTH_THRESHOLD = 8;
 
