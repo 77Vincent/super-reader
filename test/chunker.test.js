@@ -150,7 +150,8 @@ test("recursively selects the highest combined score until every chunk is at mos
 test("uses model confidence, unsquared balance, and word protection", () => {
   const chunks = chunkText("而是帮助大脑更快地识别信息结构。");
 
-  assert.deepEqual(chunks, ["而是", "帮助大脑", "更快地识别信息", "结构。"]);
+  assert.deepEqual(chunks, ["而是帮助大脑", "更快地", "识别信息结构。"]);
+  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 8));
 });
 
 test("the demo fallback recursively respects the eight-character threshold", () => {
@@ -187,8 +188,7 @@ test("renders the reported Euler-method example with combined scoring", () => {
     "欧拉法是在积分",
     "无法直接计算时，",
     '用"无数个小矩形',
-    '累加"',
-    "来近似积分，",
+    '累加"来近似积分，',
     "因此",
     "它被称为",
     "一种数值积分方法（",
@@ -228,10 +228,9 @@ test("visual chunks preserve punctuation-delimited boundaries", () => {
 
 test("vertical separators appear only at model boundaries inside one clause", () => {
   assert.deepEqual(buildVisualChunks("而是帮助大脑更快地识别信息结构。"), [
-    { text: "而是", processed: true, separated: false },
-    { text: "帮助大脑", processed: true, separated: true },
-    { text: "更快地识别信息", processed: true, separated: true },
-    { text: "结构。", processed: true, separated: true },
+    { text: "而是帮助大脑", processed: true, separated: false },
+    { text: "更快地", processed: true, separated: true },
+    { text: "识别信息结构。", processed: true, separated: true },
   ]);
   assert.deepEqual(buildVisualChunks("春天来了，我们出发。"), [
     { text: "春天来了，", processed: true, separated: false },
