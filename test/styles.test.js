@@ -21,7 +21,7 @@ test("extension renders thin vertical separators without underlines", () => {
   assert.match(css, /content:\s*""/u);
   assert.doesNotMatch(css, /opacity:\s*0\.[0-9]+/u);
   assert.doesNotMatch(css, /text-decoration|underline|chunk--a|chunk--b/u);
-  assert.match(contentScript, /chunk\.separated/u);
+  assert.match(contentScript, /offsetsByText/u);
   assert.match(contentScript, /super-reader-chunk--separated/u);
   assert.doesNotMatch(contentScript, /splitUnderlineRuns|underlined|chunk--a|chunk--b/u);
 });
@@ -32,7 +32,8 @@ test("extension chunks inline-formatted paragraph text as one model input", () =
 
   assert.match(contentScript, /function collectTextRuns\(scope\)/u);
   assert.match(contentScript, /textNodes\.map\(\(textNode\) => textNode\.nodeValue\)\.join\(""\)/u);
-  assert.match(contentScript, /SuperReaderChunker\.buildVisualChunks\(text,/u);
+  assert.match(contentScript, /requestDividerOffsets\(/u);
+  assert.match(contentScript, /markerPlacements\(textNodes, offsets\)/u);
   assert.match(contentScript, /textNode\.splitText\(localOffset\)/u);
   assert.match(contentScript, /marker\.dataset\.superReaderDivider = "true"/u);
   assert.match(fixture, /id="inline-sample"[^>]*>[^<]*<strong>[^<]+<\/strong>/u);
@@ -41,10 +42,43 @@ test("extension chunks inline-formatted paragraph text as one model input", () =
 test("extension schedules DOM reprocessing during browser idle time", () => {
   const contentScript = readFileSync(join(projectRoot, "src/content.js"), "utf8");
 
-  assert.match(contentScript, /requestIdleCallback\(flushPendingRoots/u);
-  assert.match(contentScript, /processed >= 4/u);
+  assert.match(contentScript, /requestIdleCallback\(\(\) =>/u);
+  assert.match(contentScript, /state\.processingJob/u);
+  assert.match(contentScript, /MARKER_INSERT_BATCH_SIZE = 32/u);
   assert.match(contentScript, /cancelScheduledFlush\(\)/u);
   assert.doesNotMatch(contentScript, /queueMicrotask\(flushPendingRoots\)/u);
+});
+
+test("extension runs bounded model inference outside the page main thread", () => {
+  const contentScript = readFileSync(join(projectRoot, "src/content.js"), "utf8");
+  const backgroundScript = readFileSync(join(projectRoot, "src/background.js"), "utf8");
+  const inferenceService = readFileSync(
+    join(projectRoot, "src/inference-service.js"),
+    "utf8",
+  );
+  const inferenceWorker = readFileSync(
+    join(projectRoot, "src/inference-worker.js"),
+    "utf8",
+  );
+  const chunker = readFileSync(join(projectRoot, "src/chunker.js"), "utf8");
+
+  assert.match(contentScript, /chrome\.runtime\.sendMessage\(\{/u);
+  assert.match(contentScript, /await requestDividerOffsets/u);
+  assert.match(contentScript, /await waitForDomIdle\(\)/u);
+  assert.doesNotMatch(contentScript, /SuperReaderChunker/u);
+  assert.match(backgroundScript, /chrome\.offscreen\.createDocument/u);
+  assert.match(backgroundScript, /reasons:\s*\["WORKERS"\]/u);
+  assert.match(backgroundScript, /SUPER_READER_RUN_INFERENCE/u);
+  assert.doesNotMatch(backgroundScript, /SuperReaderChunker|importScripts/u);
+  assert.match(inferenceService, /new Worker\("inference-worker\.js"\)/u);
+  assert.match(
+    inferenceWorker,
+    /importScripts\(\s*"boundary-model-data\.js",\s*"model-backend\.js",\s*"chunker\.js"/su,
+  );
+  assert.match(inferenceWorker, /SuperReaderChunker\.buildVisualChunks/u);
+  assert.match(backgroundScript, /message\?\.type !== "SUPER_READER_SPLIT_TEXTS"/u);
+  assert.match(chunker, /MAX_MODEL_WINDOW_TOKENS = 256/u);
+  assert.match(chunker, /tokens\.slice\(scoreStart, scoreEnd\)/u);
 });
 
 test("extension defers text blocks until they enter the viewport", () => {
@@ -131,22 +165,17 @@ test("popup preview is rendered by the shared model backend", () => {
     /class="preview"[^>]*>将长句切分成短句加速阅读理解<\/div>/u,
   );
   assert.doesNotMatch(popup, /<span[^>]*preview-chunk--separated/u);
-  assert.ok(
-    popup.indexOf("../src/boundary-model-data.js") <
-      popup.indexOf("../src/model-backend.js"),
-  );
-  assert.ok(
-    popup.indexOf("../src/model-backend.js") < popup.indexOf("../src/chunker.js"),
-  );
-  assert.ok(popup.indexOf("../src/chunker.js") < popup.indexOf("popup.js"));
+  assert.doesNotMatch(popup, /boundary-model-data|model-backend|chunker\.js/u);
   assert.match(
     popupScript,
-    /SuperReaderChunker\.buildVisualChunks\(PREVIEW_TEXT/u,
+    /type:\s*"SUPER_READER_SPLIT_TEXTS"/u,
   );
-  assert.match(popupScript, /chunk\.separated/u);
+  assert.match(popupScript, /releaseWhenDisabled:\s*true/u);
+  assert.match(popupScript, /response\?\.offsetsByText/u);
+  assert.doesNotMatch(popupScript, /SuperReaderChunker/u);
   assert.match(
     popupScript,
-    /\(async function initializePopup\(\) \{\s*renderModelPreview\(\);\s*const settings = await chrome\.storage\.sync\.get\(DEFAULTS\)/u,
+    /\(async function initializePopup\(\) \{\s*const previewPromise = renderModelPreview\(\);\s*const settings = await chrome\.storage\.sync\.get\(DEFAULTS\)/u,
   );
 });
 
@@ -195,15 +224,13 @@ test("extension defers the model runtime until reading mode is enabled", () => {
   const popupScript = readFileSync(join(projectRoot, "popup/popup.js"), "utf8");
 
   assert.deepEqual(manifest.content_scripts[0].js, ["src/loader.js"]);
-  assert.deepEqual(manifest.web_accessible_resources[0].resources, [
-    "src/boundary-model-data.js",
-    "src/model-backend.js",
-    "src/chunker.js",
-    "src/content.js",
-  ]);
+  assert.deepEqual(manifest.web_accessible_resources[0].resources, ["src/content.js"]);
+  assert.equal(manifest.minimum_chrome_version, "109");
+  assert.ok(manifest.permissions.includes("offscreen"));
   assert.equal(manifest.web_accessible_resources[0].use_dynamic_url, true);
   assert.match(loader, /changes\.enabled\?\.newValue/u);
   assert.match(loader, /import\(chrome\.runtime\.getURL\(file\)\)/u);
+  assert.doesNotMatch(loader, /boundary-model-data|model-backend|chunker\.js/u);
   assert.match(popupScript, /files:\s*\["src\/loader\.js"\]/u);
 });
 

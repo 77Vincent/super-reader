@@ -2,8 +2,9 @@
   "manifest_version": 3,
   "name": "Super Reader - 中文视觉分块阅读",
   "version": "0.1.0",
+  "minimum_chrome_version": "109",
   "description": "将中文长句按词义边界切成短语块，并用细竖向分隔线辅助阅读。",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "offscreen", "scripting", "storage"],
   "action": {
     "default_title": "Super Reader",
     "default_popup": "popup/popup.html"
@@ -31,9 +32,6 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "src/boundary-model-data.js",
-        "src/model-backend.js",
-        "src/chunker.js",
         "src/content.js"
       ],
       "matches": ["http://*/*", "https://*/*", "file:///*"],

@@ -42,11 +42,31 @@
         enabled: true,
       };
 
-      window.chrome = {
-        runtime: {
+      window.chrome ||= {};
+      window.chrome.runtime = {
+          getURL(path) {
+            return new URL(`../${path}`, location.href).href;
+          },
+          async sendMessage(message) {
+            if (message?.type !== "SUPER_READER_SPLIT_TEXTS") return undefined;
+            const segmenter = window.fixtureSegmenter ||=
+              SuperReaderChunker.createSegmenter("zh-CN");
+            return {
+              offsetsByText: message.texts.map((text) => {
+                const chunks = SuperReaderChunker.buildVisualChunks(text, { segmenter });
+                const offsets = [];
+                let offset = 0;
+                chunks.forEach((chunk) => {
+                  if (chunk.separated) offsets.push(offset);
+                  offset += chunk.text.length;
+                });
+                return offsets;
+              }),
+            };
+          },
           onMessage: { addListener() {} },
-        },
-        storage: {
+        };
+      window.chrome.storage = {
           sync: {
             get(defaults, callback) {
               callback({ ...defaults, ...fixtureSettings });
@@ -57,8 +77,7 @@
               fixtureListeners.push(listener);
             },
           },
-        },
-      };
+        };
 
       window.updateFixtureSettings = (changes) => {
         Object.assign(fixtureSettings, changes);
@@ -137,7 +156,7 @@
           document.body.dataset.inlineStrongCount = String(
             document.querySelectorAll("#inline-sample strong").length,
           );
-        });
+        }, 3000);
       }
     </script>
   </body>

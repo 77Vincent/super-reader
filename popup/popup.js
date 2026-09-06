@@ -23,25 +23,27 @@ const dividerColorInputs = Array.from(document.querySelectorAll("[name='divider-
 const pageStatus = document.querySelector("#page-status");
 const preview = document.querySelector(".preview");
 
-function renderModelPreview() {
+async function renderModelPreview() {
   preview.setAttribute("aria-busy", "true");
   try {
-    const segmenter = globalThis.SuperReaderChunker.createSegmenter("zh-CN");
-    const chunks = globalThis.SuperReaderChunker.buildVisualChunks(PREVIEW_TEXT, {
-      segmenter,
+    const response = await chrome.runtime.sendMessage({
+      type: "SUPER_READER_SPLIT_TEXTS",
+      texts: [PREVIEW_TEXT],
+      releaseWhenDisabled: true,
     });
+    if (response?.error) throw new Error(response.error);
+    const offsets = Array.isArray(response?.offsetsByText?.[0])
+      ? response.offsetsByText[0]
+      : [];
 
     preview.replaceChildren();
-    chunks.forEach((chunk) => {
-      if (!chunk.processed) {
-        preview.append(document.createTextNode(chunk.text));
-        return;
-      }
-
+    let start = 0;
+    [...offsets, PREVIEW_TEXT.length].forEach((end) => {
       const span = document.createElement("span");
-      span.className = chunk.separated ? "preview-chunk--separated" : "";
-      span.textContent = chunk.text;
+      if (start > 0) span.className = "preview-chunk--separated";
+      span.textContent = PREVIEW_TEXT.slice(start, end);
       preview.append(span);
+      start = end;
     });
   } catch (error) {
     console.error("Super Reader failed to render its model preview", error);
@@ -167,8 +169,9 @@ chrome.storage.onChanged.addListener(async (_changes, areaName) => {
 });
 
 (async function initializePopup() {
-  renderModelPreview();
+  const previewPromise = renderModelPreview();
   const settings = await chrome.storage.sync.get(DEFAULTS);
   render(settings);
   if (settings.enabled) await ensureCurrentPageReady();
+  await previewPromise;
 })();

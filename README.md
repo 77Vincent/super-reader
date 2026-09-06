@@ -16,7 +16,7 @@
 - 同一标点子句内的相邻中文短语块之间使用竖线；可选择亮红、亮黄、亮蓝、亮绿或默认的字体色，竖线高度约为 1em，粗细可在 1–5px 间调节
 - 标点边界不重复画线，分隔线仅用于显示且不进入复制文本
 - 自动处理无限滚动、单页应用等动态加入的正文
-- 仅在开启阅读模式后加载本地模型；文本块进入视口后，才在浏览器空闲时分批处理
+- 模型按需加载到扩展专用 Worker 中且全局只保留一份；可见文本通过消息交给 Worker 推理，不阻塞网页主线程，DOM 结果在浏览器空闲时分批插入；关闭功能会销毁推理上下文并释放模型内存
 - 跳过代码、表单、按钮、可编辑区域和隐藏内容
 - 所有处理均在浏览器本地完成，不收集或上传网页内容
 
@@ -63,13 +63,16 @@ npm run model:export
 
 ```text
 manifest.json        Chrome Manifest V3 配置
-src/loader.js               按需加载模型与阅读运行时
+src/loader.js               按需加载页面文本处理运行时
 src/boundary-model-data.js  浏览器端模型权重与字符表
 src/model-backend.js        无依赖 CNN 推理后端
 src/chunker.js              标点分句、模型候选边界与递归视觉分块
+src/background.js           设置、快捷键与按需推理调度
+src/inference.html          按需创建的隐藏推理上下文
+src/inference-service.js    后台消息与专用 Worker 的桥接
+src/inference-worker.js     模型加载与非主线程推理
 src/content.js       页面文本处理、恢复与动态内容监听
 src/content.css      竖向分隔线视觉样式
-src/background.js    默认设置、快捷键与工具栏状态
 popup/               工具栏弹窗
 test/                分块算法测试
 ```

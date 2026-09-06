@@ -59,6 +59,8 @@
     rootMargin: "0px",
     threshold: 0,
   });
+  const MARKER_INSERT_BATCH_SIZE = 32;
+  const HAN_CHARACTER = /\p{Script=Han}/u;
 
   const state = {
     enabled: false,
@@ -67,11 +69,11 @@
     visibilityTargets: new Set(),
     shadowRoots: new Set(),
     settings: { ...DEFAULTS },
-    segmenter: SuperReaderChunker.createSegmenter("zh-CN"),
     pendingRoots: new Set(),
     flushScheduled: false,
     flushHandle: null,
     flushKind: null,
+    processingJob: null,
   };
 
   function isOpenShadowRoot(root) {
@@ -116,6 +118,47 @@
 
   function registeredQueryRoots() {
     return [document, ...state.shadowRoots];
+  }
+
+  function createInferenceStoppedError() {
+    const error = new Error("Super Reader inference stopped");
+    error.name = "AbortError";
+    return error;
+  }
+
+  async function requestDividerOffsets(texts) {
+    if (!state.enabled) throw createInferenceStoppedError();
+
+    const response = await chrome.runtime.sendMessage({
+      type: "SUPER_READER_SPLIT_TEXTS",
+      texts,
+    });
+    if (!state.enabled) throw createInferenceStoppedError();
+    if (response?.error) throw new Error(response.error);
+    if (!Array.isArray(response?.offsetsByText)) {
+      throw new Error("Super Reader inference service returned an invalid result");
+    }
+    return response.offsetsByText;
+  }
+
+  function waitForDomIdle() {
+    return new Promise((resolve) => {
+      if (typeof requestIdleCallback === "function") {
+        requestIdleCallback(resolve, { timeout: 150 });
+      } else {
+        setTimeout(resolve, 0);
+      }
+    });
+  }
+
+  function applyOwnDomMutation(callback) {
+    try {
+      return callback();
+    } finally {
+      // Mutation records are delivered after this task. Drain only the records
+      // created synchronously above while leaving the observer connected.
+      state.observer?.takeRecords();
+    }
   }
 
   function normalizeDividerWidth(value) {
@@ -255,18 +298,7 @@
     return marker;
   }
 
-  function dividerOffsets(chunks) {
-    const offsets = [];
-    let offset = 0;
-
-    chunks.forEach((chunk) => {
-      if (chunk.separated) offsets.push(offset);
-      offset += chunk.text.length;
-    });
-    return offsets;
-  }
-
-  function insertDividerMarkers(textNodes, offsets) {
+  function markerPlacements(textNodes, offsets) {
     const placements = new Map();
     let sourceOffset = 0;
     let nodeIndex = 0;
@@ -288,28 +320,108 @@
       placements.set(entry.textNode, positions);
     });
 
+    const tasks = [];
     placements.forEach((positions, textNode) => {
       [...new Set(positions)]
         .sort((left, right) => right - left)
         .forEach((localOffset) => {
-          if (!textNode.isConnected || !textNode.parentNode) return;
-          const reference = localOffset === 0
-            ? textNode
-            : textNode.splitText(localOffset);
-          reference.before(createDividerMarker(reference.getRootNode()));
+          tasks.push({ localOffset, textNode });
         });
     });
+    return tasks;
   }
 
-  function processTextRun(textNodes) {
-    const text = textNodes.map((textNode) => textNode.nodeValue).join("");
-    if (!/[\u3400-\u9fff]/u.test(text)) return;
-    if (SuperReaderChunker.visualLength(text) < 2) return;
+  function pendingScopeOverlaps(scope) {
+    for (const pendingScope of state.pendingRoots) {
+      if (
+        pendingScope === scope ||
+        pendingScope.contains(scope) ||
+        scope.contains(pendingScope)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
 
-    const chunks = SuperReaderChunker.buildVisualChunks(text, {
-      segmenter: state.segmenter,
-    });
-    insertDividerMarkers(textNodes, dividerOffsets(chunks));
+  async function insertDividerMarkers(textNodes, offsets, isCurrent) {
+    const tasks = markerPlacements(textNodes, offsets);
+    for (let index = 0; index < tasks.length; index += MARKER_INSERT_BATCH_SIZE) {
+      await waitForDomIdle();
+      if (!isCurrent()) return false;
+
+      applyOwnDomMutation(() => {
+        tasks
+          .slice(index, index + MARKER_INSERT_BATCH_SIZE)
+          .forEach(({ localOffset, textNode }) => {
+            if (!textNode.isConnected || !textNode.parentNode) return;
+            const reference = localOffset === 0
+              ? textNode
+              : textNode.splitText(localOffset);
+            reference.before(createDividerMarker(reference.getRootNode()));
+          });
+      });
+    }
+    return true;
+  }
+
+  function createTextRunSnapshot(textNodes) {
+    return {
+      textNodes,
+      values: textNodes.map((textNode) => textNode.nodeValue),
+      text: textNodes.map((textNode) => textNode.nodeValue).join(""),
+    };
+  }
+
+  function textRunSnapshotIsCurrent(snapshot) {
+    return snapshot.textNodes.every((textNode, index) => (
+      textNode.isConnected &&
+      textNode.parentNode &&
+      textNode.nodeValue === snapshot.values[index]
+    ));
+  }
+
+  function scopeSnapshotIsCurrent(scope, scopeText, snapshots, checkTextNodes = true) {
+    return (
+      state.enabled &&
+      scope.isConnected &&
+      scope.textContent === scopeText &&
+      !pendingScopeOverlaps(scope) &&
+      (!checkTextNodes || snapshots.every(textRunSnapshotIsCurrent))
+    );
+  }
+
+  function isModelCandidate(snapshot) {
+    return HAN_CHARACTER.test(snapshot.text);
+  }
+
+  async function processRoot(root) {
+    if (!state.enabled || !root || !root.isConnected) return;
+    const scope = resolveProcessingScope(root);
+    if (!scope) return;
+
+    applyOwnDomMutation(() => removeDividerMarkers(scope));
+    const snapshots = collectTextRuns(scope)
+      .map(createTextRunSnapshot)
+      .filter(isModelCandidate);
+    if (!snapshots.length) return;
+
+    const scopeText = scope.textContent;
+    const offsetsByText = await requestDividerOffsets(
+      snapshots.map((snapshot) => snapshot.text),
+    );
+    if (!scopeSnapshotIsCurrent(scope, scopeText, snapshots)) return;
+
+    for (let index = 0; index < snapshots.length; index += 1) {
+      const snapshot = snapshots[index];
+      const offsets = Array.isArray(offsetsByText[index]) ? offsetsByText[index] : [];
+      const inserted = await insertDividerMarkers(
+        snapshot.textNodes,
+        offsets,
+        () => scopeSnapshotIsCurrent(scope, scopeText, snapshots, false),
+      );
+      if (!inserted) return;
+    }
   }
 
   function removeDividerMarkers(scope) {
@@ -321,28 +433,21 @@
     parents.forEach((parent) => parent.normalize());
   }
 
-  function processRoot(root) {
-    if (!state.enabled || !root || !root.isConnected) return;
-    const scope = resolveProcessingScope(root);
-    if (!scope) return;
-
-    removeDividerMarkers(scope);
-    collectTextRuns(scope).forEach(processTextRun);
-  }
-
   function scheduleFlush() {
-    if (state.flushScheduled || !state.enabled) return;
+    if (state.flushScheduled || state.processingJob || !state.enabled) return;
     state.flushScheduled = true;
 
     if (typeof requestIdleCallback === "function") {
       state.flushKind = "idle";
-      state.flushHandle = requestIdleCallback(flushPendingRoots, { timeout: 150 });
+      state.flushHandle = requestIdleCallback(() => {
+        void flushPendingRoots();
+      }, { timeout: 150 });
       return;
     }
 
     state.flushKind = "timeout";
     state.flushHandle = setTimeout(() => {
-      flushPendingRoots({ didTimeout: true, timeRemaining: () => 0 });
+      void flushPendingRoots();
     }, 0);
   }
 
@@ -358,39 +463,28 @@
     state.flushKind = null;
   }
 
-  function flushPendingRoots(deadline) {
+  async function flushPendingRoots() {
     state.flushScheduled = false;
     state.flushHandle = null;
     state.flushKind = null;
-    const roots = Array.from(state.pendingRoots);
-    state.pendingRoots.clear();
-    if (!state.enabled || !roots.length) return;
+    if (!state.enabled || state.processingJob || !state.pendingRoots.size) return;
 
-    const observer = state.observer;
-    observer?.disconnect();
+    const root = state.pendingRoots.values().next().value;
+    state.pendingRoots.delete(root);
+    const job = { root };
+    state.processingJob = job;
     try {
-      let processed = 0;
-      for (let index = 0; index < roots.length; index += 1) {
-        const shouldYield = processed > 0 && (
-          processed >= 4 ||
-          (!deadline?.didTimeout && deadline?.timeRemaining() < 4)
-        );
-        if (shouldYield) {
-          roots.slice(index).forEach((root) => state.pendingRoots.add(root));
-          break;
-        }
-        processRoot(roots[index]);
-        processed += 1;
+      await processRoot(root);
+    } catch (error) {
+      if (error?.name !== "AbortError") {
+        console.error("Super Reader failed to process visible text", error);
       }
     } finally {
-      observer?.takeRecords();
-      if (observer && observer === state.observer && state.enabled) {
-        pruneDisconnectedShadowRoots();
-        observeRegisteredMutationTargets(observer);
+      if (state.processingJob === job) {
+        state.processingJob = null;
+        if (state.enabled && state.pendingRoots.size) scheduleFlush();
       }
     }
-
-    if (state.pendingRoots.size) scheduleFlush();
   }
 
   function queueRoot(root) {
@@ -440,7 +534,7 @@
 
     const visit = (node, isRoot = false) => {
       if (node.nodeType === Node.TEXT_NODE) {
-        if (!/[\u3400-\u9fff]/u.test(node.nodeValue || "")) return;
+        if (!HAN_CHARACTER.test(node.nodeValue || "")) return;
         const parent = node.parentElement;
         if (!parent || !isReadableTextNode(node)) return;
         if (!scopeCache.has(parent)) {

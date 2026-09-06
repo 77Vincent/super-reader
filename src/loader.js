@@ -5,9 +5,6 @@
   globalThis.__superReaderLoaderLoaded = true;
 
   const RUNTIME_FILES = Object.freeze([
-    "src/boundary-model-data.js",
-    "src/model-backend.js",
-    "src/chunker.js",
     "src/content.js",
   ]);
   let runtimePromise = null;
@@ -24,7 +21,7 @@
       runtimeReady = true;
     }).catch((error) => {
       runtimePromise = null;
-      console.error("Super Reader failed to load its reading model", error);
+      console.error("Super Reader failed to load its reading runtime", error);
     });
 
     return runtimePromise;

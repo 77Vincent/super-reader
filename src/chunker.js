@@ -22,6 +22,7 @@
   const WHITESPACE = /^\s+$/u;
   const BALANCE_LOG_WEIGHT = 0.25;
   const SPLIT_LENGTH_THRESHOLD = 8;
+  const MAX_MODEL_WINDOW_TOKENS = 256;
 
   function visualLength(text) {
     const hanLength = Array.from(text).reduce(
@@ -259,13 +260,21 @@
         return;
       }
 
+      const tokenCount = end - start;
+      const scoreStart = tokenCount > MAX_MODEL_WINDOW_TOKENS
+        ? Math.max(
+          start,
+          Math.floor((start + end - MAX_MODEL_WINDOW_TOKENS) / 2),
+        )
+        : start;
+      const scoreEnd = Math.min(end, scoreStart + MAX_MODEL_WINDOW_TOKENS);
       const scores = modelBackend.scoreTokens(
-        tokens.slice(start, end).map((token) => token.segment),
+        tokens.slice(scoreStart, scoreEnd).map((token) => token.segment),
       );
       const boundaryIndex = selectBestBoundary(
         scores,
         (candidateIndex) => {
-          const boundaryAfter = start + candidateIndex;
+          const boundaryAfter = scoreStart + candidateIndex;
           const rightToken = tokens[boundaryAfter + 1];
           return !protectedBoundaryOffsets.has(rightToken.index);
         },
@@ -275,7 +284,7 @@
         return;
       }
 
-      const boundaryAfter = start + boundaryIndex;
+      const boundaryAfter = scoreStart + boundaryIndex;
       visit(start, boundaryAfter + 1);
       visit(boundaryAfter + 1, end);
     }
