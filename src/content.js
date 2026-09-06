@@ -65,6 +65,7 @@
     observer: null,
     visibilityObserver: null,
     visibilityTargets: new Set(),
+    shadowRoots: new Set(),
     settings: { ...DEFAULTS },
     segmenter: SuperReaderChunker.createSegmenter("zh-CN"),
     pendingRoots: new Set(),
@@ -72,6 +73,50 @@
     flushHandle: null,
     flushKind: null,
   };
+
+  function isOpenShadowRoot(root) {
+    return (
+      root?.nodeType === Node.DOCUMENT_FRAGMENT_NODE &&
+      root.host instanceof Element &&
+      root.host.shadowRoot === root
+    );
+  }
+
+  function observeMutationTarget(root, observer = state.observer) {
+    if (!observer) return;
+    const target = root === document ? document.documentElement : root;
+    if (!target) return;
+    observer.observe(target, OBSERVER_OPTIONS);
+  }
+
+  function observeRegisteredMutationTargets(observer = state.observer) {
+    if (!observer) return;
+    observeMutationTarget(document, observer);
+    state.shadowRoots.forEach((root) => {
+      if (root.host.isConnected) observeMutationTarget(root, observer);
+    });
+  }
+
+  function registerShadowRoot(root) {
+    if (!isOpenShadowRoot(root) || state.shadowRoots.has(root)) return false;
+    state.shadowRoots.add(root);
+    observeMutationTarget(root);
+    return true;
+  }
+
+  function pruneDisconnectedShadowRoots() {
+    let removed = false;
+    state.shadowRoots.forEach((root) => {
+      if (root.host.isConnected) return;
+      state.shadowRoots.delete(root);
+      removed = true;
+    });
+    return removed;
+  }
+
+  function registeredQueryRoots() {
+    return [document, ...state.shadowRoots];
+  }
 
   function normalizeDividerWidth(value) {
     const width = Number(value);
@@ -181,11 +226,31 @@
     return runs;
   }
 
-  function createDividerMarker() {
+  function applyShadowMarkerLayout(marker) {
+    marker.style.setProperty("display", "inline-block", "important");
+    marker.style.setProperty("width", "0", "important");
+    marker.style.setProperty("height", "1em", "important");
+    marker.style.setProperty("margin", "0 0.08em", "important");
+    marker.style.setProperty(
+      "border-inline-start",
+      "var(--super-reader-divider-width, 3px) solid var(--super-reader-divider-color, #ff1744)",
+      "important",
+    );
+    marker.style.setProperty("vertical-align", "-0.15em", "important");
+    marker.style.setProperty(
+      "filter",
+      "var(--super-reader-divider-filter, none)",
+      "important",
+    );
+    marker.style.setProperty("pointer-events", "none", "important");
+  }
+
+  function createDividerMarker(root = document) {
     const marker = document.createElement("span");
     marker.className = "super-reader-chunk super-reader-chunk--separated";
     marker.dataset.superReaderDivider = "true";
     marker.setAttribute("aria-hidden", "true");
+    if (isOpenShadowRoot(root)) applyShadowMarkerLayout(marker);
     applyDividerStyle(marker);
     return marker;
   }
@@ -231,7 +296,7 @@
           const reference = localOffset === 0
             ? textNode
             : textNode.splitText(localOffset);
-          reference.before(createDividerMarker());
+          reference.before(createDividerMarker(reference.getRootNode()));
         });
     });
   }
@@ -320,7 +385,8 @@
     } finally {
       observer?.takeRecords();
       if (observer && observer === state.observer && state.enabled) {
-        observer.observe(document.documentElement, OBSERVER_OPTIONS);
+        pruneDisconnectedShadowRoots();
+        observeRegisteredMutationTargets(observer);
       }
     }
 
@@ -384,8 +450,18 @@
         return;
       }
 
+      if (isOpenShadowRoot(node)) {
+        registerShadowRoot(node);
+        for (let child = node.firstChild; child; child = child.nextSibling) {
+          visit(child);
+        }
+        return;
+      }
+
       if (!(node instanceof Element)) return;
-      if (!isRoot && isIgnored(node)) return;
+      const ignored = isIgnored(node);
+      if (!isRoot && ignored) return;
+      if (!ignored && node.shadowRoot) visit(node.shadowRoot, true);
       for (let child = node.firstChild; child; child = child.nextSibling) {
         visit(child);
       }
@@ -393,7 +469,7 @@
 
     if (root.nodeType === Node.TEXT_NODE) {
       visit(root, true);
-    } else if (root instanceof Element) {
+    } else if (root instanceof Element || isOpenShadowRoot(root)) {
       visit(root, true);
     }
   }
@@ -451,8 +527,12 @@
         }
       }
       removeDisconnectedVisibilityTargets();
+      if (pruneDisconnectedShadowRoots()) {
+        state.observer.disconnect();
+        observeRegisteredMutationTargets();
+      }
     });
-    state.observer.observe(document.documentElement, OBSERVER_OPTIONS);
+    observeRegisteredMutationTargets();
   }
 
   function stopObserver() {
@@ -464,20 +544,24 @@
   }
 
   function restoreDocument() {
+    const queryRoots = registeredQueryRoots();
     stopObserver();
     const parents = new Set();
 
-    document.querySelectorAll(".super-reader-chunk").forEach((span) => {
-      if (span.parentNode) parents.add(span.parentNode);
-      if (span.dataset.superReaderDivider === "true") {
-        span.remove();
-      } else {
-        // Clean up text-wrapping spans created by earlier extension versions.
-        span.replaceWith(document.createTextNode(span.textContent || ""));
-      }
+    queryRoots.forEach((root) => {
+      root.querySelectorAll(".super-reader-chunk").forEach((span) => {
+        if (span.parentNode) parents.add(span.parentNode);
+        if (span.dataset.superReaderDivider === "true") {
+          span.remove();
+        } else {
+          // Clean up text-wrapping spans created by earlier extension versions.
+          span.replaceWith(document.createTextNode(span.textContent || ""));
+        }
+      });
     });
 
     parents.forEach((parent) => parent.normalize());
+    state.shadowRoots.clear();
   }
 
   function enable() {
@@ -494,8 +578,10 @@
   }
 
   function updateDividerStyles() {
-    document.querySelectorAll(".super-reader-chunk").forEach((span) => {
-      applyDividerStyle(span);
+    registeredQueryRoots().forEach((root) => {
+      root.querySelectorAll(".super-reader-chunk").forEach((span) => {
+        applyDividerStyle(span);
+      });
     });
   }
 

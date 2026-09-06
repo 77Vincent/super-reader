@@ -29,7 +29,9 @@
     <p id="sample">我一直在思考明天早上的早餐吃什么</p>
     <p id="inline-sample">婴儿安全座椅更多推荐放在<strong>驾驶侧后方（左侧）</strong>，但实际生活中选择放在<strong>副驾驶对侧后方（右侧）</strong>的家庭也非常多，两边各有其不可替代的优势。</p>
     <div id="dynamic"></div>
+    <div id="shadow-host"></div>
     <button id="add" type="button">添加动态文本</button>
+    <button id="add-shadow" type="button">添加动态 Shadow 文本</button>
     <button id="disable" type="button">关闭效果</button>
     <div class="viewport-spacer" aria-hidden="true"></div>
     <p id="offscreen-sample">滚动进入视口以后这段中文才应该开始进行视觉分块处理。</p>
@@ -65,6 +67,17 @@
         );
         fixtureListeners.forEach((listener) => listener(storageChanges, "sync"));
       };
+
+      const shadowLevelOne = document.querySelector("#shadow-host")
+        .attachShadow({ mode: "open" });
+      const nestedShadowHost = document.createElement("div");
+      shadowLevelOne.append(nestedShadowHost);
+      const shadowLevelTwo = nestedShadowHost.attachShadow({ mode: "open" });
+      const shadowSample = document.createElement("p");
+      shadowSample.id = "shadow-sample";
+      shadowSample.textContent = "嵌套组件里的中文评论也应该完成视觉分块处理。";
+      shadowLevelTwo.append(shadowSample);
+      window.fixtureShadowRoot = shadowLevelTwo;
     </script>
     <script src="../src/boundary-model-data.js"></script>
     <script src="../src/model-backend.js"></script>
@@ -78,19 +91,48 @@
         document.querySelector("#dynamic").append(paragraph);
       });
 
+      document.querySelector("#add-shadow").addEventListener("click", () => {
+        const dynamicShadowHost = document.createElement("div");
+        dynamicShadowHost.id = "dynamic-shadow-host";
+        const dynamicShadowRoot = dynamicShadowHost.attachShadow({ mode: "open" });
+        const paragraph = document.createElement("p");
+        paragraph.id = "dynamic-shadow-sample";
+        paragraph.textContent = "后来载入的组件评论也应该自动完成视觉分块。";
+        dynamicShadowRoot.append(paragraph);
+        window.dynamicFixtureShadowRoot = dynamicShadowRoot;
+        shadowLevelOne.append(dynamicShadowHost);
+      });
+
       document.querySelector("#disable").addEventListener("click", () => {
         window.updateFixtureSettings({ enabled: false });
       });
 
       if (new URLSearchParams(location.search).has("exercise")) {
         document.querySelector("#add").click();
+        document.querySelector("#add-shadow").click();
         setTimeout(() => {
           document.body.dataset.dynamicDividerCount = String(
             document.querySelectorAll("#dynamic-sample [data-super-reader-divider]").length,
           );
+          document.body.dataset.shadowDividerCount = String(
+            window.fixtureShadowRoot.querySelectorAll(
+              "#shadow-sample [data-super-reader-divider]",
+            ).length,
+          );
+          document.body.dataset.dynamicShadowDividerCount = String(
+            window.dynamicFixtureShadowRoot.querySelectorAll(
+              "#dynamic-shadow-sample [data-super-reader-divider]",
+            ).length,
+          );
           document.querySelector("#disable").click();
           document.body.dataset.remainingDividerCount = String(
-            document.querySelectorAll("[data-super-reader-divider]").length,
+            document.querySelectorAll("[data-super-reader-divider]").length +
+              window.fixtureShadowRoot.querySelectorAll(
+                "[data-super-reader-divider]",
+              ).length +
+              window.dynamicFixtureShadowRoot.querySelectorAll(
+                "[data-super-reader-divider]",
+              ).length,
           );
           document.body.dataset.inlineStrongCount = String(
             document.querySelectorAll("#inline-sample strong").length,

@@ -61,6 +61,21 @@ test("extension defers text blocks until they enter the viewport", () => {
   );
 });
 
+test("extension observes and cleans up nested open Shadow DOM", () => {
+  const contentScript = readFileSync(join(projectRoot, "src/content.js"), "utf8");
+  const fixture = readFileSync(join(projectRoot, "test/browser-fixture.html"), "utf8");
+
+  assert.match(contentScript, /shadowRoots: new Set\(\)/u);
+  assert.match(contentScript, /root\.host\.shadowRoot === root/u);
+  assert.match(contentScript, /observer\.observe\(target, OBSERVER_OPTIONS\)/u);
+  assert.match(contentScript, /if \(!ignored && node\.shadowRoot\) visit\(node\.shadowRoot, true\)/u);
+  assert.match(contentScript, /applyShadowMarkerLayout\(marker\)/u);
+  assert.match(contentScript, /state\.shadowRoots\.clear\(\)/u);
+  assert.equal((contentScript.match(/new MutationObserver/gu) || []).length, 1);
+  assert.equal((fixture.match(/attachShadow\(\{ mode: "open" \}\)/gu) || []).length, 3);
+  assert.match(fixture, /paragraph\.id = "dynamic-shadow-sample"/u);
+});
+
 test("HTML demo uses the same vertical separator treatment", () => {
   const html = readFileSync(join(projectRoot, "demo.html"), "utf8");
 
