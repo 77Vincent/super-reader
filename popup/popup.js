@@ -6,11 +6,6 @@ const DEFAULTS = {
   dividerColor: "red",
 };
 const PREVIEW_TEXT = "将长句切分成短句加速阅读理解";
-const PREVIEW_RUNTIME_FILES = Object.freeze([
-  "src/boundary-model-data.js",
-  "src/model-backend.js",
-  "src/chunker.js",
-]);
 
 const DIVIDER_COLORS = Object.freeze({
   red: "#ff1744",
@@ -27,26 +22,10 @@ const dividerOutput = document.querySelector("#divider-output");
 const dividerColorInputs = Array.from(document.querySelectorAll("[name='divider-color']"));
 const pageStatus = document.querySelector("#page-status");
 const preview = document.querySelector(".preview");
-let previewRuntimePromise = null;
 
-function ensurePreviewRuntime() {
-  if (globalThis.SuperReaderChunker) return Promise.resolve();
-  if (previewRuntimePromise) return previewRuntimePromise;
-
-  previewRuntimePromise = PREVIEW_RUNTIME_FILES.reduce(
-    (previous, file) => previous.then(() => import(chrome.runtime.getURL(file))),
-    Promise.resolve(),
-  ).catch((error) => {
-    previewRuntimePromise = null;
-    throw error;
-  });
-  return previewRuntimePromise;
-}
-
-async function renderModelPreview() {
+function renderModelPreview() {
   preview.setAttribute("aria-busy", "true");
   try {
-    await ensurePreviewRuntime();
     const segmenter = globalThis.SuperReaderChunker.createSegmenter("zh-CN");
     const chunks = globalThis.SuperReaderChunker.buildVisualChunks(PREVIEW_TEXT, {
       segmenter,
@@ -188,8 +167,8 @@ chrome.storage.onChanged.addListener(async (_changes, areaName) => {
 });
 
 (async function initializePopup() {
+  renderModelPreview();
   const settings = await chrome.storage.sync.get(DEFAULTS);
   render(settings);
-  void renderModelPreview();
   if (settings.enabled) await ensureCurrentPageReady();
 })();

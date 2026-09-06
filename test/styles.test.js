@@ -116,14 +116,23 @@ test("popup preview is rendered by the shared model backend", () => {
     /class="preview"[^>]*>将长句切分成短句加速阅读理解<\/div>/u,
   );
   assert.doesNotMatch(popup, /<span[^>]*preview-chunk--separated/u);
-  assert.match(popupScript, /"src\/boundary-model-data\.js"/u);
-  assert.match(popupScript, /"src\/model-backend\.js"/u);
-  assert.match(popupScript, /"src\/chunker\.js"/u);
+  assert.ok(
+    popup.indexOf("../src/boundary-model-data.js") <
+      popup.indexOf("../src/model-backend.js"),
+  );
+  assert.ok(
+    popup.indexOf("../src/model-backend.js") < popup.indexOf("../src/chunker.js"),
+  );
+  assert.ok(popup.indexOf("../src/chunker.js") < popup.indexOf("popup.js"));
   assert.match(
     popupScript,
     /SuperReaderChunker\.buildVisualChunks\(PREVIEW_TEXT/u,
   );
   assert.match(popupScript, /chunk\.separated/u);
+  assert.match(
+    popupScript,
+    /\(async function initializePopup\(\) \{\s*renderModelPreview\(\);\s*const settings = await chrome\.storage\.sync\.get\(DEFAULTS\)/u,
+  );
 });
 
 test("demo and extension expose five matching divider colors with red as default", () => {
