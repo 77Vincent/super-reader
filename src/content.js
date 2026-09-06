@@ -62,6 +62,8 @@
     segmenter: SuperReaderChunker.createSegmenter("zh-CN"),
     pendingRoots: new Set(),
     flushScheduled: false,
+    flushHandle: null,
+    flushKind: null,
   };
 
   function normalizeDividerWidth(value) {
@@ -256,8 +258,38 @@
     collectTextRuns(scope).forEach(processTextRun);
   }
 
-  function flushPendingRoots() {
+  function scheduleFlush() {
+    if (state.flushScheduled || !state.enabled) return;
+    state.flushScheduled = true;
+
+    if (typeof requestIdleCallback === "function") {
+      state.flushKind = "idle";
+      state.flushHandle = requestIdleCallback(flushPendingRoots, { timeout: 150 });
+      return;
+    }
+
+    state.flushKind = "timeout";
+    state.flushHandle = setTimeout(() => {
+      flushPendingRoots({ didTimeout: true, timeRemaining: () => 0 });
+    }, 0);
+  }
+
+  function cancelScheduledFlush() {
+    if (!state.flushScheduled) return;
+    if (state.flushKind === "idle" && typeof cancelIdleCallback === "function") {
+      cancelIdleCallback(state.flushHandle);
+    } else if (state.flushKind === "timeout") {
+      clearTimeout(state.flushHandle);
+    }
     state.flushScheduled = false;
+    state.flushHandle = null;
+    state.flushKind = null;
+  }
+
+  function flushPendingRoots(deadline) {
+    state.flushScheduled = false;
+    state.flushHandle = null;
+    state.flushKind = null;
     const roots = Array.from(state.pendingRoots);
     state.pendingRoots.clear();
     if (!state.enabled || !roots.length) return;
@@ -265,13 +297,27 @@
     const observer = state.observer;
     observer?.disconnect();
     try {
-      roots.forEach(processRoot);
+      let processed = 0;
+      for (let index = 0; index < roots.length; index += 1) {
+        const shouldYield = processed > 0 && (
+          processed >= 4 ||
+          (!deadline?.didTimeout && deadline?.timeRemaining() < 4)
+        );
+        if (shouldYield) {
+          roots.slice(index).forEach((root) => state.pendingRoots.add(root));
+          break;
+        }
+        processRoot(roots[index]);
+        processed += 1;
+      }
     } finally {
       observer?.takeRecords();
       if (observer && observer === state.observer && state.enabled) {
         observer.observe(document.documentElement, OBSERVER_OPTIONS);
       }
     }
+
+    if (state.pendingRoots.size) scheduleFlush();
   }
 
   function queueRoot(root) {
@@ -283,9 +329,7 @@
       if (scope.contains(pendingScope)) state.pendingRoots.delete(pendingScope);
     }
     state.pendingRoots.add(scope);
-    if (state.flushScheduled) return;
-    state.flushScheduled = true;
-    queueMicrotask(flushPendingRoots);
+    scheduleFlush();
   }
 
   function startObserver() {
@@ -307,8 +351,8 @@
   function stopObserver() {
     state.observer?.disconnect();
     state.observer = null;
+    cancelScheduledFlush();
     state.pendingRoots.clear();
-    state.flushScheduled = false;
   }
 
   function restoreDocument() {
@@ -331,8 +375,8 @@
   function enable() {
     if (state.enabled) return;
     state.enabled = true;
-    processRoot(document.body || document.documentElement);
     startObserver();
+    queueRoot(document.body || document.documentElement);
   }
 
   function disable() {

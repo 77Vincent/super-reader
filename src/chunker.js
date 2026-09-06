@@ -15,6 +15,10 @@
   const HAN_CHARACTER = /\p{Script=Han}/u;
   const CLAUSE_END_CHARACTER = /[，,、。.！？!?；;：:\n…（）()《》〈〉\/／]/u;
   const TRAILING_CLOSER = /[”’」』）》】〉〕〗〙〛"'）)\]]/u;
+  const NUMERIC_TOKEN = /^\p{Number}+(?:[.,]\p{Number}+)*$/u;
+  const SINGLE_HAN_WORD = /^\p{Script=Han}$/u;
+  const WHITESPACE = /^\s+$/u;
+  const BALANCE_LOG_WEIGHT = 0.25;
   const SPLIT_LENGTH_THRESHOLD = 8;
 
   function visualLength(text) {
@@ -90,16 +94,59 @@
   }
 
   function boundaryFallsInsideWord(text, boundary, segmenter) {
-    if (!segmenter) return false;
+    return normalizedSegments(text, segmenter).some(
+      (item) => item.isWordLike && boundary > item.start && boundary < item.end,
+    );
+  }
+
+  function normalizedSegments(text, segmenter) {
+    if (!segmenter) return [];
 
     let fallbackIndex = 0;
-    for (const item of segmenter.segment(text)) {
+    return Array.from(segmenter.segment(text), (item) => {
       const start = Number.isInteger(item.index) ? item.index : fallbackIndex;
       const end = start + item.segment.length;
       fallbackIndex = end;
-      if (item.isWordLike && boundary > start && boundary < end) return true;
+      return { ...item, start, end };
+    });
+  }
+
+  function nextWordLikeSegment(segments, startIndex) {
+    for (let index = startIndex; index < segments.length; index += 1) {
+      const item = segments[index];
+      if (item.isWordLike) return { item, index };
+      if (!WHITESPACE.test(item.segment)) return null;
     }
-    return false;
+    return null;
+  }
+
+  function quantityPhraseRangesFromSegments(segments) {
+    const ranges = [];
+
+    for (let index = 0; index < segments.length; index += 1) {
+      const number = segments[index];
+      if (!number.isWordLike || !NUMERIC_TOKEN.test(number.segment)) continue;
+
+      const classifier = nextWordLikeSegment(segments, index + 1);
+      if (!classifier || !SINGLE_HAN_WORD.test(classifier.item.segment)) continue;
+
+      const noun = nextWordLikeSegment(segments, classifier.index + 1);
+      if (!noun || !HAN_CHARACTER.test(noun.item.segment)) continue;
+
+      ranges.push({ start: number.start, end: noun.item.end });
+    }
+
+    return ranges;
+  }
+
+  function quantityPhraseRanges(text, segmenter) {
+    return quantityPhraseRangesFromSegments(normalizedSegments(text, segmenter));
+  }
+
+  function boundaryFallsInsideQuantityPhrase(text, boundary, segmenter) {
+    return quantityPhraseRanges(text, segmenter).some(
+      (range) => boundary > range.start && boundary < range.end,
+    );
   }
 
   function selectBestBoundary(scores, isAllowed = () => true) {
@@ -113,9 +160,10 @@
       const rightLength = scores.length - index;
       const balance = Math.min(leftLength, rightLength) /
         Math.max(leftLength, rightLength);
-      // log(softmax(logit)) differs from the logit by one shared constant,
-      // so ranking P(model) * B(balance) is equivalent to this sum.
-      const combinedScore = scores[index] + Math.log(balance);
+      // Model confidence remains primary. The fourth root makes balance a
+      // weak prior that only breaks otherwise close boundary decisions.
+      const combinedScore = scores[index] +
+        BALANCE_LOG_WEIGHT * Math.log(balance);
       if (bestIndex === null || combinedScore > bestCombinedScore) {
         bestIndex = index;
         bestCombinedScore = combinedScore;
@@ -132,6 +180,18 @@
       throw new Error("Super Reader model backend must load before the chunker");
     }
     const ranges = [];
+    const segments = normalizedSegments(text, segmenter);
+    const protectedBoundaryRanges = segments
+      .filter((item) => item.isWordLike)
+      .map((item) => ({ start: item.start, end: item.end }));
+    protectedBoundaryRanges.push(...quantityPhraseRangesFromSegments(segments));
+    const protectedBoundaryOffsets = new Set(
+      tokens.slice(1)
+        .map((token) => token.index)
+        .filter((boundary) => protectedBoundaryRanges.some(
+          (range) => boundary > range.start && boundary < range.end,
+        )),
+    );
 
     function visit(start, end) {
       if (end - start <= SPLIT_LENGTH_THRESHOLD) {
@@ -142,11 +202,14 @@
       const scores = modelBackend.scoreTokens(
         tokens.slice(start, end).map((token) => token.segment),
       );
-      const boundaryIndex = selectBestBoundary(scores, (candidateIndex) => {
-        const boundaryAfter = start + candidateIndex;
-        const rightToken = tokens[boundaryAfter + 1];
-        return !boundaryFallsInsideWord(text, rightToken.index, segmenter);
-      });
+      const boundaryIndex = selectBestBoundary(
+        scores,
+        (candidateIndex) => {
+          const boundaryAfter = start + candidateIndex;
+          const rightToken = tokens[boundaryAfter + 1];
+          return !protectedBoundaryOffsets.has(rightToken.index);
+        },
+      );
       if (boundaryIndex === null) {
         ranges.push({ start, end });
         return;
@@ -195,6 +258,7 @@
   }
 
   return Object.freeze({
+    boundaryFallsInsideQuantityPhrase,
     boundaryFallsInsideWord,
     buildVisualChunks,
     chunkText,

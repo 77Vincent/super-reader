@@ -38,6 +38,15 @@ test("extension chunks inline-formatted paragraph text as one model input", () =
   assert.match(fixture, /id="inline-sample"[^>]*>[^<]*<strong>[^<]+<\/strong>/u);
 });
 
+test("extension schedules DOM reprocessing during browser idle time", () => {
+  const contentScript = readFileSync(join(projectRoot, "src/content.js"), "utf8");
+
+  assert.match(contentScript, /requestIdleCallback\(flushPendingRoots/u);
+  assert.match(contentScript, /processed >= 4/u);
+  assert.match(contentScript, /cancelScheduledFlush\(\)/u);
+  assert.doesNotMatch(contentScript, /queueMicrotask\(flushPendingRoots\)/u);
+});
+
 test("HTML demo uses the same vertical separator treatment", () => {
   const html = readFileSync(join(projectRoot, "demo.html"), "utf8");
 
@@ -117,15 +126,22 @@ test("demo and extension expose five matching divider colors with red as default
   assert.match(popupScript, /chrome\.storage\.sync\.set\(\{ dividerColor:/u);
 });
 
-test("extension and demo load the same model backend", () => {
+test("extension defers the model runtime until reading mode is enabled", () => {
   const manifest = JSON.parse(readFileSync(join(projectRoot, "manifest.json"), "utf8"));
+  const loader = readFileSync(join(projectRoot, "src/loader.js"), "utf8");
+  const popupScript = readFileSync(join(projectRoot, "popup/popup.js"), "utf8");
 
-  assert.deepEqual(manifest.content_scripts[0].js, [
+  assert.deepEqual(manifest.content_scripts[0].js, ["src/loader.js"]);
+  assert.deepEqual(manifest.web_accessible_resources[0].resources, [
     "src/boundary-model-data.js",
     "src/model-backend.js",
     "src/chunker.js",
     "src/content.js",
   ]);
+  assert.equal(manifest.web_accessible_resources[0].use_dynamic_url, true);
+  assert.match(loader, /changes\.enabled\?\.newValue/u);
+  assert.match(loader, /import\(chrome\.runtime\.getURL\(file\)\)/u);
+  assert.match(popupScript, /files:\s*\["src\/loader\.js"\]/u);
 });
 
 test("target chunk length is no longer configurable", () => {

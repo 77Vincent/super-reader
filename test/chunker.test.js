@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  boundaryFallsInsideQuantityPhrase,
   boundaryFallsInsideWord,
   buildVisualChunks,
   chunkText,
@@ -105,13 +106,17 @@ test("title marks pre-split a title without drawing a divider beside it", () => 
   );
 });
 
-test("multiplies model confidence by unsquared boundary balance", () => {
+test("uses boundary balance as a weak prior below model confidence", () => {
   assert.equal(selectBestBoundary([]), null);
   assert.equal(selectBestBoundary([0, 0]), 0);
   assert.equal(selectBestBoundary([0, 2, 0]), 1);
   assert.equal(selectBestBoundary([0.01, 0]), 0);
   assert.equal(selectBestBoundary([0, 0, 0]), 1);
   assert.equal(selectBestBoundary([1.5, 0, 0]), 0);
+  assert.equal(
+    selectBestBoundary([-10, -10, -10, -10, -10, 0, -10, 0.311, -10, -10]),
+    7,
+  );
 });
 
 test("rejects candidate boundaries inside a segmented word", () => {
@@ -124,6 +129,49 @@ test("rejects candidate boundaries inside a segmented word", () => {
   assert.equal(boundaryFallsInsideWord("但初中", 2, segmenter), true);
   assert.equal(boundaryFallsInsideWord("但初中", 1, segmenter), false);
   assert.equal(boundaryFallsInsideWord("但初中", 3, segmenter), false);
+});
+
+test("segments each punctuation-delimited clause only once during recursive planning", () => {
+  const baseSegmenter = new Intl.Segmenter("zh-CN", { granularity: "word" });
+  let calls = 0;
+  const segmenter = {
+    segment(text) {
+      calls += 1;
+      return baseSegmenter.segment(text);
+    },
+  };
+
+  chunkText("同一个无标点子句内的短语块用细竖线分隔", { segmenter });
+
+  assert.equal(calls, 1);
+});
+
+test("protects a numeric classifier and its following noun as one phrase", () => {
+  const text = "分为5个等级";
+  const segmenter = {
+    segment() {
+      return [
+        { segment: "分为", index: 0, isWordLike: true },
+        { segment: "5", index: 2, isWordLike: true },
+        { segment: "个", index: 3, isWordLike: true },
+        { segment: "等级", index: 4, isWordLike: true },
+      ];
+    },
+  };
+
+  assert.equal(boundaryFallsInsideQuantityPhrase(text, 2, segmenter), false);
+  assert.equal(boundaryFallsInsideQuantityPhrase(text, 3, segmenter), true);
+  assert.equal(boundaryFallsInsideQuantityPhrase(text, 4, segmenter), true);
+  assert.equal(boundaryFallsInsideQuantityPhrase(text, 6, segmenter), false);
+});
+
+test("keeps a reported numeric quantity phrase free of dividers", () => {
+  const rendered = buildVisualChunks(
+    "网站里的海量视频被划分为了5个等级，",
+  ).map((chunk) => `${chunk.separated ? "｜" : ""}${chunk.text}`).join("");
+
+  assert.match(rendered, /5个等级/u);
+  assert.doesNotMatch(rendered, /5｜个|个｜等级/u);
 });
 
 test("only asks the model to split clauses longer than eight Han characters", () => {
@@ -147,7 +195,7 @@ test("recursively selects the highest combined score until every chunk is at mos
   assert.ok(chunks.every((chunk) => visualLength(chunk) <= 8));
 });
 
-test("uses model confidence, unsquared balance, and word protection", () => {
+test("uses model confidence, weak balance, and word protection", () => {
   const chunks = chunkText("而是帮助大脑更快地识别信息结构。");
 
   assert.deepEqual(chunks, ["而是帮助大脑", "更快地", "识别信息结构。"]);

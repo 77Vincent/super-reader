@@ -73,9 +73,7 @@
     );
   }
 
-  function normalize(input, sequenceLength, weight, bias) {
-    const output = new Float32Array(input.length);
-
+  function normalize(input, output, sequenceLength, weight, bias) {
     for (let position = 0; position < sequenceLength; position += 1) {
       const offset = position * CHANNELS;
       let mean = 0;
@@ -101,9 +99,7 @@
     return output;
   }
 
-  function convolve(input, sequenceLength, weight, bias, activate) {
-    const output = new Float32Array(input.length);
-
+  function convolve(input, output, sequenceLength, weight, bias, activate) {
     for (let position = 0; position < sequenceLength; position += 1) {
       for (let outputChannel = 0; outputChannel < CHANNELS; outputChannel += 1) {
         let value = bias[outputChannel];
@@ -150,6 +146,9 @@
 
       const sequenceLength = tokens.length;
       let hidden = new Float32Array(sequenceLength * CHANNELS);
+      const normalized = new Float32Array(hidden.length);
+      const first = new Float32Array(hidden.length);
+      const second = new Float32Array(hidden.length);
       for (let position = 0; position < sequenceLength; position += 1) {
         const tokenId = Object.prototype.hasOwnProperty.call(vocabulary, tokens[position])
           ? vocabulary[tokens[position]]
@@ -159,21 +158,24 @@
       }
 
       for (const block of blocks) {
-        const normalized = normalize(
+        normalize(
           hidden,
+          normalized,
           sequenceLength,
           block.normalizationWeight,
           block.normalizationBias,
         );
-        const first = convolve(
+        convolve(
           normalized,
+          first,
           sequenceLength,
           block.firstWeight,
           block.firstBias,
           true,
         );
-        const second = convolve(
+        convolve(
           first,
+          second,
           sequenceLength,
           block.secondWeight,
           block.secondBias,

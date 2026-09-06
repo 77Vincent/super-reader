@@ -24,13 +24,20 @@
     {
       "matches": ["http://*/*", "https://*/*", "file:///*"],
       "css": ["src/content.css"],
-      "js": [
+      "js": ["src/loader.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
         "src/boundary-model-data.js",
         "src/model-backend.js",
         "src/chunker.js",
         "src/content.js"
       ],
-      "run_at": "document_idle"
+      "matches": ["http://*/*", "https://*/*", "file:///*"],
+      "use_dynamic_url": true
     }
   ]
 }

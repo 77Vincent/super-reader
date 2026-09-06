@@ -90,12 +90,7 @@ async function ensureCurrentPageReady() {
     });
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: [
-        "src/boundary-model-data.js",
-        "src/model-backend.js",
-        "src/chunker.js",
-        "src/content.js",
-      ],
+      files: ["src/loader.js"],
     });
     pageStatus.textContent = "已连接当前网页，设置会应用到所有普通网页";
     pageStatus.classList.remove("error");
