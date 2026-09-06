@@ -91,6 +91,17 @@ test("treats parentheses, slashes, and title marks as hard clause boundaries", (
   assert.equal(buildVisualChunks(text).some((chunk) => chunk.separated), false);
 });
 
+test("keeps a slash inside a numeric fraction but pre-splits an ordinary slash", () => {
+  assert.deepEqual(splitClauses("训练/微调1/4英寸，"), [
+    "训练/",
+    "微调1/4英寸，",
+  ]);
+  assert.deepEqual(splitClauses("比例为1 ／ 4，继续。"), [
+    "比例为1 ／ 4，",
+    "继续。",
+  ]);
+});
+
 test("title marks pre-split a title without drawing a divider beside it", () => {
   const text = "美國重口食人族電影《家庭晚餐》，";
 
@@ -174,7 +185,28 @@ test("keeps a reported numeric quantity phrase free of dividers", () => {
   assert.doesNotMatch(rendered, /5｜个|个｜等级/u);
 });
 
-test("only asks the model to split clauses longer than eight Han characters", () => {
+test("counts numeric expressions toward the threshold without splitting a fraction from its unit", () => {
+  const samples = [
+    "前端的宽度是9 1/4英寸，",
+    "后端则拉宽到10 1/2英寸，",
+  ];
+
+  assert.equal(visualLength(samples[0]), 9);
+  assert.equal(visualLength(samples[1]), 9);
+  samples.forEach((text) => {
+    const chunks = buildVisualChunks(text);
+    const rendered = chunks
+      .map((chunk) => `${chunk.separated ? "｜" : ""}${chunk.text}`)
+      .join("");
+
+    assert.equal(chunks.map((chunk) => chunk.text).join(""), text);
+    assert.equal(chunks.some((chunk) => chunk.separated), true);
+    assert.doesNotMatch(rendered, /[\/／]｜?\p{Number}*｜英寸|[\/／]\p{Number}+｜英寸/u);
+    assert.ok(chunks.every((chunk) => visualLength(chunk.text) <= 8));
+  });
+});
+
+test("only asks the model to split clauses longer than eight visual units", () => {
   assert.deepEqual(chunkText("甲乙丙丁戊己庚辛"), [
     "甲乙丙丁戊己庚辛",
   ]);
@@ -298,8 +330,8 @@ test("never loses whitespace or mixed-language content", () => {
   assert.equal(chunkText(text).join(""), text);
 });
 
-test("visual length counts only Chinese characters", () => {
-  assert.equal(visualLength("你好，Reader 2.0！"), 2);
+test("visual length counts Chinese characters and numeric expressions", () => {
+  assert.equal(visualLength("你好，Reader 2.0！"), 3);
 });
 
 test("non-Chinese chunks remain unprocessed", () => {

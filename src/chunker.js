@@ -16,15 +16,47 @@
   const CLAUSE_END_CHARACTER = /[，,、。.！？!?；;：:\n…（）()《》〈〉\/／]/u;
   const TRAILING_CLOSER = /[”’」』）》】〉〕〗〙〛"'）)\]]/u;
   const NUMERIC_TOKEN = /^\p{Number}+(?:[.,]\p{Number}+)*$/u;
+  const NUMERIC_EXPRESSION = /\p{Number}+(?:[.,]\p{Number}+)?(?:\s+\p{Number}+[\/／]\p{Number}+|[\/／]\p{Number}+)?/gu;
+  const NUMBER_CHARACTER = /^\p{Number}$/u;
   const SINGLE_HAN_WORD = /^\p{Script=Han}$/u;
   const WHITESPACE = /^\s+$/u;
   const BALANCE_LOG_WEIGHT = 0.25;
   const SPLIT_LENGTH_THRESHOLD = 8;
 
   function visualLength(text) {
-    return Array.from(text).reduce(
+    const hanLength = Array.from(text).reduce(
       (length, character) => length + (HAN_CHARACTER.test(character) ? 1 : 0),
       0,
+    );
+    const numericExpressionLength = Array.from(text.matchAll(NUMERIC_EXPRESSION)).length;
+    return hanLength + numericExpressionLength;
+  }
+
+  function isNumericSlash(characters, index) {
+    const character = characters[index];
+    if (character !== "/" && character !== "／") return false;
+
+    let leftIndex = index - 1;
+    let rightIndex = index + 1;
+    while (leftIndex >= 0 && WHITESPACE.test(characters[leftIndex])) leftIndex -= 1;
+    while (
+      rightIndex < characters.length &&
+      WHITESPACE.test(characters[rightIndex])
+    ) {
+      rightIndex += 1;
+    }
+    return (
+      leftIndex >= 0 &&
+      rightIndex < characters.length &&
+      NUMBER_CHARACTER.test(characters[leftIndex]) &&
+      NUMBER_CHARACTER.test(characters[rightIndex])
+    );
+  }
+
+  function isClauseEndAt(characters, index) {
+    return (
+      CLAUSE_END_CHARACTER.test(characters[index]) &&
+      !isNumericSlash(characters, index)
     );
   }
 
@@ -70,11 +102,11 @@
         isInsideStraightDoubleQuote = !isInsideStraightDoubleQuote;
       }
 
-      if (!CLAUSE_END_CHARACTER.test(character)) continue;
+      if (!isClauseEndAt(characters, index)) continue;
 
       while (index + 1 < characters.length) {
         const nextCharacter = characters[index + 1];
-        const isTrailingPunctuation = CLAUSE_END_CHARACTER.test(nextCharacter);
+        const isTrailingPunctuation = isClauseEndAt(characters, index + 1);
         const isTrailingCloser =
           TRAILING_CLOSER.test(nextCharacter) &&
           (nextCharacter !== '"' || isInsideStraightDoubleQuote);
@@ -143,6 +175,28 @@
     return quantityPhraseRangesFromSegments(normalizedSegments(text, segmenter));
   }
 
+  function numericAttachmentRanges(text, segments) {
+    const ranges = [];
+
+    for (const match of text.matchAll(NUMERIC_EXPRESSION)) {
+      const start = match.index;
+      const expressionEnd = start + match[0].length;
+      const attachment = segments.find((item) => (
+        item.start >= expressionEnd &&
+        item.isWordLike &&
+        HAN_CHARACTER.test(item.segment) &&
+        (
+          item.start === expressionEnd ||
+          WHITESPACE.test(text.slice(expressionEnd, item.start))
+        )
+      ));
+      if (!attachment) continue;
+      ranges.push({ start, end: attachment.end });
+    }
+
+    return ranges;
+  }
+
   function boundaryFallsInsideQuantityPhrase(text, boundary, segmenter) {
     return quantityPhraseRanges(text, segmenter).some(
       (range) => boundary > range.start && boundary < range.end,
@@ -185,6 +239,7 @@
       .filter((item) => item.isWordLike)
       .map((item) => ({ start: item.start, end: item.end }));
     protectedBoundaryRanges.push(...quantityPhraseRangesFromSegments(segments));
+    protectedBoundaryRanges.push(...numericAttachmentRanges(text, segments));
     const protectedBoundaryOffsets = new Set(
       tokens.slice(1)
         .map((token) => token.index)
@@ -194,7 +249,12 @@
     );
 
     function visit(start, end) {
-      if (end - start <= SPLIT_LENGTH_THRESHOLD) {
+      const sourceStart = start === 0 ? 0 : tokens[start].index;
+      const sourceEnd = end === tokens.length ? text.length : tokens[end].index;
+      if (
+        end - start < 2 ||
+        visualLength(text.slice(sourceStart, sourceEnd)) <= SPLIT_LENGTH_THRESHOLD
+      ) {
         ranges.push({ start, end });
         return;
       }
