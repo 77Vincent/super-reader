@@ -5,6 +5,12 @@ const DEFAULTS = {
   dividerWidth: 3,
   dividerColor: "red",
 };
+const PREVIEW_TEXT = "将长句切分成短句加速阅读理解";
+const PREVIEW_RUNTIME_FILES = Object.freeze([
+  "src/boundary-model-data.js",
+  "src/model-backend.js",
+  "src/chunker.js",
+]);
 
 const DIVIDER_COLORS = Object.freeze({
   red: "#ff1744",
@@ -13,18 +19,57 @@ const DIVIDER_COLORS = Object.freeze({
   green: "#00e676",
   text: "currentColor",
 });
-const COLORED_DIVIDER_FILTER = [
-  "drop-shadow(0.5px 0 0 rgba(255, 255, 255, 0.7))",
-].join(" ");
+const COLORED_DIVIDER_FILTER = "drop-shadow(0.5px 0 0 rgba(255, 255, 255, 0.7))";
 
 const enabledInput = document.querySelector("#enabled");
 const dividerInput = document.querySelector("#divider-width");
 const dividerOutput = document.querySelector("#divider-output");
 const dividerColorInputs = Array.from(document.querySelectorAll("[name='divider-color']"));
-const switchState = document.querySelector("#switch-state");
 const pageStatus = document.querySelector("#page-status");
-const settingsPanel = document.querySelector(".settings");
 const preview = document.querySelector(".preview");
+let previewRuntimePromise = null;
+
+function ensurePreviewRuntime() {
+  if (globalThis.SuperReaderChunker) return Promise.resolve();
+  if (previewRuntimePromise) return previewRuntimePromise;
+
+  previewRuntimePromise = PREVIEW_RUNTIME_FILES.reduce(
+    (previous, file) => previous.then(() => import(chrome.runtime.getURL(file))),
+    Promise.resolve(),
+  ).catch((error) => {
+    previewRuntimePromise = null;
+    throw error;
+  });
+  return previewRuntimePromise;
+}
+
+async function renderModelPreview() {
+  preview.setAttribute("aria-busy", "true");
+  try {
+    await ensurePreviewRuntime();
+    const segmenter = globalThis.SuperReaderChunker.createSegmenter("zh-CN");
+    const chunks = globalThis.SuperReaderChunker.buildVisualChunks(PREVIEW_TEXT, {
+      segmenter,
+    });
+
+    preview.replaceChildren();
+    chunks.forEach((chunk) => {
+      if (!chunk.processed) {
+        preview.append(document.createTextNode(chunk.text));
+        return;
+      }
+
+      const span = document.createElement("span");
+      span.className = chunk.separated ? "preview-chunk--separated" : "";
+      span.textContent = chunk.text;
+      preview.append(span);
+    });
+  } catch (error) {
+    console.error("Super Reader failed to render its model preview", error);
+  } finally {
+    preview.removeAttribute("aria-busy");
+  }
+}
 
 function renderDividerWidth(value) {
   const numericWidth = Number(value);
@@ -33,6 +78,7 @@ function renderDividerWidth(value) {
     : DEFAULTS.dividerWidth;
   dividerInput.value = width;
   dividerOutput.textContent = `${width} px`;
+  dividerInput.setAttribute("aria-valuetext", `${width} 像素`);
   preview.style.setProperty("--super-reader-divider-width", `${width}px`);
 }
 
@@ -52,8 +98,11 @@ function render(settings) {
   enabledInput.checked = settings.enabled;
   renderDividerWidth(settings.dividerWidth);
   renderDividerColor(settings.dividerColor);
-  switchState.textContent = settings.enabled ? "已开启" : "已关闭";
-  settingsPanel.setAttribute("aria-disabled", String(!settings.enabled));
+}
+
+function showPageError(message = "") {
+  pageStatus.textContent = message;
+  pageStatus.hidden = !message;
 }
 
 function isInjectableUrl(url = "") {
@@ -76,12 +125,14 @@ async function pingTab(tabId) {
 async function ensureCurrentPageReady() {
   const tab = await getActiveTab();
   if (!tab?.id || !isInjectableUrl(tab.url)) {
-    pageStatus.textContent = "当前是 Chrome 内部页面，浏览器不允许扩展修改";
-    pageStatus.classList.add("error");
+    showPageError("当前页面不支持视觉分块");
     return false;
   }
 
-  if (await pingTab(tab.id)) return true;
+  if (await pingTab(tab.id)) {
+    showPageError();
+    return true;
+  }
 
   try {
     await chrome.scripting.insertCSS({
@@ -92,14 +143,12 @@ async function ensureCurrentPageReady() {
       target: { tabId: tab.id },
       files: ["src/loader.js"],
     });
-    pageStatus.textContent = "已连接当前网页，设置会应用到所有普通网页";
-    pageStatus.classList.remove("error");
+    showPageError();
     return true;
   } catch (_error) {
-    pageStatus.textContent = tab.url?.startsWith("file:")
+    showPageError(tab.url?.startsWith("file:")
       ? "请先在扩展详情中开启“允许访问文件网址”"
-      : "当前网页不允许扩展修改，请刷新页面后重试";
-    pageStatus.classList.add("error");
+      : "当前页面不支持视觉分块");
     return false;
   }
 }
@@ -107,9 +156,11 @@ async function ensureCurrentPageReady() {
 enabledInput.addEventListener("change", async () => {
   const enabled = enabledInput.checked;
   await chrome.storage.sync.set({ enabled });
-  switchState.textContent = enabled ? "已开启" : "已关闭";
-  settingsPanel.setAttribute("aria-disabled", String(!enabled));
-  await ensureCurrentPageReady();
+  if (enabled) {
+    await ensureCurrentPageReady();
+  } else {
+    showPageError();
+  }
 });
 
 dividerInput.addEventListener("input", () => {
@@ -139,5 +190,6 @@ chrome.storage.onChanged.addListener(async (_changes, areaName) => {
 (async function initializePopup() {
   const settings = await chrome.storage.sync.get(DEFAULTS);
   render(settings);
-  await ensureCurrentPageReady();
+  void renderModelPreview();
+  if (settings.enabled) await ensureCurrentPageReady();
 })();

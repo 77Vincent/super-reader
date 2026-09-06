@@ -8,69 +8,53 @@
   </head>
   <body>
     <main>
-      <header>
-        <div class="logo" aria-hidden="true"><span>阅</span></div>
-        <div>
-          <h1>Super Reader</h1>
-          <p>中文视觉分块阅读</p>
+      <section class="settings" aria-labelledby="settings-title">
+        <div class="primary-setting">
+          <h1 id="settings-title">视觉分块</h1>
+          <label class="switch" title="开启或关闭视觉分块">
+            <input id="enabled" type="checkbox" role="switch" aria-label="开启视觉分块">
+            <span class="slider"></span>
+          </label>
         </div>
-      </header>
 
-      <section class="switch-card">
-        <div>
-          <strong>阅读辅助</strong>
-          <span id="switch-state">已关闭</span>
+        <div class="controls">
+          <label class="range-label" for="divider-width">
+            <span>粗细</span>
+            <output id="divider-output" for="divider-width">3 px</output>
+          </label>
+          <input id="divider-width" type="range" min="1" max="5" step="1" value="3">
+
+          <fieldset class="color-picker">
+            <legend>颜色</legend>
+            <div class="color-options">
+              <label class="color-option" title="红色">
+                <input type="radio" name="divider-color" value="red" checked aria-label="红色">
+                <span class="color-swatch color-swatch--red" aria-hidden="true"></span>
+              </label>
+              <label class="color-option" title="黄色">
+                <input type="radio" name="divider-color" value="yellow" aria-label="黄色">
+                <span class="color-swatch color-swatch--yellow" aria-hidden="true"></span>
+              </label>
+              <label class="color-option" title="蓝色">
+                <input type="radio" name="divider-color" value="blue" aria-label="蓝色">
+                <span class="color-swatch color-swatch--blue" aria-hidden="true"></span>
+              </label>
+              <label class="color-option" title="绿色">
+                <input type="radio" name="divider-color" value="green" aria-label="绿色">
+                <span class="color-swatch color-swatch--green" aria-hidden="true"></span>
+              </label>
+              <label class="color-option" title="跟随文字颜色">
+                <input type="radio" name="divider-color" value="text" aria-label="跟随文字颜色">
+                <span class="color-swatch color-swatch--text" aria-hidden="true"></span>
+              </label>
+            </div>
+          </fieldset>
         </div>
-        <label class="switch">
-          <input id="enabled" type="checkbox" aria-label="开启阅读辅助">
-          <span class="slider"></span>
-        </label>
+
+        <div class="preview" aria-label="效果预览" aria-live="polite">将长句切分成短句加速阅读理解</div>
       </section>
 
-      <section class="settings" aria-label="效果预览">
-        <label class="range-label" for="divider-width">
-          <span>分割线粗细</span>
-          <output id="divider-output" for="divider-width">3 px</output>
-        </label>
-        <input id="divider-width" type="range" min="1" max="5" step="1" value="3">
-
-        <fieldset class="color-picker">
-          <legend>分割线颜色</legend>
-          <div class="color-options">
-            <label class="color-option" title="亮红">
-              <input type="radio" name="divider-color" value="red" checked>
-              <span class="color-swatch color-swatch--red" aria-hidden="true"></span>
-              <small>红</small>
-            </label>
-            <label class="color-option" title="亮黄">
-              <input type="radio" name="divider-color" value="yellow">
-              <span class="color-swatch color-swatch--yellow" aria-hidden="true"></span>
-              <small>黄</small>
-            </label>
-            <label class="color-option" title="亮蓝">
-              <input type="radio" name="divider-color" value="blue">
-              <span class="color-swatch color-swatch--blue" aria-hidden="true"></span>
-              <small>蓝</small>
-            </label>
-            <label class="color-option" title="亮绿">
-              <input type="radio" name="divider-color" value="green">
-              <span class="color-swatch color-swatch--green" aria-hidden="true"></span>
-              <small>绿</small>
-            </label>
-            <label class="color-option" title="跟随字体颜色">
-              <input type="radio" name="divider-color" value="text">
-              <span class="color-swatch color-swatch--text" aria-hidden="true"></span>
-              <small>字体</small>
-            </label>
-          </div>
-        </fieldset>
-
-        <div class="preview" aria-label="效果预览">
-          <span class="preview-chunk">春天来了</span><span class="preview-chunk preview-chunk--separated">我们出发</span>
-        </div>
-      </section>
-
-      <p id="page-status" class="status" role="status">设置会应用到所有普通网页</p>
+      <p id="page-status" class="status" role="status" hidden></p>
     </main>
     <script src="popup.js"></script>
   </body>

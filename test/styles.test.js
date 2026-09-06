@@ -102,6 +102,28 @@ test("demo and popup expose the same divider-width range", () => {
   }
   assert.match(contentScript, /--super-reader-divider-width/u);
   assert.match(contentScript, /Math\.min\(5, Math\.max\(1, Math\.round\(width\)\)\)/u);
+  assert.match(popup, /class="preview" aria-label="效果预览"/u);
+  assert.match(popupScript, /--super-reader-divider-width/u);
+  assert.match(popupScript, /--super-reader-divider-color/u);
+});
+
+test("popup preview is rendered by the shared model backend", () => {
+  const popup = readFileSync(join(projectRoot, "popup/popup.html"), "utf8");
+  const popupScript = readFileSync(join(projectRoot, "popup/popup.js"), "utf8");
+
+  assert.match(
+    popup,
+    /class="preview"[^>]*>将长句切分成短句加速阅读理解<\/div>/u,
+  );
+  assert.doesNotMatch(popup, /<span[^>]*preview-chunk--separated/u);
+  assert.match(popupScript, /"src\/boundary-model-data\.js"/u);
+  assert.match(popupScript, /"src\/model-backend\.js"/u);
+  assert.match(popupScript, /"src\/chunker\.js"/u);
+  assert.match(
+    popupScript,
+    /SuperReaderChunker\.buildVisualChunks\(PREVIEW_TEXT/u,
+  );
+  assert.match(popupScript, /chunk\.separated/u);
 });
 
 test("demo and extension expose five matching divider colors with red as default", () => {
@@ -127,11 +149,14 @@ test("demo and extension expose five matching divider colors with red as default
     assert.match(markup, /name="divider-color" value="red" checked/u);
   }
 
-  for (const script of [demo, popupScript, contentScript]) {
+  for (const script of [demo, contentScript]) {
     for (const [name, value] of Object.entries(colors)) {
       assert.match(script, new RegExp(`${name}: "${value}"`, "u"));
     }
     assert.match(script, /drop-shadow/u);
+  }
+  for (const [name, value] of Object.entries(colors)) {
+    assert.match(popupScript, new RegExp(`${name}: "${value}"`, "u"));
   }
   for (const script of [popupScript, contentScript, backgroundScript]) {
     assert.match(script, /dividerColor:\s*"red"/u);
