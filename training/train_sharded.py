@@ -43,7 +43,14 @@ PROJECT_DIR = SCRIPT_DIR.parent
 DEFAULT_MANIFEST = SCRIPT_DIR / "data" / "processed" / "wiki-full-sharded-128" / "manifest.json"
 DEFAULT_DATA_DIR = SCRIPT_DIR / "data" / "processed"
 DEFAULT_ARTIFACT_DIR = SCRIPT_DIR / "artifacts" / "wiki-full-128ch-8conv-3ep"
-DOMAINS = ["news", "academic", "encyclopedia", "dialogue", "wikipedia"]
+DOMAINS = [
+    "news",
+    "academic",
+    "encyclopedia",
+    "dialogue",
+    "wikipedia",
+    "synthetic_multistyle",
+]
 PAD_TOKEN = "<pad>"
 UNKNOWN_TOKEN = "<unk>"
 
@@ -66,6 +73,9 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--channels", type=int, default=128)
     parser.add_argument("--residual-blocks", type=int, default=4)
     parser.add_argument("--learning-rate", type=float, default=2e-3)
+    parser.add_argument("--domain-weight-power", type=float, default=0.0)
+    parser.add_argument("--selection-macro-weight", type=float, default=0.0)
+    parser.add_argument("--gradient-clip", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=2026090405)
     parser.add_argument("--threads", type=int, default=min(5, os.cpu_count() or 1))
     parser.add_argument("--interop-threads", type=int, default=1)
@@ -94,10 +104,66 @@ def weight_table(manifest: dict[str, Any]) -> list[list[float]]:
     return result
 
 
+def domain_weight_table(
+    manifest: dict[str, Any],
+    domains: list[str],
+    power: float,
+) -> list[float]:
+    """Return smoothed inverse-frequency domain weights with sample mean one."""
+    if power == 0:
+        return [1.0] * len(domains)
+    counts = manifest["statistics"]["domain_samples"]
+    missing = [domain for domain in domains if counts.get(domain, 0) <= 0]
+    if missing:
+        raise ValueError(f"Cannot weight empty or missing domains: {missing}")
+    raw = [counts[domain] ** -power for domain in domains]
+    samples = sum(counts[domain] for domain in domains)
+    mean = sum(
+        counts[domain] * weight
+        for domain, weight in zip(domains, raw)
+    ) / samples
+    return [weight / mean for weight in raw]
+
+
+def selection_score(validation: dict[str, Any], macro_weight: float) -> tuple[float, float]:
+    per_domain = validation["per_domain_accuracy"]
+    macro_accuracy = sum(per_domain.values()) / len(per_domain)
+    score = (
+        (1.0 - macro_weight) * validation["accuracy"]
+        + macro_weight * macro_accuracy
+    )
+    return score, macro_accuracy
+
+
+def combined_weight_mean(
+    shards: list[Path],
+    position_weights: list[list[float]],
+    domain_weights: list[float],
+) -> float:
+    """Scan compact metadata to normalize the product of both weight tables."""
+    if all(weight == 1.0 for weight in domain_weights):
+        return 1.0
+    total = 0.0
+    samples = 0
+    for path in shards:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                _, _, domain, bucket, position = json.loads(line)
+                total += position_weights[bucket][position] * domain_weights[domain]
+                samples += 1
+    if samples == 0 or total <= 0:
+        raise ValueError("Cannot normalize an empty or zero-weight training set")
+    return total / samples
+
+
 def read_training_shard(
     path: Path,
     vocabulary: dict[str, int],
     weights: list[list[float]],
+    domains: list[str],
+    domain_weights: list[float],
 ) -> list[dict[str, Any]]:
     unknown = vocabulary[UNKNOWN_TOKEN]
     records = []
@@ -110,8 +176,8 @@ def read_training_shard(
             records.append({
                 "token_ids": token_ids,
                 "target_index": target,
-                "training_weight": weights[bucket][position],
-                "domain": DOMAINS[domain],
+                "training_weight": weights[bucket][position] * domain_weights[domain],
+                "domain": domains[domain],
             })
     return records
 
@@ -212,6 +278,12 @@ def main() -> None:
         raise ValueError("Epoch, channel, block, and checkpoint counts must be positive")
     if min(args.max_shards, args.validation_limit, args.test_limit) < 0:
         raise ValueError("Shard and evaluation limits cannot be negative")
+    if not 0.0 <= args.domain_weight_power <= 1.0:
+        raise ValueError("--domain-weight-power must be between 0 and 1")
+    if not 0.0 <= args.selection_macro_weight <= 1.0:
+        raise ValueError("--selection-macro-weight must be between 0 and 1")
+    if args.gradient_clip < 0:
+        raise ValueError("--gradient-clip cannot be negative")
     configure_cpu(args.threads, args.interop_threads)
     seed_everything(args.seed)
 
@@ -228,11 +300,27 @@ def main() -> None:
     )
     vocabulary = load_json(vocabulary_path)
     weights = weight_table(manifest)
+    domains = manifest.get("domains", DOMAINS[:len(manifest["statistics"]["domain_samples"])])
+    domain_weights = domain_weight_table(
+        manifest,
+        domains,
+        args.domain_weight_power,
+    )
+    print(
+        "domain weights: "
+        + json.dumps(
+            dict(zip(domains, domain_weights)),
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
     shards = [resolve_project_path(item["path"]) for item in manifest["shards"]]
     if args.max_shards > 0:
         shards = shards[: args.max_shards]
     if not shards or any(not path.exists() for path in shards):
         raise FileNotFoundError("One or more training shards are missing")
+    training_weight_mean = combined_weight_mean(shards, weights, domain_weights)
+    print(f"combined training weight mean: {training_weight_mean:.6f}", flush=True)
 
     artifact_dir.mkdir(parents=True, exist_ok=True)
     state_path = artifact_dir / "training-state.pt"
@@ -250,6 +338,9 @@ def main() -> None:
         "channels": args.channels,
         "residual_blocks": args.residual_blocks,
         "learning_rate": args.learning_rate,
+        "domain_weight_power": args.domain_weight_power,
+        "selection_macro_weight": args.selection_macro_weight,
+        "gradient_clip": args.gradient_clip,
         "seed": args.seed,
         "max_shards": args.max_shards,
         "validation_limit": args.validation_limit,
@@ -382,7 +473,13 @@ def main() -> None:
 
         for shard_position in range(shard_start, len(order)):
             shard_number = order[shard_position]
-            records = read_training_shard(shards[shard_number], vocabulary, weights)
+            records = read_training_shard(
+                shards[shard_number],
+                vocabulary,
+                weights,
+                domains,
+                domain_weights,
+            )
             batches = make_batch_indices(
                 records,
                 args.batch_size,
@@ -409,8 +506,16 @@ def main() -> None:
                 logits = model(batch["token_ids"], batch["token_mask"], batch["gap_mask"])
                 losses = F.cross_entropy(logits, batch["targets"], reduction="none")
                 weighted = losses * batch["sample_weights"]
-                loss = weighted.sum() / batch["sample_weight_sum"]
+                # Domain weights must remain effective even when a compact shard
+                # happens to contain only one domain. Dividing by each batch's
+                # weight sum would cancel that domain multiplier completely.
+                # The combined table is normalized once over the full training
+                # set. A fixed denominator preserves the intended global
+                # influence while keeping the ordinary loss scale.
+                loss = weighted.mean() / training_weight_mean
                 loss.backward()
+                if args.gradient_clip > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.gradient_clip)
                 optimizer.step()
                 running_loss += loss.item() * batch["sample_weight_sum"]
                 seen_weight += batch["sample_weight_sum"]
@@ -473,11 +578,17 @@ def main() -> None:
             )
             print(f"stopped during validation; checkpoint={state_path}", flush=True)
             return
+        score, macro_accuracy = selection_score(
+            validation,
+            args.selection_macro_weight,
+        )
         row = {
             "epoch": epoch,
             "train_loss": running_loss / seen_weight,
             "validation_loss": validation["loss"],
             "validation_accuracy": validation["accuracy"],
+            "validation_macro_accuracy": macro_accuracy,
+            "selection_score": score,
             "training_seconds": training_seconds,
             "training_examples_per_second": seen_examples / training_seconds,
         }
@@ -486,11 +597,13 @@ def main() -> None:
             f"epoch={epoch:02d} train_loss={row['train_loss']:.4f} "
             f"val_loss={row['validation_loss']:.4f} "
             f"val_acc={row['validation_accuracy']:.3f} "
+            f"val_macro={row['validation_macro_accuracy']:.3f} "
+            f"selection={row['selection_score']:.3f} "
             f"samples_s={row['training_examples_per_second']:.0f}",
             flush=True,
         )
-        if validation["accuracy"] > best_validation:
-            best_validation = validation["accuracy"]
+        if score > best_validation:
+            best_validation = score
             best_epoch = epoch
             best_state = clone_state(model)
         persist(epoch + 1, 0, 0, 0.0, 0.0, 0, 0.0)
@@ -543,7 +656,13 @@ def main() -> None:
     ]
     stats = manifest["statistics"]
     parameter_count = sum(parameter.numel() for parameter in model.parameters())
-    nonzero_weights = [value for row in weights for value in row if value]
+    nonzero_weights = [
+        value * domain_weight
+        for row in weights
+        for value in row
+        if value
+        for domain_weight in domain_weights
+    ]
     metrics = {
         "seed": args.seed,
         "tokenization": "character",
@@ -579,10 +698,19 @@ def main() -> None:
             "test": len(test_records),
         },
         "training_weighting": {
-            "strategy": "length-position inverse-cell weights",
+            "strategy": "length-position inverse-cell weights multiplied by smoothed inverse-domain-frequency weights",
+            "domain_weight_power": args.domain_weight_power,
+            "domain_weights": dict(zip(domains, domain_weights)),
             "minimum_weight": min(nonzero_weights),
             "maximum_weight": max(nonzero_weights),
-            "mean_weight": 1.0,
+            "domain_weight_sample_mean": 1.0,
+            "combined_weight_sample_mean_before_normalization": training_weight_mean,
+            "loss_normalization": "fixed example count; weights are not renormalized per batch",
+        },
+        "checkpoint_selection": {
+            "overall_accuracy_weight": 1.0 - args.selection_macro_weight,
+            "macro_domain_accuracy_weight": args.selection_macro_weight,
+            "best_score": best_validation,
         },
         "average_candidate_gaps": {
             "train": stats["tokens"] / stats["samples"] - 1,

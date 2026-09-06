@@ -182,3 +182,26 @@ Both modes exclude non-Han content. The controlled comparison uses 16,000
 training pairs, 4,000 validation pairs, 4,000 test pairs, and three epochs per
 mode. Its latest result and methodological caveats are documented in
 [`TOKENIZATION_COMPARISON.md`](TOKENIZATION_COMPARISON.md).
+
+## Synthetic multi-style expansion and domain weighting
+
+The synthetic-data path streams the Chinese multi-style subset of
+`openbmb/Ultra-FineWeb-L3` from upstream Parquet files. It keeps five million
+deduplicated boundary samples, writes 32 compact shards without loading the
+corpus into memory, and combines those shard references with the existing full
+Wikipedia manifest without copying its data. Preparation state is saved every
+10,000 documents and source files are checksummed.
+
+```bash
+npm run synthetic:data
+npm run synthetic:model
+```
+
+The model run initializes from the retained full-Wikipedia checkpoint, uses a
+smoothed inverse-domain-frequency exponent of `0.65`, clips gradient norm at
+`1.0`, and uses equal parts overall validation accuracy and macro-domain
+validation accuracy to select the best epoch. Existing length/position weights
+remain active and are multiplied by the domain weights. The sharded trainer
+uses a fixed example-count denominator so domain multipliers still apply to a
+single-domain shard instead of being canceled by per-batch renormalization.
+Validation and test remain the original real-data holdouts.

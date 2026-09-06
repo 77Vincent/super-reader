@@ -9,8 +9,8 @@ const projectRoot = join(__dirname, "..");
 test("browser backend loads the exported best checkpoint", () => {
   const info = backend.getModelInfo();
 
-  assert.equal(info.bestEpoch, 3);
-  assert.equal(info.testAccuracy, 0.802323742375865);
+  assert.equal(info.bestEpoch, 2);
+  assert.equal(info.testAccuracy, 0.8195615649618707);
   assert.equal(info.tokenization, "character");
   assert.equal(info.candidatePositions, "between every adjacent Han character");
   assert.equal(info.vocabularySize, 4096);
@@ -23,21 +23,21 @@ test("browser backend loads the exported best checkpoint", () => {
 test("browser inference matches PyTorch reference logits", () => {
   const tokens = Array.from("我一直在思考明天早上的早餐吃什么");
   const expected = [
-    -36.6672058,
-    -40.0465393,
-    -37.313324,
-    -37.4124794,
-    -35.6227837,
-    -33.1555634,
-    -33.9455643,
-    -36.1302299,
-    -37.6914749,
-    -37.2810211,
-    -35.4790611,
-    -36.3977318,
-    -32.6919632,
-    -35.0108185,
-    -37.7038155,
+    -41.0537796,
+    -45.5908813,
+    -39.4031563,
+    -38.5841331,
+    -37.7559776,
+    -33.9878578,
+    -35.9942551,
+    -36.9835281,
+    -40.0265808,
+    -38.4229507,
+    -36.5108452,
+    -38.6639786,
+    -32.8492928,
+    -36.2416687,
+    -40.4645081,
   ];
   const scores = backend.scoreTokens(tokens);
 

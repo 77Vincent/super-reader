@@ -9,7 +9,9 @@
     "smoke:model": "npm run smoke:data && python3 training/run_smoke.py --epochs 2",
     "full:data": "node --max-old-space-size=4096 training/prepare_full_wikipedia_data.mjs",
     "full:model": "python3 training/run_sharded.py --epochs 3 --channels 128 --residual-blocks 4 --initialize-from training/artifacts/data-scale-wiki-250k-8conv-64ch-6ep/training-state.pt",
-    "model:export": "python3 training/export_browser_model.py",
+    "synthetic:data": "python3 training/run_prepare_synthetic.py",
+    "synthetic:model": "python3 training/run_sharded.py --manifest training/data/processed/wiki-full-plus-ultra-5m/manifest.json --artifact-dir training/artifacts/wiki-ultra-domain-weighted-128ch-2ep --epochs 2 --channels 128 --residual-blocks 4 --learning-rate 0.0003 --domain-weight-power 0.65 --selection-macro-weight 0.5 --gradient-clip 1.0 --initialize-from training/artifacts/wiki-full-128ch-8conv-3ep/training-state.pt",
+    "model:export": "python3 training/export_browser_model.py --artifact-dir training/artifacts/wiki-ultra-domain-weighted-128ch-2ep",
     "smoke:compare": "python3 training/run_tokenization_comparison.py"
   }
 }
