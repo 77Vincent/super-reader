@@ -25,17 +25,8 @@
     {
       "matches": ["http://*/*", "https://*/*", "file:///*"],
       "css": ["src/content.css"],
-      "js": ["src/loader.js"],
+      "js": ["src/content.js"],
       "run_at": "document_idle"
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "src/content.js"
-      ],
-      "matches": ["http://*/*", "https://*/*", "file:///*"],
-      "use_dynamic_url": true
     }
   ]
 }

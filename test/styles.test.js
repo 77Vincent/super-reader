@@ -70,7 +70,10 @@ test("extension runs bounded model inference outside the page main thread", () =
   assert.match(backgroundScript, /reasons:\s*\["WORKERS"\]/u);
   assert.match(backgroundScript, /SUPER_READER_RUN_INFERENCE/u);
   assert.doesNotMatch(backgroundScript, /SuperReaderChunker|importScripts/u);
-  assert.match(inferenceService, /new Worker\("inference-worker\.js"\)/u);
+  assert.match(
+    inferenceService,
+    /new Worker\(\s*chrome\.runtime\.getURL\("src\/inference-worker\.js"\)/su,
+  );
   assert.match(
     inferenceWorker,
     /importScripts\(\s*"boundary-model-data\.js",\s*"model-backend\.js",\s*"chunker\.js"/su,
@@ -218,20 +221,16 @@ test("demo and extension expose five matching divider colors with red as default
   assert.match(popupScript, /chrome\.storage\.sync\.set\(\{ dividerColor:/u);
 });
 
-test("extension defers the model runtime until reading mode is enabled", () => {
+test("extension loads its small page runtime without dynamic extension imports", () => {
   const manifest = JSON.parse(readFileSync(join(projectRoot, "manifest.json"), "utf8"));
-  const loader = readFileSync(join(projectRoot, "src/loader.js"), "utf8");
   const popupScript = readFileSync(join(projectRoot, "popup/popup.js"), "utf8");
 
-  assert.deepEqual(manifest.content_scripts[0].js, ["src/loader.js"]);
-  assert.deepEqual(manifest.web_accessible_resources[0].resources, ["src/content.js"]);
+  assert.deepEqual(manifest.content_scripts[0].js, ["src/content.js"]);
+  assert.equal(manifest.web_accessible_resources, undefined);
   assert.equal(manifest.minimum_chrome_version, "109");
   assert.ok(manifest.permissions.includes("offscreen"));
-  assert.equal(manifest.web_accessible_resources[0].use_dynamic_url, true);
-  assert.match(loader, /changes\.enabled\?\.newValue/u);
-  assert.match(loader, /import\(chrome\.runtime\.getURL\(file\)\)/u);
-  assert.doesNotMatch(loader, /boundary-model-data|model-backend|chunker\.js/u);
-  assert.match(popupScript, /files:\s*\["src\/loader\.js"\]/u);
+  assert.match(popupScript, /files:\s*\["src\/content\.js"\]/u);
+  assert.doesNotMatch(popupScript, /src\/loader\.js/u);
 });
 
 test("target chunk length is no longer configurable", () => {

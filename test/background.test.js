@@ -120,6 +120,9 @@ test("offscreen service correlates background requests with worker results", asy
   const context = vm.createContext({ console, queueMicrotask, Worker: FakeWorker });
   context.chrome = {
     runtime: {
+      getURL(path) {
+        return `chrome-extension://test-extension/${path}`;
+      },
       id: "test-extension",
       onMessage: {
         addListener(listener) {
@@ -143,7 +146,10 @@ test("offscreen service correlates background requests with worker results", asy
     assert.equal(listenerResult, true);
   });
 
-  assert.equal(workerPath, "inference-worker.js");
+  assert.equal(
+    workerPath,
+    "chrome-extension://test-extension/src/inference-worker.js",
+  );
   assert.deepEqual(Array.from(response.offsetsByText[0]), [8]);
 });
 

@@ -63,7 +63,6 @@ npm run model:export
 
 ```text
 manifest.json        Chrome Manifest V3 配置
-src/loader.js               按需加载页面文本处理运行时
 src/boundary-model-data.js  浏览器端模型权重与字符表
 src/model-backend.js        无依赖 CNN 推理后端
 src/chunker.js              标点分句、模型候选边界与递归视觉分块

@@ -122,7 +122,7 @@ async function ensureCurrentPageReady() {
     });
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["src/loader.js"],
+      files: ["src/content.js"],
     });
     showPageError();
     return true;

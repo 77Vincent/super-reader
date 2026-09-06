@@ -13,7 +13,9 @@
   function ensureInferenceWorker() {
     if (inferenceWorker) return inferenceWorker;
 
-    inferenceWorker = new Worker("inference-worker.js");
+    inferenceWorker = new Worker(
+      chrome.runtime.getURL("src/inference-worker.js"),
+    );
     inferenceWorker.onmessage = (event) => {
       const request = pendingRequests.get(event.data?.id);
       if (!request) return;
