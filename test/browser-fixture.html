@@ -18,6 +18,10 @@
         margin-right: 8px;
         padding: 8px 12px;
       }
+
+      .viewport-spacer {
+        height: 180vh;
+      }
     </style>
   </head>
   <body>
@@ -27,6 +31,8 @@
     <div id="dynamic"></div>
     <button id="add" type="button">添加动态文本</button>
     <button id="disable" type="button">关闭效果</button>
+    <div class="viewport-spacer" aria-hidden="true"></div>
+    <p id="offscreen-sample">滚动进入视口以后这段中文才应该开始进行视觉分块处理。</p>
 
     <script>
       const fixtureListeners = [];

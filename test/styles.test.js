@@ -47,6 +47,20 @@ test("extension schedules DOM reprocessing during browser idle time", () => {
   assert.doesNotMatch(contentScript, /queueMicrotask\(flushPendingRoots\)/u);
 });
 
+test("extension defers text blocks until they enter the viewport", () => {
+  const contentScript = readFileSync(join(projectRoot, "src/content.js"), "utf8");
+
+  assert.match(contentScript, /new IntersectionObserver/u);
+  assert.match(contentScript, /rootMargin:\s*"0px"/u);
+  assert.match(contentScript, /if \(!entry\.isIntersecting\) return/u);
+  assert.match(contentScript, /observeTextScopes\(document\.body \|\| document\.documentElement\)/u);
+  assert.match(contentScript, /mutation\.addedNodes\.forEach\(observeTextScopes\)/u);
+  assert.doesNotMatch(
+    contentScript,
+    /queueRoot\(document\.body \|\| document\.documentElement\)/u,
+  );
+});
+
 test("HTML demo uses the same vertical separator treatment", () => {
   const html = readFileSync(join(projectRoot, "demo.html"), "utf8");
 

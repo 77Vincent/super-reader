@@ -54,10 +54,17 @@
     childList: true,
     subtree: true,
   });
+  const VISIBILITY_OBSERVER_OPTIONS = Object.freeze({
+    root: null,
+    rootMargin: "0px",
+    threshold: 0,
+  });
 
   const state = {
     enabled: false,
     observer: null,
+    visibilityObserver: null,
+    visibilityTargets: new Set(),
     settings: { ...DEFAULTS },
     segmenter: SuperReaderChunker.createSegmenter("zh-CN"),
     pendingRoots: new Set(),
@@ -332,6 +339,100 @@
     scheduleFlush();
   }
 
+  function isObservableScope(scope) {
+    return (
+      scope instanceof Element &&
+      scope.isConnected &&
+      scope !== document.body &&
+      scope !== document.documentElement &&
+      !isIgnored(scope)
+    );
+  }
+
+  function observeScopeWhenVisible(scope) {
+    if (!isObservableScope(scope)) return;
+    for (const pendingScope of state.pendingRoots) {
+      if (pendingScope === scope || pendingScope.contains(scope)) return;
+    }
+    if (!state.visibilityObserver) {
+      queueRoot(scope);
+      return;
+    }
+    if (state.visibilityTargets.has(scope)) return;
+
+    state.visibilityTargets.add(scope);
+    state.visibilityObserver.observe(scope);
+  }
+
+  function observeRootWhenVisible(root) {
+    observeScopeWhenVisible(resolveProcessingScope(root));
+  }
+
+  function observeTextScopes(root) {
+    if (!root) return;
+    const scopeCache = new Map();
+
+    const visit = (node, isRoot = false) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        if (!/[\u3400-\u9fff]/u.test(node.nodeValue || "")) return;
+        const parent = node.parentElement;
+        if (!parent || !isReadableTextNode(node)) return;
+        if (!scopeCache.has(parent)) {
+          scopeCache.set(parent, resolveProcessingScope(node));
+        }
+        observeScopeWhenVisible(scopeCache.get(parent));
+        return;
+      }
+
+      if (!(node instanceof Element)) return;
+      if (!isRoot && isIgnored(node)) return;
+      for (let child = node.firstChild; child; child = child.nextSibling) {
+        visit(child);
+      }
+    };
+
+    if (root.nodeType === Node.TEXT_NODE) {
+      visit(root, true);
+    } else if (root instanceof Element) {
+      visit(root, true);
+    }
+  }
+
+  function removeDisconnectedVisibilityTargets() {
+    for (const target of state.visibilityTargets) {
+      if (target.isConnected) continue;
+      state.visibilityObserver?.unobserve(target);
+      state.visibilityTargets.delete(target);
+    }
+  }
+
+  function affectsCurrentTextRun(node) {
+    return (
+      node.nodeType === Node.TEXT_NODE ||
+      (node instanceof Element && isInlineFlowElement(node))
+    );
+  }
+
+  function startVisibilityObserver() {
+    if (state.visibilityObserver || typeof IntersectionObserver !== "function") return;
+
+    state.visibilityObserver = new IntersectionObserver((entries) => {
+      if (!state.enabled) return;
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        state.visibilityObserver?.unobserve(entry.target);
+        state.visibilityTargets.delete(entry.target);
+        queueRoot(entry.target);
+      });
+    }, VISIBILITY_OBSERVER_OPTIONS);
+  }
+
+  function stopVisibilityObserver() {
+    state.visibilityObserver?.disconnect();
+    state.visibilityObserver = null;
+    state.visibilityTargets.clear();
+  }
+
   function startObserver() {
     if (state.observer || !document.documentElement) return;
 
@@ -339,11 +440,17 @@
       if (!state.enabled) return;
       for (const mutation of mutations) {
         if (mutation.type === "characterData") {
-          queueRoot(mutation.target);
+          observeRootWhenVisible(mutation.target);
         }
-        mutation.addedNodes.forEach(queueRoot);
-        if (mutation.removedNodes.length) queueRoot(mutation.target);
+        mutation.addedNodes.forEach(observeTextScopes);
+        if (
+          mutation.type === "childList" &&
+          [...mutation.addedNodes, ...mutation.removedNodes].some(affectsCurrentTextRun)
+        ) {
+          observeRootWhenVisible(mutation.target);
+        }
       }
+      removeDisconnectedVisibilityTargets();
     });
     state.observer.observe(document.documentElement, OBSERVER_OPTIONS);
   }
@@ -351,6 +458,7 @@
   function stopObserver() {
     state.observer?.disconnect();
     state.observer = null;
+    stopVisibilityObserver();
     cancelScheduledFlush();
     state.pendingRoots.clear();
   }
@@ -375,8 +483,9 @@
   function enable() {
     if (state.enabled) return;
     state.enabled = true;
+    startVisibilityObserver();
     startObserver();
-    queueRoot(document.body || document.documentElement);
+    observeTextScopes(document.body || document.documentElement);
   }
 
   function disable() {
