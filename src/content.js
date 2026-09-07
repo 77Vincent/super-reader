@@ -60,6 +60,8 @@
     threshold: 0,
   });
   const MARKER_INSERT_BATCH_SIZE = 32;
+  const INFERENCE_CACHE_ENTRY_LIMIT = 512;
+  const INFERENCE_CACHE_TEXT_LIMIT = 4096;
   const HAN_CHARACTER = /\p{Script=Han}/u;
 
   const state = {
@@ -74,6 +76,8 @@
     flushHandle: null,
     flushKind: null,
     processingJob: null,
+    renderedScopes: new WeakMap(),
+    inferenceCache: new Map(),
   };
 
   function isOpenShadowRoot(root) {
@@ -249,6 +253,10 @@
       }
 
       if (!(node instanceof Element)) return;
+      // Existing dividers are transparent to text-run discovery. This lets us
+      // compare the current source with its previous rendered result without
+      // first tearing down the DOM.
+      if (node.dataset.superReaderDivider === "true") return;
       if (!isScope && isIgnored(node)) {
         flush();
         return;
@@ -346,9 +354,10 @@
 
   async function insertDividerMarkers(textNodes, offsets, isCurrent) {
     const tasks = markerPlacements(textNodes, offsets);
+    const insertedMarkers = [];
     for (let index = 0; index < tasks.length; index += MARKER_INSERT_BATCH_SIZE) {
       await waitForDomIdle();
-      if (!isCurrent()) return false;
+      if (!isCurrent()) return null;
 
       applyOwnDomMutation(() => {
         tasks
@@ -358,11 +367,13 @@
             const reference = localOffset === 0
               ? textNode
               : textNode.splitText(localOffset);
-            reference.before(createDividerMarker(reference.getRootNode()));
+            const marker = createDividerMarker(reference.getRootNode());
+            reference.before(marker);
+            insertedMarkers.push(marker);
           });
       });
     }
-    return true;
+    return insertedMarkers;
   }
 
   function createTextRunSnapshot(textNodes) {
@@ -395,33 +406,111 @@
     return HAN_CHARACTER.test(snapshot.text);
   }
 
+  function sameSnapshotTexts(cachedTexts, snapshots) {
+    return (
+      Array.isArray(cachedTexts) &&
+      cachedTexts.length === snapshots.length &&
+      snapshots.every((snapshot, index) => snapshot.text === cachedTexts[index])
+    );
+  }
+
+  function renderedScopeIsCurrent(scope, snapshots) {
+    const cached = state.renderedScopes.get(scope);
+    return (
+      cached &&
+      sameSnapshotTexts(cached.texts, snapshots) &&
+      cached.markers.every((marker) => marker.isConnected && scope.contains(marker))
+    );
+  }
+
+  function readCachedDividerOffsets(text) {
+    if (!state.inferenceCache.has(text)) return null;
+    const offsets = state.inferenceCache.get(text);
+    // Refresh insertion order to keep this Map as a small LRU cache.
+    state.inferenceCache.delete(text);
+    state.inferenceCache.set(text, offsets);
+    return offsets;
+  }
+
+  function cacheDividerOffsets(text, offsets) {
+    if (text.length > INFERENCE_CACHE_TEXT_LIMIT) return;
+    state.inferenceCache.delete(text);
+    state.inferenceCache.set(text, offsets);
+    while (state.inferenceCache.size > INFERENCE_CACHE_ENTRY_LIMIT) {
+      state.inferenceCache.delete(state.inferenceCache.keys().next().value);
+    }
+  }
+
+  async function dividerOffsetsForSnapshots(snapshots) {
+    const offsetsByText = new Array(snapshots.length);
+    const missingIndexesByText = new Map();
+
+    snapshots.forEach((snapshot, index) => {
+      const cachedOffsets = readCachedDividerOffsets(snapshot.text);
+      if (cachedOffsets !== null) {
+        offsetsByText[index] = cachedOffsets;
+        return;
+      }
+      const indexes = missingIndexesByText.get(snapshot.text) || [];
+      indexes.push(index);
+      missingIndexesByText.set(snapshot.text, indexes);
+    });
+
+    const missingTexts = Array.from(missingIndexesByText.keys());
+    if (!missingTexts.length) return offsetsByText;
+
+    const inferredOffsets = await requestDividerOffsets(missingTexts);
+    missingTexts.forEach((text, resultIndex) => {
+      const offsets = Array.isArray(inferredOffsets[resultIndex])
+        ? inferredOffsets[resultIndex]
+        : [];
+      cacheDividerOffsets(text, offsets);
+      missingIndexesByText.get(text).forEach((snapshotIndex) => {
+        offsetsByText[snapshotIndex] = offsets;
+      });
+    });
+    return offsetsByText;
+  }
+
   async function processRoot(root) {
     if (!state.enabled || !root || !root.isConnected) return;
     const scope = resolveProcessingScope(root);
     if (!scope) return;
 
+    const currentSnapshots = collectTextRuns(scope)
+      .map(createTextRunSnapshot)
+      .filter(isModelCandidate);
+    if (renderedScopeIsCurrent(scope, currentSnapshots)) return;
+
     applyOwnDomMutation(() => removeDividerMarkers(scope));
     const snapshots = collectTextRuns(scope)
       .map(createTextRunSnapshot)
       .filter(isModelCandidate);
-    if (!snapshots.length) return;
+    if (!snapshots.length) {
+      state.renderedScopes.set(scope, { markers: [], texts: [] });
+      return;
+    }
 
     const scopeText = scope.textContent;
-    const offsetsByText = await requestDividerOffsets(
-      snapshots.map((snapshot) => snapshot.text),
-    );
+    const offsetsByText = await dividerOffsetsForSnapshots(snapshots);
     if (!scopeSnapshotIsCurrent(scope, scopeText, snapshots)) return;
 
+    const markers = [];
     for (let index = 0; index < snapshots.length; index += 1) {
       const snapshot = snapshots[index];
       const offsets = Array.isArray(offsetsByText[index]) ? offsetsByText[index] : [];
-      const inserted = await insertDividerMarkers(
+      const insertedMarkers = await insertDividerMarkers(
         snapshot.textNodes,
         offsets,
         () => scopeSnapshotIsCurrent(scope, scopeText, snapshots, false),
       );
-      if (!inserted) return;
+      if (insertedMarkers === null) return;
+      markers.push(...insertedMarkers);
     }
+    state.renderedScopes.set(scope, {
+      markers,
+      texts: snapshots.map((snapshot) => snapshot.text),
+    });
   }
 
   function removeDividerMarkers(scope) {
@@ -656,6 +745,8 @@
 
     parents.forEach((parent) => parent.normalize());
     state.shadowRoots.clear();
+    state.renderedScopes = new WeakMap();
+    state.inferenceCache.clear();
   }
 
   function enable() {

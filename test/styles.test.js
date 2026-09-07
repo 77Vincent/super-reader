@@ -49,6 +49,19 @@ test("extension schedules DOM reprocessing during browser idle time", () => {
   assert.doesNotMatch(contentScript, /queueMicrotask\(flushPendingRoots\)/u);
 });
 
+test("extension reuses unchanged dynamic text results with bounded caches", () => {
+  const contentScript = readFileSync(join(projectRoot, "src/content.js"), "utf8");
+
+  assert.match(contentScript, /renderedScopes: new WeakMap\(\)/u);
+  assert.match(contentScript, /inferenceCache: new Map\(\)/u);
+  assert.match(contentScript, /INFERENCE_CACHE_ENTRY_LIMIT = 512/u);
+  assert.match(contentScript, /INFERENCE_CACHE_TEXT_LIMIT = 4096/u);
+  assert.match(contentScript, /renderedScopeIsCurrent\(scope, currentSnapshots\)/u);
+  assert.match(contentScript, /missingIndexesByText = new Map\(\)/u);
+  assert.match(contentScript, /state\.inferenceCache\.clear\(\)/u);
+  assert.match(contentScript, /state\.renderedScopes = new WeakMap\(\)/u);
+});
+
 test("extension runs bounded model inference outside the page main thread", () => {
   const contentScript = readFileSync(join(projectRoot, "src/content.js"), "utf8");
   const backgroundScript = readFileSync(join(projectRoot, "src/background.js"), "utf8");
