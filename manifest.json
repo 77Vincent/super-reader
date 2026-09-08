@@ -4,29 +4,11 @@
   "version": "0.1.0",
   "minimum_chrome_version": "109",
   "description": "将中文长句按词义边界切成短语块，并用细竖向分隔线辅助阅读。",
-  "permissions": ["activeTab", "offscreen", "scripting", "storage"],
+  "permissions": ["activeTab", "offscreen", "scripting"],
   "action": {
-    "default_title": "Super Reader",
-    "default_popup": "popup/popup.html"
+    "default_title": "Super Reader"
   },
   "background": {
     "service_worker": "src/background.js"
-  },
-  "commands": {
-    "toggle-reader": {
-      "suggested_key": {
-        "default": "Alt+Shift+R",
-        "mac": "Alt+Shift+R"
-      },
-      "description": "开启或关闭 Super Reader"
-    }
-  },
-  "content_scripts": [
-    {
-      "matches": ["http://*/*", "https://*/*", "file:///*"],
-      "css": ["src/content.css"],
-      "js": ["src/content.js"],
-      "run_at": "document_idle"
-    }
-  ]
+  }
 }

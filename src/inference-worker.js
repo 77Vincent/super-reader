@@ -32,7 +32,8 @@ self.onmessage = (event) => {
     if (
       !Number.isInteger(id) ||
       !Array.isArray(texts) ||
-      texts.some((text) => typeof text !== "string")
+      texts.length !== 1 ||
+      typeof texts[0] !== "string" || texts[0].length > 128
     ) {
       throw new TypeError("Super Reader received invalid inference input");
     }

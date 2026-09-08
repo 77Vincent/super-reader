@@ -2,162 +2,51 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Super Reader Browser Fixture</title>
+    <title>Super Reader 浏览器测试</title>
     <link rel="stylesheet" href="../src/content.css">
-    <style>
-      body {
-        max-width: 720px;
-        margin: 48px auto;
-        padding: 0 24px;
-        color: #1e293b;
-        font: 20px/2 "PingFang SC", sans-serif;
-      }
-
-      button {
-        margin-right: 8px;
-        padding: 8px 12px;
-      }
-
-      .viewport-spacer {
-        height: 180vh;
-      }
-    </style>
+    <style>body { max-width: 720px; margin: 48px auto; font: 20px/2 system-ui; }</style>
   </head>
   <body>
-    <h1>浏览器集成测试</h1>
+    <button id="toggle" type="button">开启</button>
     <p id="sample">我一直在思考明天早上的早餐吃什么</p>
-    <p id="inline-sample">婴儿安全座椅更多推荐放在<strong>驾驶侧后方（左侧）</strong>，但实际生活中选择放在<strong>副驾驶对侧后方（右侧）</strong>的家庭也非常多，两边各有其不可替代的优势。</p>
-    <div id="dynamic"></div>
-    <div id="shadow-host"></div>
-    <button id="add" type="button">添加动态文本</button>
-    <button id="add-shadow" type="button">添加动态 Shadow 文本</button>
-    <button id="disable" type="button">关闭效果</button>
-    <div class="viewport-spacer" aria-hidden="true"></div>
-    <p id="offscreen-sample">滚动进入视口以后这段中文才应该开始进行视觉分块处理。</p>
-
+    <p id="inline-sample">这里的<strong>加粗内容需要保留原来的标签</strong>，后面的文字也应该可以正常阅读。</p>
+    <pre><code id="ignored">代码区域的中文内容应该保持原样。</code></pre>
     <script>
+      // A button stands in for the toolbar. The real inference service and
+      // Worker run here instead of in an offscreen page.
       const fixtureListeners = [];
-      const fixtureSettings = {
-        enabled: true,
-      };
+      const fixtureSender = { id: "test-extension", tab: { id: 1 } };
+      const fixtureToggle = document.querySelector("#toggle");
 
+      function renderFixtureState(state) {
+        fixtureToggle.disabled = state.busy;
+        fixtureToggle.textContent = state.error ? "出错，点击重试" : state.busy ? "处理中" : state.enabled ? "关闭" : "开启";
+        document.body.dataset.enabled = String(state.enabled);
+        document.body.dataset.busy = String(state.busy);
+      }
+      function fixtureMessage(message) {
+        return new Promise((resolve) => {
+          fixtureListeners.forEach((listener) => listener(message, fixtureSender, resolve));
+        });
+      }
       window.chrome ||= {};
       window.chrome.runtime = {
-          getURL(path) {
-            return new URL(`../${path}`, location.href).href;
-          },
-          async sendMessage(message) {
-            if (message?.type !== "SUPER_READER_SPLIT_TEXTS") return undefined;
-            const segmenter = window.fixtureSegmenter ||=
-              SuperReaderChunker.createSegmenter("zh-CN");
-            return {
-              offsetsByText: message.texts.map((text) => {
-                const chunks = SuperReaderChunker.buildVisualChunks(text, { segmenter });
-                const offsets = [];
-                let offset = 0;
-                chunks.forEach((chunk) => {
-                  if (chunk.separated) offsets.push(offset);
-                  offset += chunk.text.length;
-                });
-                return offsets;
-              }),
-            };
-          },
-          onMessage: { addListener() {} },
-        };
-      window.chrome.storage = {
-          sync: {
-            get(defaults, callback) {
-              callback({ ...defaults, ...fixtureSettings });
-            },
-          },
-          onChanged: {
-            addListener(listener) {
-              fixtureListeners.push(listener);
-            },
-          },
-        };
-
-      window.updateFixtureSettings = (changes) => {
-        Object.assign(fixtureSettings, changes);
-        const storageChanges = Object.fromEntries(
-          Object.entries(changes).map(([key, newValue]) => [key, { newValue }]),
-        );
-        fixtureListeners.forEach((listener) => listener(storageChanges, "sync"));
+        id: fixtureSender.id,
+        getURL: (path) => new URL(`../${path}`, location.href).href,
+        onMessage: { addListener: (listener) => fixtureListeners.push(listener) },
+        async sendMessage(message) {
+          if (message.type === "SUPER_READER_STATE") {
+            renderFixtureState(message);
+            return {};
+          }
+          return fixtureMessage({ ...message, target: "offscreen", type: "SUPER_READER_RUN_INFERENCE" });
+        },
       };
-
-      const shadowLevelOne = document.querySelector("#shadow-host")
-        .attachShadow({ mode: "open" });
-      const nestedShadowHost = document.createElement("div");
-      shadowLevelOne.append(nestedShadowHost);
-      const shadowLevelTwo = nestedShadowHost.attachShadow({ mode: "open" });
-      const shadowSample = document.createElement("p");
-      shadowSample.id = "shadow-sample";
-      shadowSample.textContent = "嵌套组件里的中文评论也应该完成视觉分块处理。";
-      shadowLevelTwo.append(shadowSample);
-      window.fixtureShadowRoot = shadowLevelTwo;
+      fixtureToggle.addEventListener("click", async () => {
+        renderFixtureState(await fixtureMessage({ type: "SUPER_READER_TOGGLE" }));
+      });
     </script>
-    <script src="../src/boundary-model-data.js"></script>
-    <script src="../src/model-backend.js"></script>
-    <script src="../src/chunker.js"></script>
+    <script src="../src/inference-service.js"></script>
     <script src="../src/content.js"></script>
-    <script>
-      document.querySelector("#add").addEventListener("click", () => {
-        const paragraph = document.createElement("p");
-        paragraph.id = "dynamic-sample";
-        paragraph.textContent = "动态加载的中文内容也应该自动完成视觉分块。";
-        document.querySelector("#dynamic").append(paragraph);
-      });
-
-      document.querySelector("#add-shadow").addEventListener("click", () => {
-        const dynamicShadowHost = document.createElement("div");
-        dynamicShadowHost.id = "dynamic-shadow-host";
-        const dynamicShadowRoot = dynamicShadowHost.attachShadow({ mode: "open" });
-        const paragraph = document.createElement("p");
-        paragraph.id = "dynamic-shadow-sample";
-        paragraph.textContent = "后来载入的组件评论也应该自动完成视觉分块。";
-        dynamicShadowRoot.append(paragraph);
-        window.dynamicFixtureShadowRoot = dynamicShadowRoot;
-        shadowLevelOne.append(dynamicShadowHost);
-      });
-
-      document.querySelector("#disable").addEventListener("click", () => {
-        window.updateFixtureSettings({ enabled: false });
-      });
-
-      if (new URLSearchParams(location.search).has("exercise")) {
-        document.querySelector("#add").click();
-        document.querySelector("#add-shadow").click();
-        setTimeout(() => {
-          document.body.dataset.dynamicDividerCount = String(
-            document.querySelectorAll("#dynamic-sample [data-super-reader-divider]").length,
-          );
-          document.body.dataset.shadowDividerCount = String(
-            window.fixtureShadowRoot.querySelectorAll(
-              "#shadow-sample [data-super-reader-divider]",
-            ).length,
-          );
-          document.body.dataset.dynamicShadowDividerCount = String(
-            window.dynamicFixtureShadowRoot.querySelectorAll(
-              "#dynamic-shadow-sample [data-super-reader-divider]",
-            ).length,
-          );
-          document.querySelector("#disable").click();
-          document.body.dataset.remainingDividerCount = String(
-            document.querySelectorAll("[data-super-reader-divider]").length +
-              window.fixtureShadowRoot.querySelectorAll(
-                "[data-super-reader-divider]",
-              ).length +
-              window.dynamicFixtureShadowRoot.querySelectorAll(
-                "[data-super-reader-divider]",
-              ).length,
-          );
-          document.body.dataset.inlineStrongCount = String(
-            document.querySelectorAll("#inline-sample strong").length,
-          );
-        }, 3000);
-      }
-    </script>
   </body>
 </html>

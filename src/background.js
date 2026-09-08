@@ -1,133 +1,85 @@
 "use strict";
 
-const DEFAULTS = {
-  enabled: false,
-  dividerWidth: 3,
-  dividerColor: "red",
-};
-const OFFSCREEN_DOCUMENT_PATH = "src/inference.html";
-const OFFSCREEN_DOCUMENT_URL = chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH);
-let offscreenLifecycle = Promise.resolve();
+const INFERENCE_PAGE = "src/inference.html";
+let creatingInferencePage = null;
+const openingTabs = new Set();
 
-function runOffscreenLifecycleOperation(operation) {
-  const result = offscreenLifecycle.then(operation, operation);
-  offscreenLifecycle = result.catch(() => undefined);
-  return result;
+function updateAction(tabId, { enabled = false, busy = false, error } = {}) {
+  const title = error || (busy
+    ? "Super Reader（正在处理）"
+    : enabled ? "Super Reader（点击关闭）" : "Super Reader（点击开启）");
+  return Promise.all([
+    chrome.action.setBadgeText({ tabId, text: error ? "ERR" : busy ? "…" : enabled ? "ON" : "" }),
+    chrome.action.setTitle({ tabId, title }),
+    busy ? chrome.action.disable(tabId) : chrome.action.enable(tabId),
+  ]);
 }
 
-async function hasOffscreenDocument() {
-  if (typeof chrome.runtime.getContexts === "function") {
-    const contexts = await chrome.runtime.getContexts({
-      contextTypes: ["OFFSCREEN_DOCUMENT"],
-      documentUrls: [OFFSCREEN_DOCUMENT_URL],
-    });
-    return contexts.length > 0;
-  }
-
-  const matchedClients = await clients.matchAll();
-  return matchedClients.some((client) => client.url === OFFSCREEN_DOCUMENT_URL);
-}
-
-function ensureOffscreenDocument() {
-  return runOffscreenLifecycleOperation(async () => {
-    if (await hasOffscreenDocument()) return;
-    await chrome.offscreen.createDocument({
-      url: OFFSCREEN_DOCUMENT_PATH,
-      reasons: ["WORKERS"],
-      justification: "Run the bundled Chinese boundary model outside web pages",
-    });
-  });
-}
-
-function closeInferenceDocument() {
-  return runOffscreenLifecycleOperation(async () => {
-    if (await hasOffscreenDocument()) await chrome.offscreen.closeDocument();
-  });
-}
-
-async function runSharedInference(texts, releaseWhenDisabled = false) {
-  try {
-    await ensureOffscreenDocument();
-    const response = await chrome.runtime.sendMessage({
-      target: "offscreen",
-      type: "SUPER_READER_RUN_INFERENCE",
-      texts,
-    });
-    if (response?.error) throw new Error(response.error);
-    if (!Array.isArray(response?.offsetsByText)) {
-      throw new Error("Super Reader inference service returned an invalid result");
-    }
-    return response.offsetsByText;
-  } finally {
-    if (releaseWhenDisabled) {
-      const { enabled } = await chrome.storage.sync.get({ enabled: false });
-      if (!enabled) await closeInferenceDocument();
-    }
-  }
-}
-
-function updateBadge(enabled) {
-  chrome.action.setBadgeText({ text: enabled ? "ON" : "" });
-  chrome.action.setBadgeBackgroundColor({ color: "#4f46e5" });
-  chrome.action.setTitle({
-    title: enabled ? "Super Reader（已开启）" : "Super Reader（已关闭）",
-  });
-}
-
-chrome.runtime.onInstalled.addListener(async () => {
-  const current = await chrome.storage.sync.get(DEFAULTS);
-  await chrome.storage.sync.set(current);
-  await chrome.storage.sync.remove(["palette", "targetLength"]);
-  updateBadge(current.enabled);
-});
-
-chrome.runtime.onStartup.addListener(async () => {
-  const { enabled } = await chrome.storage.sync.get(DEFAULTS);
-  updateBadge(enabled);
-  if (!enabled) await closeInferenceDocument();
-});
-
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === "sync" && changes.enabled) {
-    const enabled = Boolean(changes.enabled.newValue);
-    updateBadge(enabled);
-    if (!enabled) {
-      void closeInferenceDocument().catch((error) => {
-        console.error("Super Reader failed to stop inference", error);
+async function ensureInferencePage() {
+  if (creatingInferencePage) return creatingInferencePage;
+  creatingInferencePage = (async () => {
+    const url = chrome.runtime.getURL(INFERENCE_PAGE);
+    const contexts = typeof chrome.runtime.getContexts === "function"
+      ? await chrome.runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"], documentUrls: [url] })
+      : (await clients.matchAll()).filter((client) => client.url === url);
+    if (!contexts.length) {
+      await chrome.offscreen.createDocument({
+        url: INFERENCE_PAGE, reasons: ["WORKERS"],
+        justification: "Run the bundled boundary model outside web pages",
       });
     }
-  }
-});
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type !== "SUPER_READER_SPLIT_TEXTS") return undefined;
-
+  })();
   try {
-    const texts = message.texts;
-    if (
-      sender.id !== chrome.runtime.id ||
-      !Array.isArray(texts) ||
-      texts.some((text) => typeof text !== "string")
-    ) {
-      throw new TypeError("Super Reader received invalid inference input");
-    }
-    void runSharedInference(texts, message.releaseWhenDisabled === true).then(
-      (offsetsByText) => sendResponse({ offsetsByText }),
-      (error) => sendResponse({
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
-  } catch (error) {
-    sendResponse({
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return false;
+    await creatingInferencePage;
+  } finally {
+    creatingInferencePage = null;
   }
-  return true;
-});
+}
 
-chrome.commands.onCommand.addListener(async (command) => {
-  if (command !== "toggle-reader") return;
-  const { enabled } = await chrome.storage.sync.get(DEFAULTS);
-  await chrome.storage.sync.set({ enabled: !enabled });
+async function runInference(texts) {
+  if (!Array.isArray(texts) || texts.length !== 1 ||
+      typeof texts[0] !== "string" || texts[0].length > 128) {
+    throw new TypeError("Expected one text batch of at most 128 UTF-16 units");
+  }
+  await ensureInferencePage();
+  return chrome.runtime.sendMessage({
+    target: "offscreen", type: "SUPER_READER_RUN_INFERENCE", texts,
+  });
+}
+
+async function toggleTab(tab) {
+  if (!tab?.id || openingTabs.has(tab.id)) return;
+  openingTabs.add(tab.id);
+  try {
+    if (!/^(https?|file):/u.test(tab.url || "")) throw new Error("当前页面不支持阅读辅助");
+    let ready;
+    try {
+      ready = await chrome.tabs.sendMessage(tab.id, { type: "SUPER_READER_PING" });
+    } catch (_) { /* The page may predate extension installation. */ }
+    if (!ready) {
+      await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["src/content.css"] });
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["src/content.js"] });
+    }
+    const response = await chrome.tabs.sendMessage(tab.id, { type: "SUPER_READER_TOGGLE" });
+    await updateAction(tab.id, response);
+  } catch (error) {
+    await updateAction(tab.id, { error: error.message }).catch(() => {});
+  } finally {
+    openingTabs.delete(tab.id);
+  }
+}
+
+chrome.action.onClicked.addListener((tab) => { void toggleTab(tab); });
+chrome.tabs.onUpdated.addListener((tabId, change) => {
+  if (change.status === "loading") void updateAction(tabId).catch(() => {});
+});
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || !sender.tab?.id) return;
+  if (message?.type === "SUPER_READER_STATE") {
+    void updateAction(sender.tab.id, message).catch(() => {});
+    sendResponse({});
+  }
+  if (message?.type !== "SUPER_READER_SPLIT_TEXTS") return;
+  void runInference(message.texts).then(sendResponse, (error) => sendResponse({ error: error.message }));
+  return true;
 });

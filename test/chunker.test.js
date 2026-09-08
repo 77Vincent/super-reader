@@ -234,7 +234,7 @@ test("uses model confidence, weak balance, and word protection", () => {
   assert.ok(chunks.every((chunk) => visualLength(chunk) <= 8));
 });
 
-test("the demo fallback recursively respects the eight-character threshold", () => {
+test("recursive splitting respects the eight-character threshold across clauses", () => {
   const chunks = chunkText("在左侧输入一段中文，看看它如何被重新组织。");
 
   assert.deepEqual(chunks, [
