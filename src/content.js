@@ -131,13 +131,19 @@
   }
 
   async function requestDividerOffsets(texts) {
-    if (!state.enabled) throw createInferenceStoppedError();
+    if (!state.enabled || !chrome.runtime?.id) throw createInferenceStoppedError();
 
-    const response = await chrome.runtime.sendMessage({
-      type: "SUPER_READER_SPLIT_TEXTS",
-      texts,
-    });
-    if (!state.enabled) throw createInferenceStoppedError();
+    let response;
+    try {
+      response = await chrome.runtime.sendMessage({
+        type: "SUPER_READER_SPLIT_TEXTS",
+        texts,
+      });
+    } catch (error) {
+      if (!chrome.runtime?.id) throw createInferenceStoppedError();
+      throw error;
+    }
+    if (!state.enabled || !chrome.runtime?.id) throw createInferenceStoppedError();
     if (response?.error) throw new Error(response.error);
     if (!Array.isArray(response?.offsetsByText)) {
       throw new Error("Super Reader inference service returned an invalid result");
@@ -306,6 +312,13 @@
     return marker;
   }
 
+  function isDividerMarker(node) {
+    return (
+      node instanceof Element &&
+      node.dataset.superReaderDivider === "true"
+    );
+  }
+
   function markerPlacements(textNodes, offsets) {
     const placements = new Map();
     let sourceOffset = 0;
@@ -359,18 +372,22 @@
       await waitForDomIdle();
       if (!isCurrent()) return null;
 
+      const batch = tasks.slice(index, index + MARKER_INSERT_BATCH_SIZE);
+      if (batch.some(({ textNode }) => (
+        !textNode.isConnected || !textNode.parentNode
+      ))) {
+        return null;
+      }
+
       applyOwnDomMutation(() => {
-        tasks
-          .slice(index, index + MARKER_INSERT_BATCH_SIZE)
-          .forEach(({ localOffset, textNode }) => {
-            if (!textNode.isConnected || !textNode.parentNode) return;
-            const reference = localOffset === 0
-              ? textNode
-              : textNode.splitText(localOffset);
-            const marker = createDividerMarker(reference.getRootNode());
-            reference.before(marker);
-            insertedMarkers.push(marker);
-          });
+        batch.forEach(({ localOffset, textNode }) => {
+          const reference = localOffset === 0
+            ? textNode
+            : textNode.splitText(localOffset);
+          const marker = createDividerMarker(reference.getRootNode());
+          reference.before(marker);
+          insertedMarkers.push(marker);
+        });
       });
     }
     return insertedMarkers;
@@ -504,7 +521,10 @@
         offsets,
         () => scopeSnapshotIsCurrent(scope, scopeText, snapshots, false),
       );
-      if (insertedMarkers === null) return;
+      if (insertedMarkers === null) {
+        observeRootWhenVisible(scope);
+        return;
+      }
       markers.push(...insertedMarkers);
     }
     state.renderedScopes.set(scope, {
@@ -668,6 +688,7 @@
   function affectsCurrentTextRun(node) {
     return (
       node.nodeType === Node.TEXT_NODE ||
+      isDividerMarker(node) ||
       (node instanceof Element && isInlineFlowElement(node))
     );
   }

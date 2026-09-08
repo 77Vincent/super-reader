@@ -62,6 +62,23 @@ test("extension reuses unchanged dynamic text results with bounded caches", () =
   assert.match(contentScript, /state\.renderedScopes = new WeakMap\(\)/u);
 });
 
+test("extension restores dividers removed by a dynamic page", () => {
+  const contentScript = readFileSync(join(projectRoot, "src/content.js"), "utf8");
+
+  assert.match(
+    contentScript,
+    /node\.dataset\.superReaderDivider === "true"/u,
+  );
+  assert.match(
+    contentScript,
+    /batch\.some\(\(\{ textNode \}\) => \(/u,
+  );
+  assert.match(
+    contentScript,
+    /if \(insertedMarkers === null\) \{\s*observeRootWhenVisible\(scope\);/u,
+  );
+});
+
 test("extension runs bounded model inference outside the page main thread", () => {
   const contentScript = readFileSync(join(projectRoot, "src/content.js"), "utf8");
   const backgroundScript = readFileSync(join(projectRoot, "src/background.js"), "utf8");
