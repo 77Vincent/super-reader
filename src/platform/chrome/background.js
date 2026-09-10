@@ -5,14 +5,12 @@ const INFERENCE_PAGE = "src/inference.html";
 let creatingInferencePage = null;
 const openingTabs = new Set();
 
-function updateAction(tabId, { enabled = false, busy = false, error } = {}) {
-  const title = error || (busy
-    ? "Super Reader（正在处理）"
-    : enabled ? "Super Reader（点击关闭）" : "Super Reader（点击开启）");
+function updateAction(tabId, { enabled = false, error } = {}) {
+  // Busy is a click lock, not a visual state.
+  const title = error || (enabled ? "Super Reader（点击关闭）" : "Super Reader（点击开启）");
   return Promise.all([
-    chrome.action.setBadgeText({ tabId, text: error ? "ERR" : busy ? "…" : enabled ? "ON" : "" }),
+    chrome.action.setBadgeText({ tabId, text: error ? "ERR" : enabled ? "ON" : "" }),
     chrome.action.setTitle({ tabId, title }),
-    busy ? chrome.action.disable(tabId) : chrome.action.enable(tabId),
   ]);
 }
 
@@ -53,6 +51,7 @@ async function toggleTab(tab) {
     try {
       ready = await chrome.tabs.sendMessage(tab.id, { type: "SUPER_READER_PING" });
     } catch (_) { /* The page may predate extension installation. */ }
+    if (ready?.busy) return;
     if (!ready) {
       await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["src/content.css"] });
       await chrome.scripting.executeScript({

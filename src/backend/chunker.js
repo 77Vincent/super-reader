@@ -174,16 +174,35 @@
     );
   }
 
-  function selectBestBoundary(scores, isAllowed = () => true, start = 0, end) {
+  // Cumulative visual lengths at token boundaries, including numeric expressions.
+  function visualOffsetsForTokens(text, tokens) {
+    const numbers = Array.from(text.matchAll(NUMERIC_EXPRESSION), (match) => match.index);
+    let numberCount = 0;
+    const offsets = tokens.map((token, index) => {
+      while (numberCount < numbers.length && numbers[numberCount] < token.index) numberCount += 1;
+      return index + numberCount;
+    });
+    offsets[0] = 0; // The first fragment also includes any leading numbers.
+    offsets.push(tokens.length + numbers.length);
+    return offsets;
+  }
+
+  function selectBestBoundary(scores, isAllowed = () => true, start = 0, end, visualOffsets) {
     if (!Array.isArray(scores) || scores.length === 0) return null;
     end ??= scores.length;
+    const sourceStart = visualOffsets?.[start] ?? start;
+    const totalLength = (visualOffsets?.[end + 1] ?? end + 1) - sourceStart;
 
     let bestIndex = null;
     let bestScore = -Infinity;
     for (let index = start; index < end; index += 1) {
-      const score = scores[index];
-      if (!Number.isFinite(score) || !isAllowed(index)) continue;
-      // Use the model score directly; equal scores keep the first allowed gap.
+      if (!Number.isFinite(scores[index]) || !isAllowed(index)) continue;
+      const leftLength = (visualOffsets?.[index + 1] ?? index + 1) - sourceStart;
+      const rightLength = totalLength - leftLength;
+      const balance = (leftLength / totalLength) * (rightLength / totalLength); // p * (1 - p)
+      // Same ranking as softmax(scores)[index] * balance, without normalization.
+      // Equal weighted scores keep the first allowed gap.
+      const score = scores[index] + Math.log(balance);
       if (score > bestScore) {
         bestIndex = index;
         bestScore = score;
@@ -199,6 +218,7 @@
     if (!modelBackend || typeof modelBackend.scoreTokens !== "function") {
       throw new Error("Super Reader model backend must load before the chunker");
     }
+    const visualOffsets = visualOffsetsForTokens(text, tokens);
     const ranges = [];
     const segments = normalizedSegments(text, segmenter);
     const protectedBoundaryRanges = segments
@@ -227,11 +247,9 @@
     const pendingRanges = [{ start: 0, end: tokens.length }];
     while (pendingRanges.length > 0) {
       const { start, end } = pendingRanges.pop();
-      const sourceStart = start === 0 ? 0 : tokens[start].index;
-      const sourceEnd = end === tokens.length ? text.length : tokens[end].index;
       if (
         end - start < 2 ||
-        visualLength(text.slice(sourceStart, sourceEnd)) <= SPLIT_LENGTH_THRESHOLD
+        visualOffsets[end] - visualOffsets[start] <= SPLIT_LENGTH_THRESHOLD
       ) {
         ranges.push({ start, end });
         continue;
@@ -242,6 +260,7 @@
         (index) => !protectedBoundaryOffsets.has(tokens[index + 1].index),
         start,
         end - 1,
+        visualOffsets,
       );
       if (boundaryAfter === null) {
         ranges.push({ start, end });

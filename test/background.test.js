@@ -15,7 +15,10 @@ function createBackground() {
   let creations = 0;
   const pages = new Map();
   const badges = new Map();
+  const titles = new Map();
   const disabled = new Set();
+  const busyPages = new Set();
+  const toggles = [];
   const injected = [];
   const injectedFiles = [];
   const requests = [];
@@ -24,7 +27,7 @@ function createBackground() {
     action: {
       onClicked: { addListener: (callback) => { click = callback; } },
       async setBadgeText({ tabId, text }) { badges.set(tabId, text); },
-      async setTitle() {},
+      async setTitle({ tabId, title }) { titles.set(tabId, title); },
       async disable(id) { disabled.add(id); },
       async enable(id) { disabled.delete(id); },
     },
@@ -33,13 +36,14 @@ function createBackground() {
       async sendMessage(id, request) {
         if (!pages.has(id)) throw new Error("No receiver");
         if (request.type === "SUPER_READER_TOGGLE") {
+          toggles.push(id);
           pages.set(id, !pages.get(id));
           message({ type: "SUPER_READER_STATE", enabled: pages.get(id), busy: false },
             { id: "test-extension", tab: { id } }, () => {});
           // A command response may arrive after a newer state publication.
           return { enabled: pages.get(id), busy: true };
         }
-        return { enabled: pages.get(id), busy: false };
+        return { enabled: pages.get(id), busy: busyPages.has(id) };
       },
     },
     scripting: {
@@ -65,7 +69,7 @@ function createBackground() {
   const manifest = JSON.parse(readFileSync(join(__dirname, "../manifest.json"), "utf8"));
   runScript(manifest.background.service_worker, context);
   return {
-    pages, badges, disabled, injected, injectedFiles, requests,
+    pages, badges, titles, disabled, busyPages, toggles, injected, injectedFiles, requests,
     creations: () => creations,
     async click(id, url = "https://example.com/") { click({ id, url }); await drain(); },
     async navigate(id) { navigate(id, { status: "loading" }); await drain(); },
@@ -97,14 +101,36 @@ test("toolbar clicks inject only the current page and toggle each page independe
   assert.equal(background.badges.get(2), "");
 });
 
-test("viewport status locks only its own toolbar button and errors unlock it", async () => {
+test("busy pages keep the same toolbar appearance and ignore clicks until ready", async () => {
   const background = createBackground();
-  await background.message({ type: "SUPER_READER_STATE", enabled: true, busy: true });
-  assert.equal(background.disabled.has(1), true);
-  assert.equal(background.disabled.has(2), false);
+  await background.click(1);
+  const title = background.titles.get(1);
+  for (let cycle = 0; cycle < 3; cycle += 1) {
+    background.busyPages.add(1);
+    await background.message({ type: "SUPER_READER_STATE", enabled: true, busy: true });
+    assert.equal(background.badges.get(1), "ON");
+    assert.equal(background.titles.get(1), title);
+    assert.equal(background.disabled.size, 0);
+    await background.click(1);
+    await background.click(1);
+    assert.equal(background.pages.get(1), true);
+    assert.deepEqual(background.toggles, [1], "busy clicks must be discarded, not forwarded or queued");
+    background.busyPages.delete(1);
+    await background.message({ type: "SUPER_READER_STATE", enabled: true, busy: false });
+    assert.equal(background.badges.get(1), "ON");
+    assert.equal(background.titles.get(1), title);
+  }
+  background.busyPages.add(1);
+  await background.click(2);
+  assert.equal(background.pages.get(2), true, "one busy page must not block another page");
+  background.busyPages.delete(1);
+  await background.click(1);
+  assert.equal(background.pages.get(1), false);
+  assert.equal(background.badges.get(1), "");
   await background.message({ type: "SUPER_READER_STATE", enabled: false, busy: false, error: "failed" });
   assert.equal(background.disabled.has(1), false);
   assert.equal(background.badges.get(1), "ERR");
+  assert.equal(background.titles.get(1), "failed");
   await background.click(3, "chrome://extensions/");
   assert.equal(background.pages.has(3), false);
 });

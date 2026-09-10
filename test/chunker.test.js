@@ -126,19 +126,51 @@ test("title marks pre-split a title without drawing a divider beside it", () => 
   );
 });
 
-test("selects the highest model score regardless of boundary position", () => {
+test("balance favors the center for close scores but a stronger model choice can win", () => {
   assert.equal(selectBestBoundary([]), null);
   assert.equal(selectBestBoundary([0, 0]), 0);
   assert.equal(selectBestBoundary([0, 2, 0]), 1);
   assert.equal(selectBestBoundary([0.01, 0]), 0);
-  assert.equal(selectBestBoundary([0, 0, 0]), 0);
-  assert.equal(selectBestBoundary([0.01, 0, 0]), 0);
-  assert.equal(selectBestBoundary([0, 0, 0.01]), 2);
+  assert.equal(selectBestBoundary([0, 0, 0]), 1);
+  assert.equal(selectBestBoundary([0.01, 0, 0]), 1);
+  assert.equal(selectBestBoundary([0, 0, 0.01]), 1);
   assert.equal(selectBestBoundary([1.5, 0, 0]), 0);
   assert.equal(
     selectBestBoundary([-10, -10, -10, -10, -10, 0, -10, 0.311, -10, -10]),
     7,
   );
+});
+
+test("boundary ranking matches softmax share multiplied by p times one minus p", () => {
+  const examples = [
+    [-41.05, -45.59, -39.40, -38.58, -37.75, -33.99, -35.99, -36.98, -40.03, -38.42, -36.51, -38.66, -32.85, -36.24, -40.46],
+    [0.2, -1, 0, 0.05, 0, -2, 0.5, -1, 0.2],
+    [2, 0, 0, 0, 0, 0, 0, 0, 0],
+  ];
+  for (const logits of examples) {
+    const exponentials = logits.map((score) => Math.exp(score - Math.max(...logits)));
+    const sum = exponentials.reduce((total, value) => total + value, 0);
+    const weighted = exponentials.map((value, index) => {
+      const p = (index + 1) / (logits.length + 1);
+      return value / sum * p * (1 - p);
+    });
+    const expected = weighted.indexOf(Math.max(...weighted));
+    for (const shift of [-1000, 0, 1000]) {
+      assert.equal(selectBestBoundary(logits.map((score) => score + shift)), expected);
+    }
+  }
+});
+
+test("small center drift survives a small model advantage while extreme edges are penalized", () => {
+  const scores = Array(99).fill(-100);
+  scores[49] = 0; // 50/50
+  scores[44] = 0.02; // 45/55: only a 1% reduction relative to the center.
+  assert.equal(selectBestBoundary(scores), 44);
+  scores[44] = -100;
+  scores[0] = 2; // 1/99: even this larger model score loses after weighting.
+  assert.equal(selectBestBoundary(scores), 49);
+  scores[0] = 4;
+  assert.equal(selectBestBoundary(scores), 0);
 });
 
 test("boundary selection excludes protected gaps and invalid scores", () => {
@@ -154,6 +186,21 @@ test("boundary selection searches only inside the requested fragment and returns
   assert.equal(selectBestBoundary(scores, undefined, 1, 4), 2);
   assert.equal(selectBestBoundary(scores, (index) => index !== 2, 1, 4), 1);
   assert.equal(selectBestBoundary(scores, undefined, 2, 2), null);
+  assert.equal(selectBestBoundary(Array(19).fill(0), undefined, 10, 19), 14,
+    "balance must use the child fragment's center, not the original text's center");
+});
+
+test("balance uses visual units including leading numbers, fractions and supplementary Han", () => {
+  const chunker = withModel((tokens) => Array(tokens.length - 1).fill(0));
+  for (const [text, expected] of [
+    ["1甲乙丙丁戊己庚辛", ["1甲乙丙", "丁戊己庚辛"]],
+    ["甲乙丙丁戊己庚辛 1 2", ["甲乙丙丁戊", "己庚辛 1 2"]],
+    ["1/4 English 𠀀甲乙丙丁戊己庚", ["1/4 English 𠀀甲乙", "丙丁戊己庚"]],
+  ]) {
+    const chunks = Array.from(chunker.chunkText(text, { segmenter: null }));
+    assert.deepEqual(chunks, expected);
+    assert.equal(chunks.join(""), text);
+  }
 });
 
 test("one model evaluation supplies every split in a clause, with scores local to that call", () => {
@@ -214,12 +261,12 @@ test("fixed model windows score every gap once, without forcing cuts at window e
   }
 });
 
-test("long clauses with tied scores can split near one end without overflowing the call stack", () => {
+test("long clauses with strongly favored edge scores split without overflowing the call stack", () => {
   const text = "甲".repeat(9000);
   let calls = 0;
   const chunker = withModel((tokens) => {
-    calls += 1;
-    return Array(tokens.length - 1).fill(0);
+    const start = calls++ * 255;
+    return tokens.slice(1).map((_, index) => -10 * (start + index));
   });
   const chunks = chunker.chunkText(text, { segmenter: null });
   assert.equal(chunks.join(""), text);
@@ -318,7 +365,7 @@ test("punctuation-delimited clauses of eight characters or fewer stay intact", (
   ]);
 });
 
-test("recursively selects the highest allowed model score until the length threshold is met", () => {
+test("recursively selects the highest allowed weighted score until the length threshold is met", () => {
   const chunks = chunkText("同一个无标点子句内的短语块用细竖线分隔；");
 
   assert.deepEqual(chunks, ["同一个无标点", "子句内的短语块", "用细竖线分隔；"]);
