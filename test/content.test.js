@@ -151,7 +151,6 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
   if (useChromeAdapter) {
     const listeners = [];
     context.chrome = { runtime: {
-      id: "test-extension",
       getURL: (path) => `chrome-extension://test-extension/${path}`,
       onMessage: { addListener: (callback) => listeners.push(callback) },
       async sendMessage(message) {
@@ -160,7 +159,6 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
         return page.infer(message.texts);
       },
     } };
-    page.invalidate = () => { context.chrome.runtime.id = undefined; };
     run("src/platform/chrome/content.js");
     run("src/start-reader.js");
     // Reinjecting must not register a second reader or message handler.
@@ -212,58 +210,6 @@ test("the page is inert until toggled, then renders and restores its original te
   assert.equal(page.paragraph.childNodes.length, 1);
   assert.equal(page.paragraph.textContent, sampleText);
 });
-
-test("extension invalidation stops viewport callbacks before reading DOM data", async () => {
-  const page = createPage(sampleText, "p", true);
-  page.toggle();
-  await page.finish();
-  assert.equal(page.markers().length, 1);
-  const stateCount = page.states.length;
-  page.invalidate();
-  page.document.createRange = () => { throw new Error("obsolete reader read the DOM"); };
-  page.scroll();
-  assert.equal(page.markers().length, 0);
-  assert.equal(page.paragraph.textContent, sampleText);
-  page.scroll();
-  page.resize();
-  await page.settle();
-  assert.equal(page.requests.length, 1);
-  assert.equal(page.states.length, stateCount);
-  assert.equal(page.toggle().enabled, false);
-});
-
-test("extension invalidation during debounce prevents the next DOM read", async () => {
-  const page = createPage(sampleText, "p", true);
-  page.toggle();
-  await page.finish();
-  page.text("等待防抖结束后才会处理的新文字");
-  page.scroll();
-  page.invalidate();
-  page.document.createRange = () => { throw new Error("obsolete reader read the DOM"); };
-  await page.settle();
-  assert.equal(page.requests.length, 1);
-  assert.equal(page.markers().length, 0);
-  assert.equal(page.states.at(-1).error, null);
-});
-
-for (const outcome of ["resolve", "reject"]) {
-  test(`extension invalidation discards an inference ${outcome} without writing or publishing`, async () => {
-    const page = createPage(sampleText, "p", true);
-    let finish;
-    page.infer = () => new Promise((resolve, reject) => {
-      finish = () => outcome === "resolve" ? resolve({ offsetsByText: [[4]] }) : reject(new Error("Extension context invalidated."));
-    });
-    page.toggle();
-    const stateCount = page.states.length;
-    page.invalidate();
-    finish();
-    await page.finish();
-    assert.equal(page.markers().length, 0);
-    assert.equal(page.states.length, stateCount);
-    assert.equal(page.toggle().busy, false);
-    assert.equal(page.toggle().enabled, false);
-  });
-}
 
 test("one request includes all visible texts, including strings longer than 128 UTF-16 units", async () => {
   const text = "甲".repeat(127) + "𠀀" + "乙".repeat(260);

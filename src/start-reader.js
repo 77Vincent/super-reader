@@ -15,7 +15,6 @@
     clear: clearMarkers,
     remember: rememberProcessedText,
     reset: clearProcessedText,
-    isAvailable: adapter.isAvailable,
     watch: (onChange) => watchViewport(document, onChange),
     publishState: adapter.publishState,
   });

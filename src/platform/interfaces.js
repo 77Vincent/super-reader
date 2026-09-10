@@ -12,7 +12,6 @@
  * @typedef {Object} Reader
  * @property {() => ReaderState} status
  * @property {() => ReaderState} toggle
- * @property {() => void} dispose Permanently stop this instance on host teardown.
  */
 
 /**
@@ -20,7 +19,6 @@
  * @typedef {Object} ReaderServices
  * @property {(texts: string[]) => Promise<number[][]>} process One viewport; rejects on failure.
  * @property {(state: ReaderState) => void} publishState Handles delivery errors itself.
- * @property {() => boolean} [isAvailable] False when the host context is gone.
  */
 
 /**

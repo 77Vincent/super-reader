@@ -9,7 +9,6 @@
 滚动 / 缩放 → 重置 200ms 防抖 → 等待当前任务完成且变化稳定 → 读取最新画面
 关闭 → 停止监听和等待中的刷新 → clear() → reset()
 失败 → 记录 error → 停止监听、关闭并清理 → 解锁，等待用户重试
-宿主上下文失效 → 下一次回调先 dispose() → 停止监听、清理标记、丢弃迟到结果
 ```
 
 一次处理的单位是任务开始时与可视区域相交、尚未处理的合格文本节点，每个节点保留完整字符串。`read()` 同步固定文本及其 DOM 映射；`process()` 将全部文本作为一个请求交给 Worker；全部结果返回后，`write()` 一次同步写入分隔标记。锁覆盖读取、推理、写入的全过程，处理中点击开关无效。
@@ -70,14 +69,13 @@ const reader = SuperReader.createReader({
   clear: SuperReader.clearMarkers,
   remember: SuperReader.rememberProcessedText,
   reset: SuperReader.clearProcessedText,
-  isAvailable: adapter.isAvailable,
   watch: (onChange) => SuperReader.watchViewport(document, onChange),
   publishState: adapter.publishState,
 });
 adapter.connect(reader);
 ```
 
-阅读器提供 `status()`、`toggle()` 和永久停止实例的 `dispose()`。适配器发布状态、连接控件、转发整个 `texts` 数组并提供分隔线样式地址；DOM 引用始终留在页面里。Chrome 适配器用 `isAvailable()` 检查上下文是否仍有效。旧实例在视口事件、任务开始及异步结果返回时检查；失效则断开监听、移除标记、清空记录并停止发布状态。该检查不轮询、不取消模型计算，也不会自动重新开启扩展。
+阅读器提供 `status()` 和 `toggle()`。适配器发布状态、连接控件、转发整个 `texts` 数组并提供分隔线样式地址；DOM 引用始终留在页面里。
 
 后台依据阅读器的状态通知更新按钮，避免滞后的 toggle 回复覆盖新状态。Shadow DOM 中的标记加载同一个 `src/content.css`，该文件在 manifest 中声明为可访问资源，前端无需调用 Chrome API。
 
