@@ -10,5 +10,9 @@
   },
   "background": {
     "service_worker": "src/platform/chrome/background.js"
-  }
+  },
+  "web_accessible_resources": [{
+    "resources": ["src/content.css"],
+    "matches": ["<all_urls>"]
+  }]
 }

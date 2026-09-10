@@ -5,6 +5,7 @@ const { join } = require("node:path");
 const vm = require("node:vm");
 
 const context = vm.createContext({});
+vm.runInContext(readFileSync(join(__dirname, "../src/frontend/dom-tree.js"), "utf8"), context);
 vm.runInContext(readFileSync(join(__dirname, "../src/frontend/visibility.js"), "utf8"), context);
 const { createVisibilityFilter } = context.SuperReader;
 const viewport = Object.freeze({ left: 0, top: 0, right: 100, bottom: 100 });
@@ -42,6 +43,21 @@ function environment() {
   return { document, body, element, styleReads, lookup: () => createVisibilityFilter(document, viewport).getVisibleArea };
 }
 const text = (parentElement, nodeValue = "中文") => ({ parentElement, nodeValue });
+
+test("shadow ancestry and assigned slots preserve host clipping and exclusions", () => {
+  const page = environment();
+  const host = page.element(page.body, { overflowY: "hidden" }, box(0, 10, 100, 30));
+  const root = { host };
+  const inside = page.element();
+  inside.parentNode = root;
+  assert.deepEqual({ ...page.lookup()(text(inside)) }, { left: 0, top: 10, right: 100, bottom: 40 });
+  assert.deepEqual({ ...page.lookup()({ nodeValue: "直接根节点文字", parentNode: root }) }, { left: 0, top: 10, right: 100, bottom: 40 });
+  const slot = page.element(inside, { display: "contents" });
+  const slotted = page.element(page.body);
+  slotted.assignedSlot = slot;
+  host.style.opacity = "0";
+  assert.equal(page.lookup()(text(slotted)), null);
+});
 
 test("missing parents, empty text, and excluded subtrees need no style or geometry reads", () => {
   const page = environment();

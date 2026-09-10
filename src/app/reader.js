@@ -16,10 +16,12 @@ globalThis.SuperReader ??= {};
  * and its mapping synchronously.
  * @property {(texts: string[]) => Promise<number[][]>} process Segmentation layer:
  * return offsets for every text in one operation; reject on failure.
- * @property {(snapshot: ViewportSnapshot, results: number[][]) => (void | Promise<void>)} write
+ * @property {(snapshot: ViewportSnapshot, results: number[][]) => (unknown | Promise<unknown>)} write
  * DOM layer: check source validity and apply offsets. Settle only after all writes
  * have stopped. Both asynchronous operations reject on failure.
  * @property {() => void} clear DOM layer: synchronously remove markers.
+ * @property {(written: unknown) => void} remember Record successfully handled data.
+ * @property {() => void} reset Forget previously handled data.
  * @property {(onChange: () => void) => (() => void)} watch Subscribe to input
  * changes; return a function that removes the subscription.
  * @property {(state: ReaderState) => void} publishState Adapter: deliver state;
@@ -37,6 +39,8 @@ globalThis.SuperReader.createReader = function createReader({
   process,
   write,
   clear,
+  remember,
+  reset,
   watch,
   publishState,
 }) {
@@ -86,13 +90,17 @@ globalThis.SuperReader.createReader = function createReader({
       const snapshot = read();
       if (snapshot.texts.length > 0) {
         const results = await process(snapshot.texts);
-        await write(snapshot, results);
+        const written = write(snapshot, results);
+        // Keep synchronous writes and recording together, before page observers
+        // can change these nodes. Asynchronous writers still settle first.
+        remember(written && typeof written.then === "function" ? await written : written);
       }
     } catch (failure) {
       error = failure instanceof Error ? failure.message : String(failure);
       enabled = false;
       stopRefreshes();
       clear();
+      reset();
     } finally {
       busy = false;
       publishState({ ...status() });
@@ -112,6 +120,7 @@ globalThis.SuperReader.createReader = function createReader({
     } else {
       stopRefreshes();
       clear();
+      reset();
       publishState(status());
     }
     return status();

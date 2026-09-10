@@ -67,6 +67,8 @@ function createReader({
   process = async () => [],
   write = () => {},
   clear = () => {},
+  remember = () => {},
+  reset = () => {},
   watch = () => () => {},
   clock,
   publishState = () => {},
@@ -83,12 +85,63 @@ function createReader({
     read,
     process,
     write,
+    remember,
+    reset,
     watch,
     clear() { clears += 1; clear(); },
     publishState(state) { states.push({ ...state }); publishState(state); },
   });
   return { reader, states, clears: () => clears };
 }
+
+test("only completed writes are remembered, and disabling resets the record", async () => {
+  const writing = deferred();
+  const written = [{ node: "handled data" }];
+  const remembered = [];
+  let resets = 0;
+  const { reader } = createReader({
+    write: () => writing.promise,
+    remember: (value) => remembered.push(value),
+    reset: () => { resets += 1; },
+  });
+  reader.toggle();
+  await drain();
+  assert.equal(remembered.length, 0);
+  writing.resolve(written);
+  await drain();
+  assert.equal(remembered[0], written);
+  reader.toggle();
+  assert.equal(resets, 1);
+});
+
+test("failed writing cannot mark data as processed and resets earlier records", async () => {
+  let remembered = false;
+  let resets = 0;
+  const { reader } = createReader({
+    write: async () => { throw new Error("write failed"); },
+    remember: () => { remembered = true; },
+    reset: () => { resets += 1; },
+  });
+  reader.toggle();
+  await drain();
+  assert.equal(remembered, false);
+  assert.equal(resets, 1);
+  assert.equal(reader.status().enabled, false);
+});
+
+test("synchronous rendering is recorded before queued page changes can run", async () => {
+  const calls = [];
+  const { reader } = createReader({
+    write() {
+      queueMicrotask(() => calls.push("page change"));
+      return [];
+    },
+    remember() { calls.push("remember"); },
+  });
+  reader.toggle();
+  await drain();
+  assert.deepEqual(calls, ["remember", "page change"]);
+});
 
 test("construction starts disabled without invoking dependencies", async () => {
   const calls = [];

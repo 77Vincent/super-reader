@@ -12,6 +12,7 @@
    * @param {{left: number, top: number, right: number, bottom: number}} viewport
    */
   globalThis.SuperReader.createVisibilityFilter = function createVisibilityFilter(document, viewport) {
+    const { parentElementAcrossRoots } = globalThis.SuperReader;
     const view = document.defaultView;
     const ignored = [
       "script", "style", "noscript", "input", "textarea", "select", "button",
@@ -41,7 +42,7 @@
         visibleAreaCache.set(element, null);
         return null;
       }
-      const parentVisibleArea = getElementVisibleArea(element.parentElement);
+      const parentVisibleArea = getElementVisibleArea(parentElementAcrossRoots(element));
       const style = getElementStyle(element);
       let visibleArea = parentVisibleArea && { ...parentVisibleArea };
       // The root scrolling area is already represented by the viewport.
@@ -72,7 +73,7 @@
     }
 
     function getVisibleArea(node) {
-      const parent = node.parentElement;
+      const parent = parentElementAcrossRoots(node);
       const text = node.nodeValue;
       if (!parent || !text) return null;
       const visibleArea = getElementVisibleArea(parent);

@@ -19,6 +19,7 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
   class DomNode {
     constructor(nodeType) { this.nodeType = nodeType; this.parentNode = null; }
     get parentElement() { return this.parentNode; }
+    getRootNode() { return this.parentNode?.getRootNode() || this; }
     get isConnected() { return this === document.documentElement || Boolean(this.parentNode?.isConnected); }
     remove() {
       if (!this.parentNode) return;
@@ -94,6 +95,11 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
     body, documentElement: html,
     defaultView: Object.assign(new EventTarget(), {
       visualViewport: Object.assign(new EventTarget(), { offsetLeft: 0, offsetTop: 0, width: 800, height: 600 }),
+      MutationObserver: class {
+        observe() {}
+        disconnect() {}
+        takeRecords() { return []; }
+      },
       getComputedStyle: () => ({
         display: "block", visibility: "visible", opacity: "1",
         contentVisibility: "visible", overflowX: "visible", overflowY: "visible",
@@ -137,15 +143,18 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
   const run = (path) => vm.runInContext(
     readFileSync(join(__dirname, "..", path), "utf8"), context, { filename: path },
   );
+  run("src/frontend/dom-tree.js");
   run("src/frontend/viewport.js");
   run("src/frontend/visibility.js");
   run("src/frontend/processed-text.js");
   run("src/frontend/read.js");
   run("src/frontend/write.js");
+  run("src/frontend/changes.js");
   run("src/app/reader.js");
   if (useChromeAdapter) {
     const listeners = [];
     context.chrome = { runtime: {
+      getURL: (path) => `chrome-extension://test-extension/${path}`,
       onMessage: { addListener: (callback) => listeners.push(callback) },
       async sendMessage(message) {
         if (message.type === "SUPER_READER_STATE") { states.push(message); return {}; }
@@ -156,11 +165,13 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
     run("src/platform/chrome/content.js");
     run("src/start-reader.js");
     // Reinjecting must not register a second reader or message handler.
+    run("src/frontend/dom-tree.js");
     run("src/frontend/viewport.js");
     run("src/frontend/visibility.js");
     run("src/frontend/processed-text.js");
     run("src/frontend/read.js");
     run("src/frontend/write.js");
+    run("src/frontend/changes.js");
     run("src/app/reader.js");
     run("src/platform/chrome/content.js");
     run("src/start-reader.js");
@@ -173,6 +184,7 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
   } else {
     // A second adapter implementation uses local callbacks, with no Chrome API.
     context.SuperReader.createReaderAdapter = () => ({
+      markerStyleUrl: "http://localhost/src/content.css",
       async process(texts) {
         requests.push(Array.from(texts));
         const response = await page.infer(texts);

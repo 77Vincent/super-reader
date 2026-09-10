@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Shadow DOM regression tests</title>
+<link rel="stylesheet" href="../src/content.css">
+<style>
+  body { font: 16px/1.5 sans-serif; margin: 16px; }
+  #fixture { position: fixed; top: 60px; left: 16px; width: 600px; }
+  #results { position: relative; margin-top: 430px; white-space: pre-wrap; }
+</style>
+<button id="run">Run shadow DOM tests</button>
+<div id="fixture"></div>
+<pre id="results">Not run</pre>
+<script src="../src/frontend/dom-tree.js"></script>
+<script src="../src/frontend/viewport.js"></script>
+<script src="../src/frontend/visibility.js"></script>
+<script src="../src/frontend/processed-text.js"></script>
+<script src="../src/frontend/read.js"></script>
+<script src="../src/frontend/write.js"></script>
+<script src="../src/frontend/changes.js"></script>
+<script src="../src/app/reader.js"></script>
+<script>
+  let reader;
+  let inputs = [];
+  let states = [];
+  let processInput = async (texts) => texts.map(() => [2]);
+  SuperReader.createReaderAdapter = () => ({
+    markerStyleUrl: new URL("../src/content.css", location.href).href,
+    async process(texts) { inputs.push([...texts]); return processInput(texts); },
+    publishState(state) { states.push(state); },
+    connect(instance) { reader = instance; },
+  });
+</script>
+<script src="../src/start-reader.js"></script>
+<script>
+  const fixture = document.querySelector("#fixture");
+  const output = document.querySelector("#results");
+  const tests = [];
+  const test = (name, run) => tests.push({ name, run });
+  const assert = (condition, message) => { if (!condition) throw new Error(message); };
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  async function until(condition, message) {
+    const deadline = performance.now() + 5000;
+    while (!condition()) {
+      if (performance.now() > deadline) throw new Error(message);
+      await delay(20);
+    }
+  }
+  const markers = (root) => root.querySelectorAll(".super-reader-divider");
+  function shadow(parent = fixture) {
+    const host = document.createElement("div");
+    parent.append(host);
+    return host.attachShadow({ mode: "open" });
+  }
+  function paragraph(parent, value = "这是一条需要处理的评论文字") {
+    const p = document.createElement("p");
+    p.textContent = value;
+    parent.append(p);
+    return p;
+  }
+  async function enable() {
+    reader.toggle();
+    await until(() => !reader.status().busy, "initial operation did not finish");
+    assert(reader.status().enabled, reader.status().error);
+  }
+
+  test("nested comments render with their own stylesheet and fully restore on disable", async () => {
+    const outer = shadow();
+    const inner = shadow(shadow(outer));
+    const p = paragraph(inner);
+    const original = p.textContent;
+    const bold = document.createElement("b");
+    bold.textContent = "加粗评论文字";
+    p.append(bold);
+    const fullText = p.textContent;
+    await enable();
+    assert(inputs.length === 1 && inputs[0][0] === original, "nested comment was missed");
+    assert(markers(inner).length === 2, "expected both original text nodes");
+    assert(p.textContent === fullText && p.contains(bold), "markup or text was changed");
+    await until(() => getComputedStyle(markers(inner)[0], "::before").borderInlineStartWidth === "3px", "shadow marker stylesheet did not load");
+    const stableStates = states.length;
+    await delay(500);
+    assert(states.length === stableStates && inputs.length === 1, "marker writes caused a feedback refresh");
+    reader.toggle();
+    assert(markers(inner).length === 0 && !inner.querySelector("link"), "shadow artifacts survived disable");
+    assert(p.textContent === fullText && p.firstChild.nodeValue === original, "text was not restored");
+    await enable();
+    assert(inputs.length === 2 && markers(inner).length === 2, "processed records did not reset");
+  });
+
+  test("direct shadow text and slotted text are captured once; unslotted text stays excluded", async () => {
+    const root = shadow();
+    root.append(document.createTextNode("直接位于影子根的中文文字"));
+    const slot = document.createElement("slot");
+    slot.name = "comment";
+    slot.textContent = "不应显示的回退文字";
+    root.append(slot);
+    const assigned = paragraph(root.host, "插槽中的可见评论文字");
+    assigned.slot = "comment";
+    paragraph(root.host, "没有分配插槽的隐藏文字");
+    await enable();
+    assert(JSON.stringify(inputs[0]) === JSON.stringify(["直接位于影子根的中文文字", "插槽中的可见评论文字"]), `unexpected input: ${JSON.stringify(inputs)}`);
+    assert(markers(root).length === 1 && markers(root.host).length === 1, "direct or slotted text did not render");
+  });
+
+  test("hidden hosts and host overflow constrain shadow text; revealing a host triggers processing", async () => {
+    const hidden = shadow();
+    hidden.host.hidden = true;
+    paragraph(hidden, "隐藏的评论随后显示");
+    const clipped = shadow();
+    clipped.host.style.cssText = "height:30px;overflow:hidden";
+    const p = paragraph(clipped, "被容器完全裁掉的评论");
+    p.style.marginTop = "200px";
+    await enable();
+    assert(inputs.length === 0, "hidden or clipped comments were processed");
+    hidden.host.hidden = false;
+    await until(() => markers(hidden).length === 1, "revealed shadow root was not discovered");
+    assert(inputs.length === 1 && inputs[0][0] === "隐藏的评论随后显示", "wrong revealed input");
+  });
+
+  test("late comments, nested hosts and text changes refresh without scrolling", async () => {
+    const root = shadow();
+    await enable();
+    assert(inputs.length === 0, "expected empty initial snapshot");
+    const inner = shadow(root);
+    const p = paragraph(inner, "后来加载进来的评论文字");
+    await until(() => markers(inner).length === 1, "late nested comments were missed");
+    p.textContent = "服务器更新之后的新评论文字";
+    await until(() => inputs.length === 2 && markers(inner).length === 1, "replacement comment was missed");
+    const unchangedFragment = p.firstChild;
+    const changedText = "直接修改现有文本节点的评论";
+    unchangedFragment.nodeValue = changedText;
+    await until(() => inputs.length === 3 && !reader.status().busy, "characterData change was missed");
+    assert(inputs[2][0] === changedText, "changed text was not captured intact");
+    await delay(450);
+    assert(inputs.length === 3, "comment updates kept repeating");
+  });
+
+  test("a page observer changing rendered text cannot mark new text as already processed", async () => {
+    const root = shadow();
+    const p = paragraph(root);
+    const updated = "页面观察到标记后自行更新的评论文字";
+    const pageObserver = new MutationObserver(() => {
+      pageObserver.disconnect();
+      p.firstChild.nodeValue = updated;
+    });
+    pageObserver.observe(p, { childList: true });
+    try {
+      await enable();
+      await until(() => inputs.length === 2 && !reader.status().busy, "page update was incorrectly remembered as processed");
+      assert(inputs[1][0] === updated, "updated text was not processed intact");
+    } finally { pageObserver.disconnect(); }
+  });
+
+  test("changes during inference wait and coalesce into the latest comment", async () => {
+    const root = shadow();
+    const p = paragraph(root, "开始处理时捕获的评论文字");
+    let finish;
+    processInput = (texts) => inputs.length === 1
+      ? new Promise((resolve) => { finish = () => resolve(texts.map(() => [2])); })
+      : Promise.resolve(texts.map(() => [2]));
+    reader.toggle();
+    try {
+      p.firstChild.nodeValue = "变化过程中的中间评论文字";
+      await delay(240);
+      p.firstChild.nodeValue = "最后一次更新之后的评论文字";
+      await delay(240);
+      assert(inputs.length === 1 && reader.status().busy, "started a concurrent operation");
+      finish();
+      await until(() => inputs.length === 2 && !reader.status().busy, "pending refresh never ran");
+      assert(inputs[1][0] === "最后一次更新之后的评论文字", "processed an intermediate snapshot");
+      assert(markers(root).length === 1, "stale results were rendered");
+    } finally { finish?.(); await delay(30); }
+  });
+
+  test("scrolling inside a shadow root captures newly visible comments", async () => {
+    const root = shadow();
+    const scroller = document.createElement("div");
+    scroller.style.cssText = "height:65px;overflow:auto";
+    root.append(scroller);
+    paragraph(scroller, "第一屏可见的评论文字");
+    const spacer = document.createElement("div");
+    spacer.style.height = "300px";
+    scroller.append(spacer);
+    paragraph(scroller, "内部滚动后可见的评论文字");
+    await enable();
+    assert(inputs[0].length === 1, "offscreen comment was captured");
+    scroller.scrollTop = scroller.scrollHeight;
+    await until(() => inputs.length === 2 && !reader.status().busy, "shadow scroll was missed");
+    assert(inputs[1][0] === "内部滚动后可见的评论文字", "wrong scroll input");
+    scroller.scrollTop = 0;
+    await delay(450);
+    assert(inputs.length === 2, "earlier comments were processed again");
+  });
+
+  test("disable clears detached roots and removes all content subscriptions", async () => {
+    const root = shadow();
+    const p = paragraph(root);
+    const original = p.textContent;
+    await enable();
+    root.host.remove();
+    reader.toggle();
+    assert(markers(root).length === 0 && !root.querySelector("link"), "detached root was not cleaned");
+    assert(p.textContent === original && p.childNodes.length === 1, "detached text was not restored");
+    const count = states.length;
+    fixture.append(root.host);
+    paragraph(root, "关闭以后增加的评论文字");
+    root.dispatchEvent(new Event("scroll"));
+    await delay(450);
+    assert(states.length === count, "disabled reader still reacted to changes");
+  });
+
+  document.querySelector("#run").addEventListener("click", async (event) => {
+    event.currentTarget.disabled = true;
+    output.textContent = "Running";
+    const results = [];
+    for (const { name, run } of tests) {
+      inputs = []; states = [];
+      processInput = async (texts) => texts.map(() => [2]);
+      fixture.replaceChildren();
+      try { await run(); results.push(`PASS ${name}`); }
+      catch (error) { results.push(`FAIL ${name}: ${error.message}`); }
+      if (reader.status().enabled && !reader.status().busy) reader.toggle();
+    }
+    fixture.replaceChildren();
+    output.textContent = `${results.filter((line) => line.startsWith("PASS")).length}/${tests.length} passed\n${results.join("\n")}`;
+    document.querySelector("#run").disabled = false;
+  });
+</script>
+</html>

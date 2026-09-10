@@ -14,11 +14,13 @@
     <pre id="results">Ready</pre>
   </header>
   <div id="fixture"></div>
+  <script src="../src/frontend/dom-tree.js"></script>
   <script src="../src/frontend/viewport.js"></script>
   <script src="../src/frontend/visibility.js"></script>
   <script src="../src/frontend/processed-text.js"></script>
   <script src="../src/frontend/read.js"></script>
   <script src="../src/frontend/write.js"></script>
+  <script src="../src/frontend/changes.js"></script>
   <script src="../src/app/reader.js"></script>
   <script>
     const fixture = document.querySelector("#fixture");
@@ -200,6 +202,8 @@
         async process(texts) { inputs.push([...texts]); return texts.map(() => [2]); },
         write: SuperReader.write,
         clear: SuperReader.clearMarkers,
+        remember: SuperReader.rememberProcessedText,
+        reset: SuperReader.clearProcessedText,
         watch: (onChange) => SuperReader.watchViewport(document, onChange),
         publishState() {},
       });
@@ -237,6 +241,8 @@
         },
         write: SuperReader.write,
         clear: SuperReader.clearMarkers,
+        remember: SuperReader.rememberProcessedText,
+        reset: SuperReader.clearProcessedText,
         watch: (onChange) => SuperReader.watchViewport(document, onChange),
         publishState() {},
       });
@@ -274,6 +280,7 @@
           results.push(`FAIL ${name}: ${error.message}`);
         }
         SuperReader.clearMarkers();
+        SuperReader.clearProcessedText();
       }
       fixture.replaceChildren();
       output.textContent = `${passed}/${tests.length} passed\n${results.join("\n")}`;

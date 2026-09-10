@@ -12,8 +12,10 @@
     return previous !== undefined && previous.text === node.nodeValue && previous.parent === node.parentNode;
   };
 
-  globalThis.SuperReader.rememberProcessedText = function rememberProcessedText(node) {
-    processedNodes.set(node, { text: node.nodeValue, parent: node.parentNode });
+  globalThis.SuperReader.rememberProcessedText = function rememberProcessedText(nodes) {
+    for (const node of nodes) {
+      processedNodes.set(node, { text: node.nodeValue, parent: node.parentNode });
+    }
   };
 
   globalThis.SuperReader.clearProcessedText = function clearProcessedText() {

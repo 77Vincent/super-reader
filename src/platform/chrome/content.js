@@ -5,6 +5,7 @@ globalThis.SuperReader ??= {};
 /** @returns {ReaderAdapter} */
 globalThis.SuperReader.createReaderAdapter = function createChromeReaderAdapter() {
   return {
+    markerStyleUrl: chrome.runtime.getURL("src/content.css"),
     async process(texts) {
       const response = await chrome.runtime.sendMessage({
         type: "SUPER_READER_PROCESS", texts,

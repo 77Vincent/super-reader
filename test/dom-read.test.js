@@ -4,7 +4,7 @@ const { readFileSync } = require("node:fs");
 const { join } = require("node:path");
 const vm = require("node:vm");
 
-const scripts = ["viewport.js", "visibility.js", "processed-text.js", "read.js"].map((name) => {
+const scripts = ["dom-tree.js", "viewport.js", "visibility.js", "processed-text.js", "read.js"].map((name) => {
   const filename = join(__dirname, "../src/frontend", name);
   return { filename, source: readFileSync(filename, "utf8") };
 });
@@ -23,7 +23,8 @@ function createPage() {
   function element(tag = "p", options = {}) {
     const rect = options.rect || box(0, 0, 100, 100);
     const node = {
-      nodeType: 1, tag, parentElement: options.parent || null, childNodes: [],
+      nodeType: 1, tag, parentNode: options.parent || null,
+      parentElement: options.parent?.nodeType === 1 ? options.parent : null, childNodes: [],
       style: options.style || {}, attributes: options.attributes || {},
       className: options.className || "", clientLeft: 0, clientTop: 0,
       clientWidth: rect.width, clientHeight: rect.height,
@@ -39,7 +40,7 @@ function createPage() {
         });
       },
     };
-    node.parentElement?.childNodes.push(node);
+    node.parentNode?.childNodes.push(node);
     return node;
   }
   const root = element("html");
@@ -86,12 +87,32 @@ function createPage() {
     read: context.SuperReader.read,
     element: (tag, options = {}) => element(tag, { parent: body, ...options }),
     text(value, geometry = () => box(0, 0, 40, 20), parent = body) {
-      const node = { nodeType: 3, nodeValue: value, parentElement: parent, parentNode: parent, geometry };
+      const node = { nodeType: 3, nodeValue: value, parentElement: parent.nodeType === 1 ? parent : null, parentNode: parent, geometry };
       parent.childNodes.push(node);
       return node;
     },
   };
 }
+
+test("read crosses nested open roots, maps direct shadow text and prunes excluded hosts", () => {
+  const page = createPage();
+  function shadow(host) {
+    host.shadowRoot = { nodeType: 11, host, childNodes: [] };
+    return host.shadowRoot;
+  }
+  const outer = shadow(page.element("div"));
+  const inner = shadow(page.element("div", { parent: outer }));
+  const node = page.text("嵌套影子根中的评论", undefined, inner);
+  const ignored = shadow(page.element("pre"));
+  const skipped = page.text("代码区域不应读取", undefined, ignored);
+  const discovered = [];
+  const snapshot = page.read((root) => discovered.push(root));
+  assert.deepEqual(Array.from(snapshot.texts), ["嵌套影子根中的评论"]);
+  assert.equal(snapshot.sources[0].node, node);
+  assert.equal(snapshot.sources[0].parent, inner);
+  assert.deepEqual(discovered, [outer, inner]);
+  assert.equal(page.visited.includes(skipped), false);
+});
 
 test("read returns an empty snapshot before body exists or when the viewport is empty", () => {
   const page = createPage();

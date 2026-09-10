@@ -18,11 +18,13 @@
     <pre><code id="ignored">代码区域的中文内容应该保持原样。</code></pre>
     <pre id="metrics">Ready</pre>
     <p id="offscreen">屏幕外的这段中文不应该参与本次处理，也不应该出现任何分隔线。</p>
+    <script src="../src/frontend/dom-tree.js"></script>
     <script src="../src/frontend/viewport.js"></script>
     <script src="../src/frontend/visibility.js"></script>
     <script src="../src/frontend/processed-text.js"></script>
     <script src="../src/frontend/read.js"></script>
     <script src="../src/frontend/write.js"></script>
+    <script src="../src/frontend/changes.js"></script>
     <script src="../src/inference-service.js"></script>
     <script src="../src/app/reader.js"></script>
     <script>
@@ -58,6 +60,7 @@
         connect(service) { fixtureService = service; },
       });
       SuperReader.createReaderAdapter = () => ({
+        markerStyleUrl: new URL("../src/content.css", location.href).href,
         async process(texts) {
           requests += 1;
           inputLengths = texts.map((text) => text.length);

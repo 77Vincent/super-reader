@@ -14,6 +14,10 @@ test("the toolbar is the only extension control", () => {
 });
 
 test("divider appearance lives in CSS without runtime style configuration", () => {
+  const manifest = JSON.parse(read("manifest.json"));
+  assert.ok(manifest.web_accessible_resources.some((entry) =>
+    entry.resources.includes("src/content.css") && entry.matches.includes("<all_urls>")),
+  "shadow roots must be able to load the shared extension stylesheet");
   const css = read("src/content.css");
   assert.match(css, /\.super-reader-divider::before/u);
   assert.match(css, /content:\s*""/u);

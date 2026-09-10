@@ -23,7 +23,8 @@
 
 /**
  * connect() attaches the host's controls to the reader; startup calls it once.
- * @typedef {ReaderServices & {connect: (reader: Reader) => void}} ReaderAdapter
+ * @typedef {ReaderServices & {markerStyleUrl: string, connect: (reader: Reader) => void}} ReaderAdapter
+ * markerStyleUrl supplies the stylesheet URL for markers inside shadow roots.
  */
 
 /**
