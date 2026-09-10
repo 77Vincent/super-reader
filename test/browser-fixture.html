@@ -4,49 +4,70 @@
     <meta charset="utf-8">
     <title>Super Reader 浏览器测试</title>
     <link rel="stylesheet" href="../src/content.css">
-    <style>body { max-width: 720px; margin: 48px auto; font: 20px/2 system-ui; }</style>
+    <style>
+      body { max-width: 720px; margin: 24px auto; font: 20px/1.6 system-ui; }
+      #metrics { font: 12px/1.4 monospace; white-space: pre-wrap; }
+      #offscreen { position: absolute; top: 100000px; }
+    </style>
   </head>
   <body>
     <button id="toggle" type="button">开启</button>
     <p id="sample">我一直在思考明天早上的早餐吃什么</p>
     <p id="inline-sample">这里的<strong>加粗内容需要保留原来的标签</strong>，后面的文字也应该可以正常阅读。</p>
+    <p id="long-sample"></p>
     <pre><code id="ignored">代码区域的中文内容应该保持原样。</code></pre>
+    <pre id="metrics">Ready</pre>
+    <p id="offscreen">屏幕外的这段中文不应该参与本次处理，也不应该出现任何分隔线。</p>
+    <script src="../src/frontend/read.js"></script>
+    <script src="../src/frontend/write.js"></script>
+    <script src="../src/inference-service.js"></script>
+    <script src="../src/app/reader.js"></script>
     <script>
-      // A button stands in for the toolbar. The real inference service and
-      // Worker run here instead of in an offscreen page.
-      const fixtureListeners = [];
-      const fixtureSender = { id: "test-extension", tab: { id: 1 } };
+      // A plain webpage host: no extension APIs or Chrome mocks are needed.
       const fixtureToggle = document.querySelector("#toggle");
+      const metrics = document.querySelector("#metrics");
+      document.querySelector("#long-sample").textContent = "将长句切分成短句加速阅读理解。".repeat(15);
+      let requests = 0;
+      let inputLengths = [];
+      let states = [];
+      let started = 0;
 
       function renderFixtureState(state) {
+        if (state.busy) {
+          requests = 0;
+          inputLengths = [];
+          states = [];
+          started = performance.now();
+        }
+        states.push({ ...state, markers: document.querySelectorAll(".super-reader-divider").length });
         fixtureToggle.disabled = state.busy;
         fixtureToggle.textContent = state.error ? "出错，点击重试" : state.busy ? "处理中" : state.enabled ? "关闭" : "开启";
         document.body.dataset.enabled = String(state.enabled);
         document.body.dataset.busy = String(state.busy);
+        metrics.textContent = JSON.stringify({
+          requests, inputLengths, states,
+          elapsedMs: started ? Math.round(performance.now() - started) : 0,
+        }, null, 2);
       }
-      function fixtureMessage(message) {
-        return new Promise((resolve) => {
-          fixtureListeners.forEach((listener) => listener(message, fixtureSender, resolve));
-        });
-      }
-      window.chrome ||= {};
-      window.chrome.runtime = {
-        id: fixtureSender.id,
-        getURL: (path) => new URL(`../${path}`, location.href).href,
-        onMessage: { addListener: (listener) => fixtureListeners.push(listener) },
-        async sendMessage(message) {
-          if (message.type === "SUPER_READER_STATE") {
-            renderFixtureState(message);
-            return {};
-          }
-          return fixtureMessage({ ...message, target: "offscreen", type: "SUPER_READER_RUN_INFERENCE" });
+      let fixtureService;
+      SuperReader.createInferenceAdapter = () => ({
+        workerUrl: new URL("../src/inference-worker.js", location.href).href,
+        connect(service) { fixtureService = service; },
+      });
+      SuperReader.createReaderAdapter = () => ({
+        async process(texts) {
+          requests += 1;
+          inputLengths = texts.map((text) => text.length);
+          return fixtureService.runInference(texts);
         },
-      };
-      fixtureToggle.addEventListener("click", async () => {
-        renderFixtureState(await fixtureMessage({ type: "SUPER_READER_TOGGLE" }));
+        publishState: renderFixtureState,
+        connect(reader) {
+          fixtureToggle.addEventListener("click", () => { reader.toggle(); });
+          renderFixtureState(reader.status());
+        },
       });
     </script>
-    <script src="../src/inference-service.js"></script>
-    <script src="../src/content.js"></script>
+    <script src="../src/start-inference.js"></script>
+    <script src="../src/start-reader.js"></script>
   </body>
 </html>

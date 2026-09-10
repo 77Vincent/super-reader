@@ -1,6 +1,6 @@
 (function exposeModelBackend(root, factory) {
   const modelData = typeof module === "object" && module.exports
-    ? require("./boundary-model-data.js")
+    ? require("../boundary-model-data.js")
     : root.SuperReaderBoundaryModelData;
   const api = factory(modelData);
 

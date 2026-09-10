@@ -1,8 +1,16 @@
-(function initializeInferenceService() {
-  "use strict";
+"use strict";
 
+globalThis.SuperReader ??= {};
+
+/**
+ * Uses standard Worker APIs. The host supplies the URL and routes requests.
+ * @param {{workerUrl: string}} options
+ * @returns {InferenceService}
+ */
+globalThis.SuperReader.createInferenceService = function createInferenceService({ workerUrl }) {
   let inferenceWorker = null;
   let nextRequestId = 1;
+  // Correlate requests from different pages sharing this Worker; no batch queue.
   const pendingRequests = new Map();
   const REQUEST_TIMEOUT_MS = 5000;
 
@@ -19,9 +27,7 @@
   function ensureInferenceWorker() {
     if (inferenceWorker) return inferenceWorker;
 
-    inferenceWorker = new Worker(
-      chrome.runtime.getURL("src/inference-worker.js"),
-    );
+    inferenceWorker = new Worker(workerUrl);
     inferenceWorker.onmessage = (event) => {
       const request = pendingRequests.get(event.data?.id);
       if (!request) return;
@@ -39,6 +45,10 @@
 
   function runInference(texts) {
     return new Promise((resolve, reject) => {
+      if (!Array.isArray(texts) || texts.some((text) => typeof text !== "string")) {
+        throw new TypeError("Super Reader received invalid inference input");
+      }
+      if (texts.length === 0) { resolve([]); return; }
       const worker = ensureInferenceWorker();
       const id = nextRequestId;
       nextRequestId += 1;
@@ -54,31 +64,5 @@
     });
   }
 
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (
-      message?.target !== "offscreen" ||
-      message?.type !== "SUPER_READER_RUN_INFERENCE"
-    ) {
-      return undefined;
-    }
-
-    const texts = message.texts;
-    if (
-      sender.id !== chrome.runtime.id ||
-      !Array.isArray(texts) ||
-      texts.length !== 1 ||
-      typeof texts[0] !== "string" || texts[0].length > 128
-    ) {
-      sendResponse({ error: "Super Reader received invalid inference input" });
-      return false;
-    }
-
-    void runInference(texts).then(
-      (offsetsByText) => sendResponse({ offsetsByText }),
-      (error) => sendResponse({
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
-    return true;
-  });
-})();
+  return { runInference };
+};

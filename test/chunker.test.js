@@ -10,7 +10,7 @@ const {
   splitClauses,
   tokenizeHanCharacters,
   visualLength,
-} = require("../src/chunker.js");
+} = require("../src/backend/chunker.js");
 
 test("model chunks preserve the complete source text", () => {
   const text = "我一直在思考明天早上的早餐吃什么";

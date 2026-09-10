@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { readFileSync } = require("node:fs");
 const { join } = require("node:path");
-const backend = require("../src/model-backend.js");
+const backend = require("../src/backend/inference.js");
 
 const projectRoot = join(__dirname, "..");
 
@@ -49,7 +49,7 @@ test("browser inference matches PyTorch reference logits", () => {
 });
 
 test("runtime inference contains no handwritten Chinese lexical rules", () => {
-  const implementation = ["src/chunker.js", "src/model-backend.js"]
+  const implementation = ["src/backend/chunker.js", "src/backend/inference.js"]
     .map((path) => readFileSync(join(projectRoot, path), "utf8"))
     .join("\n");
 

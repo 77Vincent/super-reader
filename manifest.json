@@ -9,6 +9,6 @@
     "default_title": "Super Reader"
   },
   "background": {
-    "service_worker": "src/background.js"
+    "service_worker": "src/platform/chrome/background.js"
   }
 }

@@ -1,0 +1,38 @@
+// Shared contracts, expressed as JSDoc so the project stays plain JavaScript.
+// This file contains no runtime code and does not need script injection.
+
+/**
+ * @typedef {Object} ReaderState
+ * @property {boolean} enabled
+ * @property {boolean} busy
+ * @property {string | null} [error]
+ */
+
+/**
+ * @typedef {Object} Reader
+ * @property {() => ReaderState} status
+ * @property {() => ReaderState} toggle
+ */
+
+/**
+ * Host services used by the reader. No browser message types cross this boundary.
+ * @typedef {Object} ReaderServices
+ * @property {(texts: string[]) => Promise<number[][]>} process One viewport; rejects on failure.
+ * @property {(state: ReaderState) => void} publishState Handles delivery errors itself.
+ */
+
+/**
+ * connect() attaches the host's controls to the reader; startup calls it once.
+ * @typedef {ReaderServices & {connect: (reader: Reader) => void}} ReaderAdapter
+ */
+
+/**
+ * @typedef {Object} InferenceService
+ * @property {(texts: string[]) => Promise<number[][]>} runInference Rejects on failure.
+ */
+
+/**
+ * @typedef {Object} InferenceAdapter
+ * @property {string} workerUrl A URL loadable by the standard Worker constructor.
+ * @property {(service: InferenceService) => void} connect Routes host requests and responses.
+ */

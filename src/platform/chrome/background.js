@@ -1,5 +1,6 @@
 "use strict";
 
+// Chrome entry point: toolbar, script loading, routing, and offscreen host.
 const INFERENCE_PAGE = "src/inference.html";
 let creatingInferencePage = null;
 const openingTabs = new Set();
@@ -37,10 +38,6 @@ async function ensureInferencePage() {
 }
 
 async function runInference(texts) {
-  if (!Array.isArray(texts) || texts.length !== 1 ||
-      typeof texts[0] !== "string" || texts[0].length > 128) {
-    throw new TypeError("Expected one text batch of at most 128 UTF-16 units");
-  }
   await ensureInferencePage();
   return chrome.runtime.sendMessage({
     target: "offscreen", type: "SUPER_READER_RUN_INFERENCE", texts,
@@ -58,10 +55,17 @@ async function toggleTab(tab) {
     } catch (_) { /* The page may predate extension installation. */ }
     if (!ready) {
       await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["src/content.css"] });
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["src/content.js"] });
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: [
+          "src/frontend/read.js", "src/frontend/write.js", "src/app/reader.js",
+          "src/platform/chrome/content.js", "src/start-reader.js",
+        ],
+      });
     }
-    const response = await chrome.tabs.sendMessage(tab.id, { type: "SUPER_READER_TOGGLE" });
-    await updateAction(tab.id, response);
+    // The reader publishes every transition. A command response can already be
+    // stale when it arrives, so it must not overwrite a newer published state.
+    await chrome.tabs.sendMessage(tab.id, { type: "SUPER_READER_TOGGLE" });
   } catch (error) {
     await updateAction(tab.id, { error: error.message }).catch(() => {});
   } finally {
@@ -79,7 +83,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     void updateAction(sender.tab.id, message).catch(() => {});
     sendResponse({});
   }
-  if (message?.type !== "SUPER_READER_SPLIT_TEXTS") return;
+  if (message?.type !== "SUPER_READER_PROCESS") return;
   void runInference(message.texts).then(sendResponse, (error) => sendResponse({ error: error.message }));
   return true;
 });

@@ -1,6 +1,6 @@
 (function exposeChunker(root, factory) {
   const modelBackend = typeof module === "object" && module.exports
-    ? require("./model-backend.js")
+    ? require("./inference.js")
     : root.SuperReaderModelBackend;
   const api = factory(modelBackend);
 
@@ -326,7 +326,27 @@
     ));
   }
 
+  /**
+   * Process all texts from one viewport in order. Offsets are ascending UTF-16
+   * positions inside each corresponding input; no DOM or task scheduling here.
+   * @param {string[]} texts
+   * @returns {number[][]}
+   */
+  function process(texts) {
+    const segmenter = createSegmenter("zh-CN");
+    return texts.map((text) => {
+      const offsets = [];
+      let offset = 0;
+      for (const chunk of buildVisualChunks(text, { segmenter })) {
+        if (chunk.separated) offsets.push(offset);
+        offset += chunk.text.length;
+      }
+      return offsets;
+    });
+  }
+
   return Object.freeze({
+    process,
     boundaryFallsInsideQuantityPhrase,
     boundaryFallsInsideWord,
     buildVisualChunks,

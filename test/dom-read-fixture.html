@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8">
+  <title>DOM read layout tests</title>
+  <style>
+    body { margin: 0; font: 14px/1.5 system-ui; }
+    header { position: fixed; right: 16px; top: 8px; max-width: 650px; }
+    #fixture { position: fixed; left: 16px; top: 100px; width: 200px; font: 20px/24px monospace; }
+    #fixture p { margin: 0; }
+    pre { white-space: pre-wrap; }
+  </style>
+  <header>
+    <button id="run" type="button">Run layout tests</button>
+    <pre id="results">Ready</pre>
+  </header>
+  <div id="fixture"></div>
+  <script src="../src/frontend/read.js"></script>
+  <script src="../src/frontend/write.js"></script>
+  <script>
+    const fixture = document.querySelector("#fixture");
+    const output = document.querySelector("#results");
+    const tests = [];
+    const assert = (condition, message) => { if (!condition) throw new Error(message); };
+    const addTest = (name, run) => tests.push({ name, run });
+    const intersects = (rect, clip) => rect.width > 0 && rect.height > 0 &&
+      rect.right > clip.left && rect.left < clip.right && rect.bottom > clip.top && rect.top < clip.bottom;
+
+    function read() {
+      const observer = new MutationObserver(() => {});
+      observer.observe(fixture, { subtree: true, childList: true, characterData: true, attributes: true });
+      const start = performance.now();
+      const snapshot = SuperReader.read();
+      const elapsed = performance.now() - start;
+      const mutations = observer.takeRecords();
+      observer.disconnect();
+      assert(mutations.length === 0, "read changed the DOM");
+      snapshot.sources.forEach((source, index) => {
+        assert(source.node.parentNode === source.parent, "source parent changed");
+        assert(source.text.slice(source.start, source.end) === snapshot.texts[index], "mapping does not match text");
+        assert(!/[\uDC00-\uDFFF]/u.test(source.text[source.start]), "split a surrogate pair at start");
+        assert(!/[\uD800-\uDBFF]/u.test(source.text[source.end - 1]), "split a surrogate pair at end");
+      });
+      return { snapshot, elapsed };
+    }
+
+    // Independent per-character oracle for small samples around the visible area.
+    function verifyCharacters(node, snapshot, clip = snapshot.viewport, start = 0, end = node.length) {
+      const range = document.createRange();
+      for (let offset = start; offset < end;) {
+        const size = node.nodeValue.codePointAt(offset) > 0xffff ? 2 : 1;
+        if (/\p{Script=Han}/u.test(node.nodeValue.slice(offset, offset + size))) {
+          range.setStart(node, offset);
+          range.setEnd(node, offset + size);
+          const visible = intersects(range.getBoundingClientRect(), clip);
+          const included = snapshot.sources.some((source) => source.node === node &&
+            source.start <= offset && source.end >= offset + size);
+          assert(visible === included, `visibility mismatch at offset ${offset}`);
+        }
+        offset += size;
+      }
+    }
+
+    addTest("ordinary and inline text; excluded and hidden elements", () => {
+      fixture.innerHTML = `<p>正文中文<strong>加粗中文</strong>English only</p>
+        <pre>代码中文</pre><button>按钮中文</button><div contenteditable>编辑中文</div>
+        <div hidden>隐藏中文</div><div aria-hidden="true">隐藏中文</div>
+        <div style="opacity:0"><span>透明中文</span></div>
+        <div style="display:none"><span>隐藏中文</span></div>
+        <div style="visibility:hidden">隐藏中文<span style="visibility:visible">恢复可见</span></div>
+        <span style="display:contents">无盒子中文</span>`;
+      const { snapshot } = read();
+      assert(JSON.stringify(snapshot.texts) === JSON.stringify(["正文中文", "加粗中文", "恢复可见", "无盒子中文"]), "unexpected eligible text");
+    });
+
+    addTest("fully offscreen text", () => {
+      fixture.style.top = `${innerHeight + 20}px`;
+      fixture.textContent = "视口以外的中文";
+      assert(read().snapshot.texts.length === 0, "read offscreen text");
+    });
+
+    addTest("wrapped text clipped at top and left viewport edges", () => {
+      fixture.style.top = "-8px";
+      fixture.style.left = "-25px";
+      fixture.textContent = "甲乙丙丁戊己庚辛壬癸".repeat(8);
+      const node = fixture.firstChild;
+      const { snapshot } = read();
+      assert(snapshot.texts.length > 0, "missed visible text");
+      verifyCharacters(node, snapshot);
+    });
+
+    addTest("100,000-character node spanning the viewport", () => {
+      fixture.style.top = "-120000px";
+      fixture.textContent = "汉".repeat(100_000);
+      const node = fixture.firstChild;
+      const { snapshot, elapsed } = read();
+      const sources = snapshot.sources.filter((source) => source.node === node);
+      assert(sources.length > 0, "missed the visible middle of the long node");
+      const start = sources[0].start;
+      const end = sources[sources.length - 1].end;
+      const length = snapshot.texts.reduce((sum, text) => sum + text.length, 0);
+      assert(start > 0 && end < node.length && length < 2000, "captured more than the viewport");
+      verifyCharacters(node, snapshot, snapshot.viewport, Math.max(0, start - 20), Math.min(node.length, end + 20));
+      return `${length} / ${node.length} UTF-16 units; read ${elapsed.toFixed(1)} ms`;
+    });
+
+    addTest("nested scroll container clips visible text", () => {
+      fixture.innerHTML = `<div style="height:65px;width:95px;overflow:auto;border:3px solid"><div></div></div>`;
+      const scroller = fixture.firstChild;
+      const content = scroller.firstChild;
+      content.textContent = "甲乙丙丁戊己庚辛壬癸".repeat(50);
+      scroller.scrollTop = Math.floor(scroller.scrollHeight / 2);
+      const { snapshot } = read();
+      assert(snapshot.texts.length > 0, "missed visible scroller text");
+      const rect = scroller.getBoundingClientRect();
+      const left = rect.left + scroller.clientLeft;
+      const top = rect.top + scroller.clientTop;
+      verifyCharacters(content.firstChild, snapshot, {
+        left, top, right: left + scroller.clientWidth, bottom: top + scroller.clientHeight,
+      });
+    });
+
+    addTest("supplementary Han characters at a viewport edge", () => {
+      fixture.style.left = "-15px";
+      fixture.textContent = "𠀀甲𠮷乙丙丁戊己";
+      const { snapshot } = read();
+      verifyCharacters(fixture.firstChild, snapshot);
+    });
+
+    addTest("overflow on a plain inline span does not clip its text", () => {
+      fixture.innerHTML = `<span style="overflow:hidden">这段仍然可见</span>`;
+      const { snapshot } = read();
+      assert(snapshot.texts[0] === "这段仍然可见", "treated an inline span as a clipping box");
+    });
+
+    addTest("scaled scroll container uses viewport coordinates", () => {
+      fixture.innerHTML = `<div style="height:65px;width:95px;overflow:auto;border:3px solid;transform:scale(1.5);transform-origin:top left"><div></div></div>`;
+      const scroller = fixture.firstChild;
+      const content = scroller.firstChild;
+      content.textContent = "甲乙丙丁戊己庚辛壬癸".repeat(50);
+      scroller.scrollTop = Math.floor(scroller.scrollHeight / 2);
+      const { snapshot } = read();
+      assert(snapshot.texts.length > 0, "missed scaled scroller text");
+      const rect = scroller.getBoundingClientRect();
+      const left = rect.left + scroller.clientLeft * 1.5;
+      const top = rect.top + scroller.clientTop * 1.5;
+      verifyCharacters(content.firstChild, snapshot, {
+        left, top, right: left + scroller.clientWidth * 1.5, bottom: top + scroller.clientHeight * 1.5,
+      });
+    });
+
+    addTest("snapshots retain their original text after DOM changes", () => {
+      fixture.textContent = "原来的中文";
+      const node = fixture.firstChild;
+      const first = read().snapshot;
+      node.nodeValue = "更新的中文";
+      const second = read().snapshot;
+      assert(first.texts[0] === "原来的中文" && first.sources[0].text === "原来的中文", "old snapshot changed");
+      assert(second.texts[0] === "更新的中文", "new snapshot missed the update");
+    });
+
+    addTest("write handles multiple clipped ranges in one native text node and clear restores it", () => {
+      fixture.style.left = "-25px";
+      const original = "甲乙丙丁戊己庚辛壬癸".repeat(8);
+      fixture.textContent = original;
+      const { snapshot } = read();
+      assert(snapshot.sources.length > 1, "fixture must produce several visible ranges");
+      const offsets = snapshot.texts.map((text) => text.length > 2 ? [1, 2] : []);
+      const expected = snapshot.sources.flatMap((source, i) => offsets[i].map((offset) => source.start + offset));
+      SuperReader.write(snapshot, offsets);
+      let offset = 0;
+      const actual = [];
+      fixture.childNodes.forEach((node) => {
+        if (node.nodeType === Node.TEXT_NODE) offset += node.nodeValue.length;
+        else actual.push(offset);
+      });
+      assert(JSON.stringify(actual) === JSON.stringify(expected), "markers shifted from original offsets");
+      assert(fixture.textContent === original, "write changed text");
+      SuperReader.clearMarkers();
+      assert(fixture.childNodes.length === 1 && fixture.textContent === original, "clear did not restore text");
+    });
+
+    document.querySelector("#run").addEventListener("click", async () => {
+      await document.fonts.ready;
+      const results = [];
+      let passed = 0;
+      for (const { name, run } of tests) {
+        fixture.removeAttribute("style");
+        fixture.replaceChildren();
+        try {
+          const detail = run();
+          results.push(`PASS ${name}${detail ? ` — ${detail}` : ""}`);
+          passed += 1;
+        } catch (error) {
+          results.push(`FAIL ${name}: ${error.message}`);
+        }
+      }
+      fixture.replaceChildren();
+      output.textContent = `${passed}/${tests.length} passed\n${results.join("\n")}`;
+    });
+  </script>
+</html>
