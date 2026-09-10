@@ -4,7 +4,7 @@ const { readFileSync } = require("node:fs");
 const { join } = require("node:path");
 const vm = require("node:vm");
 
-const scripts = ["viewport.js", "visibility.js", "read.js"].map((name) => {
+const scripts = ["viewport.js", "visibility.js", "processed-text.js", "read.js"].map((name) => {
   const filename = join(__dirname, "../src/frontend", name);
   return { filename, source: readFileSync(filename, "utf8") };
 });

@@ -20,6 +20,8 @@ globalThis.SuperReader ??= {};
  * DOM layer: check source validity and apply offsets. Settle only after all writes
  * have stopped. Both asynchronous operations reject on failure.
  * @property {() => void} clear DOM layer: synchronously remove markers.
+ * @property {(onChange: () => void) => (() => void)} watch Subscribe to input
+ * changes; return a function that removes the subscription.
  * @property {(state: ReaderState) => void} publishState Adapter: deliver state;
  * handle delivery errors inside the adapter.
  */
@@ -35,14 +37,44 @@ globalThis.SuperReader.createReader = function createReader({
   process,
   write,
   clear,
+  watch,
   publishState,
 }) {
   let enabled = false;
   let busy = false;
   let error = null;
+  let refreshPending = false;
+  let refreshTimer = null;
+  let stopWatching = null;
+  const DEBOUNCE_MS = 200;
 
   function status() {
     return { enabled, busy, error };
+  }
+
+  function refreshWhenReady() {
+    if (!enabled || busy || !refreshPending || refreshTimer !== null) return;
+    // Clear before starting, so changes during this operation can request another.
+    refreshPending = false;
+    void runTask();
+  }
+
+  function requestRefresh() {
+    if (!enabled) return;
+    refreshPending = true;
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      refreshWhenReady();
+    }, DEBOUNCE_MS);
+  }
+
+  function stopRefreshes() {
+    stopWatching?.();
+    stopWatching = null;
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+    refreshPending = false;
   }
 
   async function runTask() {
@@ -52,15 +84,19 @@ globalThis.SuperReader.createReader = function createReader({
 
     try {
       const snapshot = read();
-      const results = await process(snapshot.texts);
-      await write(snapshot, results);
+      if (snapshot.texts.length > 0) {
+        const results = await process(snapshot.texts);
+        await write(snapshot, results);
+      }
     } catch (failure) {
       error = failure instanceof Error ? failure.message : String(failure);
       enabled = false;
+      stopRefreshes();
       clear();
     } finally {
       busy = false;
       publishState({ ...status() });
+      refreshWhenReady();
     }
   }
 
@@ -70,9 +106,11 @@ globalThis.SuperReader.createReader = function createReader({
     error = null;
     enabled = !enabled;
     if (enabled) {
+      stopWatching = watch(requestRefresh);
       // Keep toggle synchronous for the adapter; completion is published separately.
       void runTask();
     } else {
+      stopRefreshes();
       clear();
       publishState(status());
     }

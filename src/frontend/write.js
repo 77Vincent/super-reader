@@ -7,7 +7,7 @@
 
   function sourceIsCurrent(source) {
     return source.node.isConnected && source.node.parentNode === source.parent &&
-      source.node.nodeValue.slice(0, source.end) === source.text.slice(0, source.end);
+      source.node.nodeValue === source.text;
   }
 
   // Adds markers to the document at the specified offsets within a text node.
@@ -21,10 +21,13 @@
       marker.className = SUPER_READER_SELECTOR;
       marker.setAttribute("aria-hidden", "true");
       right.before(marker);
+      globalThis.SuperReader.rememberProcessedText(right);
     }
+    // Include the remaining left fragment and nodes requiring no markers.
+    globalThis.SuperReader.rememberProcessedText(source.node);
   };
 
-  /** Apply a complete result synchronously; later source ranges must be split first. */
+  /** Apply a complete result synchronously to the unchanged source nodes. */
   globalThis.SuperReader.write = function write(snapshot, results) {
     for (let index = snapshot.sources.length - 1; index >= 0; index -= 1) {
       globalThis.SuperReader.addMarkers(snapshot.sources[index], results[index]);
@@ -39,5 +42,6 @@
       marker.remove();
     });
     parents.forEach((parent) => parent.normalize());
+    globalThis.SuperReader.clearProcessedText();
   };
 })();

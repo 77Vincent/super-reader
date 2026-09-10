@@ -16,14 +16,17 @@
   <div id="fixture"></div>
   <script src="../src/frontend/viewport.js"></script>
   <script src="../src/frontend/visibility.js"></script>
+  <script src="../src/frontend/processed-text.js"></script>
   <script src="../src/frontend/read.js"></script>
   <script src="../src/frontend/write.js"></script>
+  <script src="../src/app/reader.js"></script>
   <script>
     const fixture = document.querySelector("#fixture");
     const output = document.querySelector("#results");
     const tests = [];
     const assert = (condition, message) => { if (!condition) throw new Error(message); };
     const addTest = (name, run) => tests.push({ name, run });
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 250));
     const intersects = (rect, clip) => rect.width > 0 && rect.height > 0 &&
       rect.right > clip.left && rect.left < clip.right && rect.bottom > clip.top && rect.top < clip.bottom;
 
@@ -188,7 +191,75 @@
       assert(fixture.childNodes.length === 1 && fixture.textContent === original, "clear did not restore text");
     });
 
-    document.querySelector("#run").addEventListener("click", async () => {
+    addTest("nested scrolling processes newly visible nodes without repeating earlier text", async () => {
+      fixture.innerHTML = `<div style="height:60px;overflow:auto"><p>首屏中文文字</p><div style="height:300px"></div><p>滚动后新增中文</p></div>`;
+      const scroller = fixture.firstChild;
+      const inputs = [];
+      const reader = SuperReader.createReader({
+        read: SuperReader.read,
+        async process(texts) { inputs.push([...texts]); return texts.map(() => [2]); },
+        write: SuperReader.write,
+        clear: SuperReader.clearMarkers,
+        watch: (onChange) => SuperReader.watchViewport(document, onChange),
+        publishState() {},
+      });
+      try {
+        reader.toggle();
+        await settle();
+        assert(JSON.stringify(inputs) === JSON.stringify([["首屏中文文字"]]), "unexpected initial input");
+        scroller.scrollTop = scroller.scrollHeight;
+        await settle();
+        assert(JSON.stringify(inputs) === JSON.stringify([["首屏中文文字"], ["滚动后新增中文"]]), "nested scroll was missed or duplicated");
+        scroller.scrollTop = 0;
+        await settle();
+        assert(inputs.length === 2, "processed an overlapping node twice");
+        assert(fixture.querySelectorAll(".super-reader-divider").length === 2, "duplicated or lost markers");
+      } finally {
+        if (reader.status().enabled) reader.toggle();
+      }
+    });
+
+    addTest("resize while busy waits, then reads the latest screen once", async () => {
+      fixture.innerHTML = `<p>原来可见的中文</p><p style="position:fixed;left:16px;top:${innerHeight + 100}px">后来可见的中文</p>`;
+      const next = fixture.lastChild;
+      const inputs = [];
+      let finishFirst;
+      let active = 0;
+      const reader = SuperReader.createReader({
+        read: SuperReader.read,
+        async process(texts) {
+          inputs.push([...texts]);
+          active += 1;
+          assert(active === 1, "overlapping inference operations");
+          if (inputs.length === 1) await new Promise((resolve) => { finishFirst = resolve; });
+          active -= 1;
+          return texts.map(() => [2]);
+        },
+        write: SuperReader.write,
+        clear: SuperReader.clearMarkers,
+        watch: (onChange) => SuperReader.watchViewport(document, onChange),
+        publishState() {},
+      });
+      try {
+        reader.toggle();
+        next.style.top = "160px";
+        for (let i = 0; i < 5; i += 1) window.dispatchEvent(new Event("resize"));
+        await settle();
+        assert(inputs.length === 1 && reader.status().busy, "refresh started before the first operation completed");
+        finishFirst();
+        await settle();
+        assert(JSON.stringify(inputs) === JSON.stringify([["原来可见的中文"], ["后来可见的中文"]]), "did not capture the latest unprocessed text");
+        assert(!reader.status().busy && reader.status().enabled, "reader did not finish normally");
+      } finally {
+        finishFirst?.();
+        await settle();
+        if (reader.status().enabled) reader.toggle();
+      }
+    });
+
+    document.querySelector("#run").addEventListener("click", async (event) => {
+      event.currentTarget.disabled = true;
+      output.textContent = "Running";
       await document.fonts.ready;
       const results = [];
       let passed = 0;
@@ -196,15 +267,17 @@
         fixture.removeAttribute("style");
         fixture.replaceChildren();
         try {
-          const detail = run();
+          const detail = await run();
           results.push(`PASS ${name}${detail ? ` — ${detail}` : ""}`);
           passed += 1;
         } catch (error) {
           results.push(`FAIL ${name}: ${error.message}`);
         }
+        SuperReader.clearMarkers();
       }
       fixture.replaceChildren();
       output.textContent = `${passed}/${tests.length} passed\n${results.join("\n")}`;
+      document.querySelector("#run").disabled = false;
     });
   </script>
 </html>

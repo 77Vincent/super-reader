@@ -92,13 +92,13 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
   html.append(body);
   document = {
     body, documentElement: html,
-    defaultView: {
-      visualViewport: { offsetLeft: 0, offsetTop: 0, width: 800, height: 600 },
+    defaultView: Object.assign(new EventTarget(), {
+      visualViewport: Object.assign(new EventTarget(), { offsetLeft: 0, offsetTop: 0, width: 800, height: 600 }),
       getComputedStyle: () => ({
         display: "block", visibility: "visible", opacity: "1",
         contentVisibility: "visible", overflowX: "visible", overflowY: "visible",
       }),
-    },
+    }),
     createRange() {
       let node;
       return {
@@ -127,15 +127,19 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
     markers: () => document.querySelectorAll(),
     toggle: () => reader.toggle(),
     finish: drainPromises,
+    scroll: () => document.defaultView.dispatchEvent(new Event("scroll")),
+    resize: () => document.defaultView.dispatchEvent(new Event("resize")),
+    async settle() { await new Promise((resolve) => setTimeout(resolve, 220)); await drainPromises(); },
     text(value, parent = paragraph) { const node = new TextNode(value); parent.append(node); return node; },
     element(tag, parent = paragraph) { const node = new Element(tag); parent.append(node); return node; },
   };
-  const context = vm.createContext({ document, NodeFilter: { SHOW_ELEMENT: 1, SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2, FILTER_SKIP: 3 } });
+  const context = vm.createContext({ document, setTimeout, clearTimeout, NodeFilter: { SHOW_ELEMENT: 1, SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2, FILTER_SKIP: 3 } });
   const run = (path) => vm.runInContext(
     readFileSync(join(__dirname, "..", path), "utf8"), context, { filename: path },
   );
   run("src/frontend/viewport.js");
   run("src/frontend/visibility.js");
+  run("src/frontend/processed-text.js");
   run("src/frontend/read.js");
   run("src/frontend/write.js");
   run("src/app/reader.js");
@@ -154,6 +158,7 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
     // Reinjecting must not register a second reader or message handler.
     run("src/frontend/viewport.js");
     run("src/frontend/visibility.js");
+    run("src/frontend/processed-text.js");
     run("src/frontend/read.js");
     run("src/frontend/write.js");
     run("src/app/reader.js");
@@ -257,18 +262,17 @@ test("the original viewport snapshot is used even if the viewport moves during p
   assert.equal(page.requests.length, 1);
 });
 
-test("multiple visible ranges in one text node are written from the end without shifting earlier offsets", () => {
+test("whole-node offsets are written from the end without shifting earlier positions", () => {
   const text = "甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳";
   const page = createPage(text);
   const node = page.paragraph.childNodes[0];
   const snapshot = {
-    texts: [text.slice(2, 6), text.slice(10, 14)],
+    texts: [text],
     sources: [
-      { node, parent: page.paragraph, text, start: 2, end: 6 },
-      { node, parent: page.paragraph, text, start: 10, end: 14 },
+      { node, parent: page.paragraph, text, start: 0, end: text.length },
     ],
   };
-  page.write(snapshot, [[1, 3], [1, 3]]);
+  page.write(snapshot, [[3, 5, 11, 13]]);
   let offset = 0;
   const positions = [];
   for (const child of page.paragraph.childNodes) {
@@ -302,7 +306,7 @@ test("a failed operation disables and unlocks the reader, retains the error, and
   assert.equal(page.markers().length, 1);
 });
 
-for (const mutation of ["change", "detach", "reparent"]) {
+for (const mutation of ["change", "append", "detach", "reparent"]) {
   test(`results for text that the page did ${mutation} during inference are discarded`, async () => {
     const page = createPage();
     let complete;
@@ -310,6 +314,7 @@ for (const mutation of ["change", "detach", "reparent"]) {
     page.toggle();
     const node = page.paragraph.childNodes[0];
     if (mutation === "change") node.nodeValue = "页面更新了这段中文";
+    if (mutation === "append") node.nodeValue += "后面新增的文字";
     if (mutation === "detach") node.remove();
     if (mutation === "reparent") page.element("strong").append(node);
     complete({ offsetsByText: [[4]] });
@@ -330,7 +335,7 @@ test("pages have independent switches and excluded text never enters the process
     const page = createPage(sampleText, tag);
     page.toggle();
     await page.finish();
-    assert.deepEqual(page.requests, [[]]);
+    assert.deepEqual(page.requests, []);
     assert.equal(page.markers().length, 0);
     assert.equal(page.states.at(-1).busy, false);
   }
@@ -345,4 +350,76 @@ test("Chrome rejects an incomplete viewport response before any markers are writ
   assert.match(page.states.at(-1).error, /incomplete viewport result/u);
   assert.equal(page.states.at(-1).enabled, false);
   assert.equal(page.markers().length, 0);
+});
+
+test("scroll and resize process newly visible text once and leave overlapping markers unchanged", async () => {
+  const page = createPage(sampleText, "p", true);
+  const nextParent = page.element("strong");
+  const next = page.text("滚动后新出现的文字需要处理", nextParent);
+  next.geometry = () => ({ left: 0, top: 700, right: 80, bottom: 720, width: 80, height: 20 });
+  page.toggle();
+  await page.finish();
+  const originalMarker = page.markers()[0];
+  next.geometry = () => ({ left: 0, top: 100, right: 80, bottom: 120, width: 80, height: 20 });
+  for (let i = 0; i < 5; i += 1) { page.scroll(); page.resize(); }
+  assert.equal(page.requests.length, 1);
+  await page.settle();
+  assert.deepEqual(page.requests, [[sampleText], ["滚动后新出现的文字需要处理"]]);
+  assert.equal(page.markers().length, 2);
+  assert.equal(page.markers()[0], originalMarker);
+  page.document.defaultView.visualViewport.dispatchEvent(new Event("resize"));
+  await page.settle();
+  assert.equal(page.requests.length, 2);
+  assert.equal(page.markers().length, 2);
+  page.toggle();
+});
+
+test("nodes needing no markers are remembered, while changed text is processed again", async () => {
+  const page = createPage();
+  page.infer = async (texts) => ({ offsetsByText: texts.map(() => []) });
+  page.toggle();
+  await page.finish();
+  page.resize();
+  await page.settle();
+  assert.deepEqual(page.requests, [[sampleText]]);
+  page.paragraph.childNodes[0].nodeValue = "页面已更新这段中文文字";
+  page.scroll();
+  await page.settle();
+  assert.deepEqual(page.requests, [[sampleText], ["页面已更新这段中文文字"]]);
+  page.toggle();
+});
+
+test("disable cancels scheduled refreshes, removes listeners, and resets processed text for re-enable", async () => {
+  const page = createPage();
+  page.toggle();
+  await page.finish();
+  page.scroll();
+  page.toggle();
+  page.scroll();
+  page.resize();
+  await page.settle();
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.markers().length, 0);
+  page.toggle();
+  await page.finish();
+  assert.deepEqual(page.requests, [[sampleText], [sampleText]]);
+  assert.equal(page.markers().length, 1);
+  page.toggle();
+});
+
+test("a stale result is not remembered and the pending refresh processes the changed node", async () => {
+  const page = createPage();
+  let finishFirst;
+  page.infer = () => new Promise((resolve) => { finishFirst = resolve; });
+  page.toggle();
+  page.paragraph.childNodes[0].nodeValue = "处理期间页面更新的新中文文字";
+  page.scroll();
+  await page.settle();
+  assert.equal(page.requests.length, 1);
+  page.infer = async () => ({ offsetsByText: [[4]] });
+  finishFirst({ offsetsByText: [[4]] });
+  await page.finish();
+  assert.deepEqual(page.requests, [[sampleText], ["处理期间页面更新的新中文文字"]]);
+  assert.equal(page.markers().length, 1);
+  page.toggle();
 });

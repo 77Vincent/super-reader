@@ -58,7 +58,7 @@ async function toggleTab(tab) {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         files: [
-          "src/frontend/viewport.js", "src/frontend/visibility.js",
+          "src/frontend/viewport.js", "src/frontend/visibility.js", "src/frontend/processed-text.js",
           "src/frontend/read.js", "src/frontend/write.js", "src/app/reader.js",
           "src/platform/chrome/content.js", "src/start-reader.js",
         ],

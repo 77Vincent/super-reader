@@ -6,24 +6,26 @@
 
 ```text
 开启 → 锁定 toggle → read() → process(texts) → write(snapshot, results) → 解锁
-关闭 → clear()
-失败 → 记录 error → 关闭并清理 → 解锁，等待用户重试
+滚动 / 缩放 → 重置 200ms 防抖 → 等待当前任务完成且画面稳定 → 读取最新画面
+关闭 → 停止监听和等待中的刷新 → clear()
+失败 → 记录 error → 停止监听、关闭并清理 → 解锁，等待用户重试
 ```
 
-一次处理的单位是开启时与可视区域相交的全部合格文本节点，每个节点保留完整字符串。`read()` 同步固定文本及其 DOM 映射；`process()` 将全部文本作为一个请求交给 Worker；全部结果返回后，`write()` 一次同步写入分隔标记。锁覆盖读取、推理、写入的全过程，处理中点击开关无效。
+一次处理的单位是任务开始时与可视区域相交、尚未处理的合格文本节点，每个节点保留完整字符串。`read()` 同步固定文本及其 DOM 映射；`process()` 将全部文本作为一个请求交给 Worker；全部结果返回后，`write()` 一次同步写入分隔标记。锁覆盖读取、推理、写入的全过程，处理中点击开关无效。
 
 没有按字符数切分的任务批次、批次间延迟、应用层任务队列或用户取消机制。视口用于选择节点，不裁剪字符，也不限制字符串长度；单个跨多屏的长节点会被完整处理，因此数据量和运行时间没有硬保证。推理请求设有 5 秒超时，超时会终止 Worker 并报错。失败后保留错误信息、停止处理，用户可再次点击重试。
 
-滚动、窗口缩放和动态内容触发的新任务暂未实现；已捕获的快照不随它们变化。此处“一次操作”指调度和锁的单位，不代表网页 DOM 被冻结：页面自行改变的源文本不会写入旧结果。
+页面滚动、内部滚动容器滚动、窗口及 visual viewport 的滚动和尺寸变化都会请求刷新。连续变化重置 200ms 防抖定时器；每页只有一个运行中的任务和一个 `refreshPending` 布尔标志，只有任务完成且定时器到期后才开始下一次读取。中间画面不排队，当前任务不取消。关闭或失败时移除监听、清除定时器和待刷新标志。动态 DOM 变化尚未主动监听；已捕获的快照不随页面变化。此处“一次操作”指调度和锁的单位，不代表网页 DOM 被冻结：页面自行改变的源文本不会写入旧结果。
 
 ## 文件职责
 
 | 文件 | 职责 |
 | --- | --- |
-| `src/app/reader.js` | `createReader()`：协调 read/process/write，管理 enabled、busy、error 和 toggle |
+| `src/app/reader.js` | `createReader()`：协调 read/process/write，管理 enabled、busy、error、toggle 和防抖刷新 |
 | `src/frontend/read.js` | `read()` 跳过无关 DOM 分支，保留至少部分可见的完整文本节点，生成固定快照和 DOM 映射 |
-| `src/frontend/viewport.js` | `readViewport(document)` 捕获可视区域边界 |
+| `src/frontend/viewport.js` | `readViewport(document)` 捕获可视区域边界；`watchViewport(document, onChange)` 监听变化并返回取消监听函数 |
 | `src/frontend/visibility.js` | `createVisibilityFilter(document, viewport)` 提供 `shouldSkipSubtree(element)` 和 `getVisibleArea(node)`；负责分支排除、隐藏判断及祖先溢出裁剪，样式缓存仅用于本次读取 |
+| `src/frontend/processed-text.js` | 记录已处理文本节点及其当前值、父节点，避免重复推理；关闭时清空记录 |
 | `src/frontend/write.js` | `write()` 映射结果，`addMarkers()` 校验源节点并插入标记，`clearMarkers()` 清理 |
 | `src/backend/chunker.js` | `process(texts)` 返回每段文本的 UTF-16 分隔位置；负责标点分句、词语保护和模型驱动的递归切分 |
 | `src/backend/inference.js` | 纯 JavaScript CNN 数值计算，只接受模型数据输入 |
@@ -49,7 +51,7 @@
 核心只使用标准 DOM、Worker 和 JavaScript，不调用扩展 API。Chrome 调用集中在 `src/platform/chrome/`。普通脚本通过 `globalThis.SuperReader` 暴露接口，后台按以下顺序加载页面代码：
 
 ```text
-frontend/viewport.js → frontend/visibility.js
+frontend/viewport.js → frontend/visibility.js → frontend/processed-text.js
   → frontend/read.js → frontend/write.js → app/reader.js
   → platform/chrome/content.js → start-reader.js
 ```
@@ -63,6 +65,7 @@ const reader = SuperReader.createReader({
   process: adapter.process,
   write: SuperReader.write,
   clear: SuperReader.clearMarkers,
+  watch: (onChange) => SuperReader.watchViewport(document, onChange),
   publishState: adapter.publishState,
 });
 adapter.connect(reader);
@@ -98,7 +101,7 @@ Chrome 的推理消息路径：
 
 `visibility.js` 判断分支是否应排除，并计算视口与祖先滚动容器的矩形交集；`viewport.js` 捕获视口尺寸。对应的独立测试位于 `test/visibility.test.js` 和 `test/viewport.test.js`，`test/dom-read.test.js` 验证分支跳过、整节点选择和快照行为。
 
-写入前检查节点连接、父节点和原文。分隔位置从后往前写入，原有标签与文本保留，关闭时移除标记并合并相邻文本节点。
+写入前检查节点连接、父节点和完整原文。分隔位置从后往前写入，原有标签与文本保留。写入后的每个文本片段都会被记录为已处理；没有分隔点的节点也会记录。后续读取跳过未变化的已处理节点，避免重叠视口重复推理或插入重复标记；空快照不调用后端。关闭时移除标记、合并相邻文本节点并清空已处理记录，再次开启会重新处理。记录使用 `WeakMap`，不阻止已移除的节点被回收。
 
 当前只处理当前文档的普通 DOM，不判断遮挡层、CSS 蒙版或任意旋转后的裁剪形状，也不进入 Shadow DOM 或 iframe。不能仅凭父元素在屏幕外就跳过整个分支，因为其定位后代仍可能可见；`visibility:hidden` 也可能被后代覆盖。初次发现节点的耗时仍受文档规模和浏览器布局成本影响。
 
@@ -115,6 +118,6 @@ python3 -m http.server 8765 --bind 127.0.0.1
 
 - `demo.html`：普通测试文章，使用真实扩展按钮操作。
 - `http://127.0.0.1:8765/test/browser-fixture.html`：普通网页适配器，运行真实 Worker 和模型，显示请求次数、输入长度和状态变化。
-- `http://127.0.0.1:8765/test/dom-read-fixture.html`：点击 **Run layout tests**，验证真实浏览器中的长节点、视口边界、滚动容器和标记写入清理。
+- `http://127.0.0.1:8765/test/dom-read-fixture.html`：点击 **Run layout tests**，验证真实浏览器中的长节点、视口边界、内部滚动刷新、处理中缩放及标记写入清理。
 
 离线训练见 [`training/README.md`](training/README.md)。

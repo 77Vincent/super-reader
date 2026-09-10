@@ -13,14 +13,14 @@
    */
 
   /**
-   * Capture whole eligible text nodes with any text visible, without DOM writes.
+   * Capture whole unprocessed text nodes with any text visible, without DOM writes.
    * The viewport selects nodes; it does not limit their string lengths.
    * Visibility is geometric: viewport and rectangular overflow clipping, not
    * occlusion by overlays or CSS masks. Only the current document's light DOM is read.
    * @returns {ViewportSnapshot & {sources: TextSource[], viewport: Object}}
    */
   globalThis.SuperReader.read = function read() {
-    const { readViewport, createVisibilityFilter } = globalThis.SuperReader;
+    const { readViewport, createVisibilityFilter, isProcessedText } = globalThis.SuperReader;
     const viewport = readViewport(document);
     const snapshot = { texts: [], sources: [], viewport };
     if (!document.body || viewport.right <= viewport.left || viewport.bottom <= viewport.top) return snapshot;
@@ -41,6 +41,7 @@
     });
     while (walker.nextNode()) {
       const node = walker.currentNode;
+      if (isProcessedText(node)) continue;
       const text = node.nodeValue;
       if (!text || !/\p{Script=Han}/u.test(text)) continue;
       const visibleArea = getVisibleArea(node);

@@ -7,9 +7,9 @@ const vm = require("node:vm");
 const drain = () => new Promise((resolve) => setImmediate(resolve));
 const source = readFileSync(join(__dirname, "../src/app/reader.js"), "utf8");
 
-// Load one factory without DOM, timers, model, or extension APIs. Instances created
+// Load one factory without DOM, model, or extension APIs. Instances created
 // from this same factory must keep their lifecycle state independent.
-const context = vm.createContext({ Error });
+const context = vm.createContext({ Error, setTimeout, clearTimeout });
 vm.runInContext(source, context, { filename: "src/app/reader.js" });
 
 function deferred() {
@@ -18,19 +18,72 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
+function createClock() {
+  let now = 0;
+  let nextId = 0;
+  const timers = new Map();
+  return {
+    setTimeout(callback, delay) {
+      const id = ++nextId;
+      timers.set(id, { at: now + delay, callback });
+      return id;
+    },
+    clearTimeout(id) { timers.delete(id); },
+    tick(duration) {
+      const end = now + duration;
+      while (true) {
+        const next = [...timers].sort((a, b) => a[1].at - b[1].at)[0];
+        if (!next || next[1].at > end) break;
+        const [id, timer] = next;
+        now = timer.at;
+        timers.delete(id);
+        timer.callback();
+      }
+      now = end;
+    },
+    pending: () => timers.size,
+  };
+}
+
+function createWatchedReader(dependencies = {}) {
+  const clock = createClock();
+  let onChange;
+  let starts = 0;
+  let stops = 0;
+  const page = createReader({
+    ...dependencies,
+    clock,
+    watch(callback) {
+      starts += 1;
+      onChange = callback;
+      return () => { stops += 1; };
+    },
+  });
+  return { ...page, clock, change: () => onChange(), starts: () => starts, stops: () => stops };
+}
+
 function createReader({
-  read = () => ({ texts: [] }),
+  read = () => ({ texts: ["测试文字"] }),
   process = async () => [],
   write = () => {},
   clear = () => {},
+  watch = () => () => {},
+  clock,
   publishState = () => {},
 } = {}) {
   const states = [];
   let clears = 0;
-  const reader = context.SuperReader.createReader({
+  let factory = context.SuperReader.createReader;
+  if (clock) {
+    const timedContext = vm.createContext({ Error, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout });
+    vm.runInContext(source, timedContext);
+    factory = timedContext.SuperReader.createReader;
+  }
+  const reader = factory({
     read,
     process,
     write,
+    watch,
     clear() { clears += 1; clear(); },
     publishState(state) { states.push({ ...state }); publishState(state); },
   });
@@ -280,4 +333,198 @@ test("reader instances isolate enabled state, busy locks, failures, and cleanup"
   assert.deepEqual({ ...first.reader.status() }, {
     enabled: false, busy: false, error: "first reader failed",
   });
+});
+
+test("rapid input changes produce one refresh after 200 ms, reading only the latest input", async () => {
+  let currentText = "初始画面";
+  const inputs = [];
+  const page = createWatchedReader({
+    read() { inputs.push(currentText); return { texts: [currentText] }; },
+  });
+  assert.equal(page.starts(), 0);
+  page.reader.toggle();
+  await drain();
+  assert.equal(page.starts(), 1);
+
+  currentText = "中间画面";
+  page.change();
+  page.clock.tick(100);
+  currentText = "最后画面";
+  page.change();
+  page.clock.tick(199);
+  assert.deepEqual(inputs, ["初始画面"]);
+  assert.equal(page.reader.status().busy, false);
+  assert.equal(page.clock.pending(), 1);
+  page.clock.tick(1);
+  await drain();
+  assert.deepEqual(inputs, ["初始画面", "最后画面"]);
+  page.clock.tick(1000);
+  assert.equal(inputs.length, 2);
+  assert.equal(page.clock.pending(), 0);
+});
+
+test("a settled refresh waits for both processing and writing, then captures the latest input", async () => {
+  const processing = deferred();
+  const writing = deferred();
+  let currentText = "旧画面";
+  const inputs = [];
+  let writes = 0;
+  const page = createWatchedReader({
+    read() { inputs.push(currentText); return { texts: [currentText] }; },
+    process: () => inputs.length === 1 ? processing.promise : Promise.resolve([[]]),
+    write: () => ++writes === 1 ? writing.promise : undefined,
+  });
+  page.reader.toggle();
+  currentText = "变化后的画面";
+  page.change();
+  page.change();
+  page.clock.tick(200);
+  assert.deepEqual(inputs, ["旧画面"]);
+  processing.resolve([[]]);
+  await drain();
+  assert.equal(page.reader.status().busy, true);
+  assert.equal(inputs.length, 1);
+  currentText = "实际开始时的画面";
+  writing.resolve();
+  await drain();
+  assert.deepEqual(inputs, ["旧画面", "实际开始时的画面"]);
+  assert.equal(writes, 2);
+  assert.equal(page.reader.status().busy, false);
+});
+
+test("finishing a task does not bypass a debounce timer that is still running", async () => {
+  const processing = deferred();
+  let reads = 0;
+  const page = createWatchedReader({
+    read() { reads += 1; return { texts: ["文字"] }; },
+    process: () => reads === 1 ? processing.promise : Promise.resolve([[]]),
+  });
+  page.reader.toggle();
+  page.change();
+  page.clock.tick(50);
+  processing.resolve([[]]);
+  await drain();
+  assert.equal(page.reader.status().busy, false);
+  assert.equal(reads, 1);
+  page.clock.tick(149);
+  assert.equal(reads, 1);
+  page.clock.tick(1);
+  await drain();
+  assert.equal(reads, 2);
+});
+
+test("a new change restarts the settling period even after an earlier timer expired while busy", async () => {
+  const processing = deferred();
+  let reads = 0;
+  const page = createWatchedReader({
+    read() { reads += 1; return { texts: ["文字"] }; },
+    process: () => reads === 1 ? processing.promise : Promise.resolve([[]]),
+  });
+  page.reader.toggle();
+  page.change();
+  page.clock.tick(200);
+  page.change();
+  processing.resolve([[]]);
+  await drain();
+  assert.equal(reads, 1);
+  page.clock.tick(199);
+  assert.equal(reads, 1);
+  page.clock.tick(1);
+  await drain();
+  assert.equal(reads, 2);
+});
+
+test("changes during the next operation can request one further run without overlapping work", async () => {
+  const second = deferred();
+  let reads = 0;
+  let active = 0;
+  const page = createWatchedReader({
+    read() { reads += 1; return { texts: ["文字"] }; },
+    async process() {
+      active += 1;
+      assert.equal(active, 1);
+      if (reads === 2) await second.promise;
+      active -= 1;
+      return [[]];
+    },
+  });
+  page.reader.toggle();
+  await drain();
+  page.change();
+  page.clock.tick(200);
+  assert.equal(reads, 2);
+  page.change();
+  page.change();
+  page.clock.tick(200);
+  assert.equal(reads, 2);
+  second.resolve();
+  await drain();
+  assert.equal(reads, 3);
+  assert.equal(active, 0);
+  page.clock.tick(1000);
+  assert.equal(reads, 3);
+});
+
+test("disable removes the subscription and pending timer; re-enable starts clean", async () => {
+  let reads = 0;
+  const page = createWatchedReader({ read() { reads += 1; return { texts: ["文字"] }; } });
+  page.reader.toggle();
+  await drain();
+  page.change();
+  page.clock.tick(100);
+  page.reader.toggle();
+  assert.equal(page.stops(), 1);
+  assert.equal(page.clock.pending(), 0);
+  page.change(); // A late notification after unsubscribe must also be harmless.
+  page.clock.tick(1000);
+  assert.equal(reads, 1);
+  page.reader.toggle();
+  await drain();
+  page.clock.tick(1000);
+  assert.equal(page.starts(), 2);
+  assert.equal(reads, 2);
+});
+
+for (const elapsed of [100, 200]) {
+  test(`failure discards a pending refresh after ${elapsed} ms and permits an explicit retry`, async () => {
+    const processing = deferred();
+    let reads = 0;
+    const page = createWatchedReader({
+      read() { reads += 1; return { texts: ["文字"] }; },
+      process: () => reads === 1 ? processing.promise : Promise.resolve([[]]),
+    });
+    page.reader.toggle();
+    page.change();
+    page.clock.tick(elapsed);
+    processing.reject(new Error("计算失败"));
+    await drain();
+    assert.deepEqual({ ...page.reader.status() }, { enabled: false, busy: false, error: "计算失败" });
+    assert.equal(page.stops(), 1);
+    assert.equal(page.clock.pending(), 0);
+    page.change();
+    page.clock.tick(1000);
+    assert.equal(reads, 1);
+    page.reader.toggle();
+    await drain();
+    page.clock.tick(1000);
+    assert.equal(reads, 2);
+  });
+}
+
+test("empty snapshots complete without inference or writing and remain subscribed", async () => {
+  let calls = 0;
+  const page = createWatchedReader({
+    read: () => ({ texts: [] }),
+    process: () => { calls += 1; },
+    write: () => { calls += 1; },
+  });
+  page.reader.toggle();
+  page.change();
+  page.clock.tick(200);
+  await drain();
+  assert.equal(calls, 0);
+  assert.equal(page.reader.status().enabled, true);
+  assert.equal(page.reader.status().busy, false);
+  assert.equal(page.starts(), 1);
+  assert.equal(page.stops(), 0);
 });
