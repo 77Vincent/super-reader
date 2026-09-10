@@ -105,12 +105,10 @@ test("read crosses nested open roots, maps direct shadow text and prunes exclude
   const node = page.text("嵌套影子根中的评论", undefined, inner);
   const ignored = shadow(page.element("pre"));
   const skipped = page.text("代码区域不应读取", undefined, ignored);
-  const discovered = [];
-  const snapshot = page.read((root) => discovered.push(root));
+  const snapshot = page.read();
   assert.deepEqual(Array.from(snapshot.texts), ["嵌套影子根中的评论"]);
   assert.equal(snapshot.sources[0].node, node);
   assert.equal(snapshot.sources[0].parent, inner);
-  assert.deepEqual(discovered, [outer, inner]);
   assert.equal(page.visited.includes(skipped), false);
 });
 

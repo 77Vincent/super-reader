@@ -81,7 +81,7 @@ test("toolbar clicks inject only the current page and toggle each page independe
   assert.deepEqual(background.injected, [1]);
   assert.deepEqual(background.injectedFiles[0], [
     "src/frontend/dom-tree.js", "src/frontend/viewport.js", "src/frontend/visibility.js", "src/frontend/processed-text.js",
-    "src/frontend/read.js", "src/frontend/write.js", "src/frontend/changes.js", "src/app/reader.js",
+    "src/frontend/read.js", "src/frontend/write.js", "src/app/reader.js",
     "src/platform/chrome/content.js", "src/start-reader.js",
   ]);
   assert.equal(background.pages.get(1), true);
@@ -205,7 +205,10 @@ test("the actual worker returns ordered model results for a whole viewport inclu
   context.postMessage = (message) => { response = message; replies += 1; };
   context.self = context;
   runScript("src/inference-worker.js", context);
-  const texts = [sampleText(), `${sampleText()}。`.repeat(12), "", "English only", "𠀀甲乙丙丁戊己庚辛壬癸子丑"];
+  const texts = [
+    sampleText(), `${sampleText()}。`.repeat(12), "", "English only", "𠀀甲乙丙丁戊己庚辛壬癸子丑",
+    "我一直在思考明天早上的早餐吃什么".repeat(33),
+  ];
   context.onmessage({ data: { id: 1, texts } });
   assert.equal(response.error, undefined);
   assert.equal(replies, 1);
@@ -213,6 +216,7 @@ test("the actual worker returns ordered model results for a whole viewport inclu
   assert.deepEqual(Array.from(response.offsetsByText[0]), [8]);
   assert.deepEqual(Array.from(response.offsetsByText[2]), []);
   assert.deepEqual(Array.from(response.offsetsByText[3]), []);
+  assert.ok(response.offsetsByText[5].length > 1);
   response.offsetsByText.forEach((offsets, index) => {
     let previous = 0;
     for (const offset of offsets) {

@@ -17,7 +17,6 @@
 <script src="../src/frontend/processed-text.js"></script>
 <script src="../src/frontend/read.js"></script>
 <script src="../src/frontend/write.js"></script>
-<script src="../src/frontend/changes.js"></script>
 <script src="../src/app/reader.js"></script>
 <script>
   let reader;
@@ -47,6 +46,7 @@
     }
   }
   const markers = (root) => root.querySelectorAll(".super-reader-divider");
+  const resize = () => window.dispatchEvent(new Event("resize"));
   function shadow(parent = fixture) {
     const host = document.createElement("div");
     parent.append(host);
@@ -88,6 +88,31 @@
     assert(inputs.length === 2 && markers(inner).length === 2, "processed records did not reset");
   });
 
+  test("removing links and image-map areas never treats a URL host as a DOM parent", async () => {
+    const errors = [];
+    const onError = (event) => { errors.push(event.message); event.preventDefault(); };
+    window.addEventListener("error", onError);
+    try {
+      const link = document.createElement("a");
+      link.href = "https://news.example.test/article";
+      link.textContent = "随后被页面移除的新闻链接";
+      const area = document.createElement("area");
+      area.href = "https://news.example.test/image";
+      fixture.append(link, area);
+      await enable();
+      assert(markers(link).length === 1, "initial link was not processed");
+      link.remove();
+      area.remove();
+      const next = paragraph(fixture, "链接更新之后新增的新闻文字");
+      await delay(30);
+      assert(errors.length === 0, errors.join("; "));
+      resize();
+      await until(() => markers(next).length === 1, "resize did not process the replacement link text");
+      assert(SuperReader.parentElementAcrossRoots(link) === null, "detached anchor acquired a false parent");
+      assert(SuperReader.parentElementAcrossRoots(area) === null, "detached area acquired a false parent");
+    } finally { window.removeEventListener("error", onError); }
+  });
+
   test("direct shadow text and slotted text are captured once; unslotted text stays excluded", async () => {
     const root = shadow();
     root.append(document.createTextNode("直接位于影子根的中文文字"));
@@ -103,7 +128,7 @@
     assert(markers(root).length === 1 && markers(root.host).length === 1, "direct or slotted text did not render");
   });
 
-  test("hidden hosts and host overflow constrain shadow text; revealing a host triggers processing", async () => {
+  test("hidden hosts and host overflow constrain shadow text; resize discovers revealed content", async () => {
     const hidden = shadow();
     hidden.host.hidden = true;
     paragraph(hidden, "隐藏的评论随后显示");
@@ -114,22 +139,28 @@
     await enable();
     assert(inputs.length === 0, "hidden or clipped comments were processed");
     hidden.host.hidden = false;
+    resize();
     await until(() => markers(hidden).length === 1, "revealed shadow root was not discovered");
     assert(inputs.length === 1 && inputs[0][0] === "隐藏的评论随后显示", "wrong revealed input");
   });
 
-  test("late comments, nested hosts and text changes refresh without scrolling", async () => {
+  test("late comments and text changes wait for a viewport event", async () => {
     const root = shadow();
     await enable();
     assert(inputs.length === 0, "expected empty initial snapshot");
     const inner = shadow(root);
     const p = paragraph(inner, "后来加载进来的评论文字");
+    await delay(250);
+    assert(inputs.length === 0 && markers(inner).length === 0, "content change unexpectedly triggered processing");
+    resize();
     await until(() => markers(inner).length === 1, "late nested comments were missed");
     p.textContent = "服务器更新之后的新评论文字";
+    resize();
     await until(() => inputs.length === 2 && markers(inner).length === 1, "replacement comment was missed");
     const unchangedFragment = p.firstChild;
     const changedText = "直接修改现有文本节点的评论";
     unchangedFragment.nodeValue = changedText;
+    resize();
     await until(() => inputs.length === 3 && !reader.status().busy, "characterData change was missed");
     assert(inputs[2][0] === changedText, "changed text was not captured intact");
     await delay(450);
@@ -147,12 +178,13 @@
     pageObserver.observe(p, { childList: true });
     try {
       await enable();
+      resize();
       await until(() => inputs.length === 2 && !reader.status().busy, "page update was incorrectly remembered as processed");
       assert(inputs[1][0] === updated, "updated text was not processed intact");
     } finally { pageObserver.disconnect(); }
   });
 
-  test("changes during inference wait and coalesce into the latest comment", async () => {
+  test("viewport events during inference wait and coalesce into the latest comment", async () => {
     const root = shadow();
     const p = paragraph(root, "开始处理时捕获的评论文字");
     let finish;
@@ -162,8 +194,10 @@
     reader.toggle();
     try {
       p.firstChild.nodeValue = "变化过程中的中间评论文字";
+      resize();
       await delay(240);
       p.firstChild.nodeValue = "最后一次更新之后的评论文字";
+      resize();
       await delay(240);
       assert(inputs.length === 1 && reader.status().busy, "started a concurrent operation");
       finish();
@@ -173,7 +207,7 @@
     } finally { finish?.(); await delay(30); }
   });
 
-  test("scrolling inside a shadow root captures newly visible comments", async () => {
+  test("shadow-internal scrolling waits for a window viewport event", async () => {
     const root = shadow();
     const scroller = document.createElement("div");
     scroller.style.cssText = "height:65px;overflow:auto";
@@ -186,14 +220,17 @@
     await enable();
     assert(inputs[0].length === 1, "offscreen comment was captured");
     scroller.scrollTop = scroller.scrollHeight;
-    await until(() => inputs.length === 2 && !reader.status().busy, "shadow scroll was missed");
+    await delay(250);
+    assert(inputs.length === 1, "reader unexpectedly subscribed to shadow-internal scrolling");
+    resize();
+    await until(() => inputs.length === 2 && !reader.status().busy, "resize missed the scrolled shadow content");
     assert(inputs[1][0] === "内部滚动后可见的评论文字", "wrong scroll input");
     scroller.scrollTop = 0;
     await delay(450);
     assert(inputs.length === 2, "earlier comments were processed again");
   });
 
-  test("disable clears detached roots and removes all content subscriptions", async () => {
+  test("disable clears detached roots and stops viewport refreshes", async () => {
     const root = shadow();
     const p = paragraph(root);
     const original = p.textContent;
@@ -205,7 +242,7 @@
     const count = states.length;
     fixture.append(root.host);
     paragraph(root, "关闭以后增加的评论文字");
-    root.dispatchEvent(new Event("scroll"));
+    resize();
     await delay(450);
     assert(states.length === count, "disabled reader still reacted to changes");
   });

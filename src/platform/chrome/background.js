@@ -59,7 +59,7 @@ async function toggleTab(tab) {
         target: { tabId: tab.id },
         files: [
           "src/frontend/dom-tree.js", "src/frontend/viewport.js", "src/frontend/visibility.js", "src/frontend/processed-text.js",
-          "src/frontend/read.js", "src/frontend/write.js", "src/frontend/changes.js", "src/app/reader.js",
+          "src/frontend/read.js", "src/frontend/write.js", "src/app/reader.js",
           "src/platform/chrome/content.js", "src/start-reader.js",
         ],
       });

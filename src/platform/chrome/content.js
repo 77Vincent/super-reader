@@ -6,6 +6,8 @@ globalThis.SuperReader ??= {};
 globalThis.SuperReader.createReaderAdapter = function createChromeReaderAdapter() {
   return {
     markerStyleUrl: chrome.runtime.getURL("src/content.css"),
+    // The page's callbacks may outlive the extension context after a reload.
+    isAvailable: () => Boolean(chrome.runtime?.id),
     async process(texts) {
       const response = await chrome.runtime.sendMessage({
         type: "SUPER_READER_PROCESS", texts,

@@ -47,7 +47,7 @@ const text = (parentElement, nodeValue = "中文") => ({ parentElement, nodeValu
 test("shadow ancestry and assigned slots preserve host clipping and exclusions", () => {
   const page = environment();
   const host = page.element(page.body, { overflowY: "hidden" }, box(0, 10, 100, 30));
-  const root = { host };
+  const root = { nodeType: 11, host };
   const inside = page.element();
   inside.parentNode = root;
   assert.deepEqual({ ...page.lookup()(text(inside)) }, { left: 0, top: 10, right: 100, bottom: 40 });

@@ -174,12 +174,13 @@
     );
   }
 
-  function selectBestBoundary(scores, isAllowed = () => true) {
+  function selectBestBoundary(scores, isAllowed = () => true, start = 0, end) {
     if (!Array.isArray(scores) || scores.length === 0) return null;
+    end ??= scores.length;
 
     let bestIndex = null;
     let bestScore = -Infinity;
-    for (let index = 0; index < scores.length; index += 1) {
+    for (let index = start; index < end; index += 1) {
       const score = scores[index];
       if (!Number.isFinite(score) || !isAllowed(index)) continue;
       // Use the model score directly; equal scores keep the first allowed gap.
@@ -194,7 +195,7 @@
 
   function chunkByModel(text, segmenter) {
     const tokens = tokenizeHanCharacters(text);
-    if (tokens.length < 2) return [text];
+    if (tokens.length < 2 || visualLength(text) <= SPLIT_LENGTH_THRESHOLD) return [text];
     if (!modelBackend || typeof modelBackend.scoreTokens !== "function") {
       throw new Error("Super Reader model backend must load before the chunker");
     }
@@ -213,7 +214,19 @@
         )),
     );
 
-    function visit(start, end) {
+    // Score each gap once, before choosing any cuts. Adjacent windows share one
+    // token so the gap between windows is scored too; window edges do not force cuts.
+    const scores = [];
+    for (let start = 0; start < tokens.length - 1; start += MAX_MODEL_WINDOW_TOKENS - 1) {
+      scores.push(...modelBackend.scoreTokens(
+        tokens.slice(start, start + MAX_MODEL_WINDOW_TOKENS).map((token) => token.segment),
+      ));
+    }
+
+    // Use a stack so repeated choices near one end cannot overflow the call stack.
+    const pendingRanges = [{ start: 0, end: tokens.length }];
+    while (pendingRanges.length > 0) {
+      const { start, end } = pendingRanges.pop();
       const sourceStart = start === 0 ? 0 : tokens[start].index;
       const sourceEnd = end === tokens.length ? text.length : tokens[end].index;
       if (
@@ -221,39 +234,23 @@
         visualLength(text.slice(sourceStart, sourceEnd)) <= SPLIT_LENGTH_THRESHOLD
       ) {
         ranges.push({ start, end });
-        return;
+        continue;
       }
 
-      const tokenCount = end - start;
-      const scoreStart = tokenCount > MAX_MODEL_WINDOW_TOKENS
-        ? Math.max(
-          start,
-          Math.floor((start + end - MAX_MODEL_WINDOW_TOKENS) / 2),
-        )
-        : start;
-      const scoreEnd = Math.min(end, scoreStart + MAX_MODEL_WINDOW_TOKENS);
-      const scores = modelBackend.scoreTokens(
-        tokens.slice(scoreStart, scoreEnd).map((token) => token.segment),
-      );
-      const boundaryIndex = selectBestBoundary(
+      const boundaryAfter = selectBestBoundary(
         scores,
-        (candidateIndex) => {
-          const boundaryAfter = scoreStart + candidateIndex;
-          const rightToken = tokens[boundaryAfter + 1];
-          return !protectedBoundaryOffsets.has(rightToken.index);
-        },
+        (index) => !protectedBoundaryOffsets.has(tokens[index + 1].index),
+        start,
+        end - 1,
       );
-      if (boundaryIndex === null) {
+      if (boundaryAfter === null) {
         ranges.push({ start, end });
-        return;
+        continue;
       }
 
-      const boundaryAfter = scoreStart + boundaryIndex;
-      visit(start, boundaryAfter + 1);
-      visit(boundaryAfter + 1, end);
+      // Visit the left fragment first to preserve source order in the output.
+      pendingRanges.push({ start: boundaryAfter + 1, end }, { start, end: boundaryAfter + 1 });
     }
-
-    visit(0, tokens.length);
 
     return ranges.map((range, index) => {
       const start = index === 0 ? 0 : tokens[range.start].index;

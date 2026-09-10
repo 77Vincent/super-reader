@@ -6,16 +6,17 @@
 
 ```text
 开启 → 锁定 toggle → read() → process(texts) → write(snapshot, results) → remember(written) → 解锁
-滚动 / 缩放 / 内容变化 → 重置 200ms 防抖 → 等待当前任务完成且变化稳定 → 读取最新画面
+滚动 / 缩放 → 重置 200ms 防抖 → 等待当前任务完成且变化稳定 → 读取最新画面
 关闭 → 停止监听和等待中的刷新 → clear() → reset()
 失败 → 记录 error → 停止监听、关闭并清理 → 解锁，等待用户重试
+宿主上下文失效 → 下一次回调先 dispose() → 停止监听、清理标记、丢弃迟到结果
 ```
 
 一次处理的单位是任务开始时与可视区域相交、尚未处理的合格文本节点，每个节点保留完整字符串。`read()` 同步固定文本及其 DOM 映射；`process()` 将全部文本作为一个请求交给 Worker；全部结果返回后，`write()` 一次同步写入分隔标记。锁覆盖读取、推理、写入的全过程，处理中点击开关无效。
 
 没有按字符数切分的任务批次、批次间延迟、应用层任务队列或用户取消机制。视口用于选择节点，不裁剪字符，也不限制字符串长度；单个跨多屏的长节点会被完整处理，因此数据量和运行时间没有硬保证。推理请求设有 5 秒超时，超时会终止 Worker 并报错。失败后保留错误信息、停止处理，用户可再次点击重试。
 
-页面滚动、内部滚动容器滚动、窗口及 visual viewport 的滚动和尺寸变化都会请求刷新。相关文本增删、修改和可见性属性变化也使用同一条刷新路径。连续变化重置 200ms 防抖定时器；每页只有一个运行中的任务和一个 `refreshPending` 布尔标志，只有任务完成且定时器到期后才开始下一次读取。中间画面不排队，当前任务不取消。关闭或失败时移除监听、清除定时器和待刷新标志。已捕获的快照不随页面变化。此处“一次操作”指调度和锁的单位，不代表网页 DOM 被冻结：页面自行改变的源文本不会写入旧结果。
+页面滚动、普通 DOM 内部滚动容器滚动、窗口及 visual viewport 的滚动和尺寸变化都会请求刷新。连续变化重置 200ms 防抖定时器；每页只有一个运行中的任务和一个 `refreshPending` 布尔标志，只有任务完成且定时器到期后才开始下一次读取。中间画面不排队，当前任务不取消。关闭或失败时移除监听、清除定时器和待刷新标志。已捕获的快照不随页面变化。此处“一次操作”指调度和锁的单位，不代表网页 DOM 被冻结：页面自行改变的源文本不会写入旧结果。
 
 ## 文件职责
 
@@ -24,7 +25,6 @@
 | `src/app/reader.js` | `createReader()`：协调 read/process/write，管理 enabled、busy、error、toggle 和防抖刷新 |
 | `src/frontend/read.js` | `read()` 跳过无关 DOM 分支，保留至少部分可见的完整文本节点，生成固定快照和 DOM 映射 |
 | `src/frontend/dom-tree.js` | 遍历普通 DOM 和嵌套的 open Shadow DOM；跨 slot 和 shadow host 查找显示层级中的父元素 |
-| `src/frontend/changes.js` | 观察文档及已发现 shadow root 的内容变化，报告刷新需求；隔离插件自己的同步写入，释放已移除根的监听 |
 | `src/frontend/viewport.js` | `readViewport(document)` 捕获可视区域边界；`watchViewport(document, onChange)` 监听变化并返回取消监听函数 |
 | `src/frontend/visibility.js` | `createVisibilityFilter(document, viewport)` 提供 `shouldSkipSubtree(element)` 和 `getVisibleArea(node)`；负责分支排除、隐藏判断及祖先溢出裁剪，样式缓存仅用于本次读取 |
 | `src/frontend/processed-text.js` | 独立记录已处理文本节点及其当前值、父节点；由 reader 在写入成功后记录、关闭或失败时重置 |
@@ -46,7 +46,7 @@
 | `test/` | 单元测试、集成测试与浏览器测试页 |
 | `training/` | 独立的离线训练和导出工具 |
 
-每次切分先排除词语与数量保护范围内的候选位置，再选择模型原始评分最高的位置；同分时保留第一个候选。切分层仍使用 8 视觉单位的递归停止阈值，以及长句评分时的 256-token 窗口；这些计算细节不拆分视口请求，也不影响 toggle 的锁。
+需要切分的子句先生成一份固定的模型评分，后续拆分只在当前片段范围内选择评分最高的允许位置，不再次推理。词语与数量保护仍排除其范围内的候选位置，同分时保留第一个候选，停止阈值仍是 8 视觉单位。长子句按最多 256 个汉字的固定窗口各推理一次，相邻窗口共享一个汉字，保证每个候选边界恰好评分一次；窗口边缘不强制切分。评分只保留到本次子句处理结束。这些计算细节不拆分视口请求，也不影响 toggle 的锁。
 
 ## 模块如何连接
 
@@ -54,7 +54,7 @@
 
 ```text
 frontend/dom-tree.js → frontend/viewport.js → frontend/visibility.js → frontend/processed-text.js
-  → frontend/read.js → frontend/write.js → frontend/changes.js → app/reader.js
+  → frontend/read.js → frontend/write.js → app/reader.js
   → platform/chrome/content.js → start-reader.js
 ```
 
@@ -62,26 +62,24 @@ frontend/dom-tree.js → frontend/viewport.js → frontend/visibility.js → fro
 
 ```js
 const adapter = SuperReader.createReaderAdapter();
-const changes = SuperReader.createDOMChanges(document);
 const reader = SuperReader.createReader({
-  read: () => SuperReader.read(changes.observeRoot),
+  read: SuperReader.read,
   process: adapter.process,
-  write: (snapshot, results) => changes.mutate(() =>
-    SuperReader.write(snapshot, results, adapter.markerStyleUrl)),
-  clear: () => changes.mutate(SuperReader.clearMarkers),
+  write: (snapshot, results) =>
+    SuperReader.write(snapshot, results, adapter.markerStyleUrl),
+  clear: SuperReader.clearMarkers,
   remember: SuperReader.rememberProcessedText,
   reset: SuperReader.clearProcessedText,
-  watch(onChange) {
-    const stopDOM = changes.watch(onChange);
-    const stopViewport = SuperReader.watchViewport(document, onChange);
-    return () => { stopViewport(); stopDOM(); };
-  },
+  isAvailable: adapter.isAvailable,
+  watch: (onChange) => SuperReader.watchViewport(document, onChange),
   publishState: adapter.publishState,
 });
 adapter.connect(reader);
 ```
 
-阅读器对外只有 `status()` 和 `toggle()`。适配器发布状态、连接控件、转发整个 `texts` 数组并提供分隔线样式地址；DOM 引用始终留在页面里。后台依据阅读器的状态通知更新按钮，避免滞后的 toggle 回复覆盖新状态。Shadow DOM 中的标记加载同一个 `src/content.css`，该文件在 manifest 中声明为可访问资源，前端无需调用 Chrome API。
+阅读器提供 `status()`、`toggle()` 和永久停止实例的 `dispose()`。适配器发布状态、连接控件、转发整个 `texts` 数组并提供分隔线样式地址；DOM 引用始终留在页面里。Chrome 适配器用 `isAvailable()` 检查上下文是否仍有效。旧实例在视口事件、任务开始及异步结果返回时检查；失效则断开监听、移除标记、清空记录并停止发布状态。该检查不轮询、不取消模型计算，也不会自动重新开启扩展。
+
+后台依据阅读器的状态通知更新按钮，避免滞后的 toggle 回复覆盖新状态。Shadow DOM 中的标记加载同一个 `src/content.css`，该文件在 manifest 中声明为可访问资源，前端无需调用 Chrome API。
 
 Chrome 的推理消息路径：
 
@@ -113,9 +111,9 @@ Chrome 的推理消息路径：
 
 写入前检查节点连接、父节点和完整原文。分隔位置从后往前写入，原有标签与文本保留。writer 只返回成功处理的文本片段，由 reader 调用 `remember()` 记录；没有分隔点的节点也会记录，过期快照跳过的节点不会记录。后续读取跳过未变化的已处理节点，避免重叠视口重复推理或插入重复标记；空快照不调用后端。关闭时移除标记、合并相邻文本节点并清空已处理记录，再次开启会重新处理。处理记录使用 `WeakMap`。
 
-`changes.js` 使用 `MutationObserver` 观察普通文档和每个已发现的 open shadow root，因此 Bilibili 这类嵌套 Web Component 中后来加载的评论也能请求刷新。观察器在我们的同步写入期间暂停，写入前已排队的页面变化仍会保留；推理期间持续观察。Shadow root 内部的滚动和 slot 分配变化也会请求刷新。根被移除时释放其观察和事件监听，关闭时释放全部监听。
+当前没有内容变化观察器。新增评论、文本修改、属性或 slot 分配变化本身不会请求处理；它们会在下一次滚动、缩放或重新开启时被读取。只在 shadow root 内传播的滚动事件也不会触发刷新。读取和写入直接调用 DOM 工具，不需要暂停或恢复观察器。
 
-当前处理当前文档的普通 DOM 和 open Shadow DOM；不进入 closed shadow root 或 iframe，不判断遮挡层、CSS 蒙版或任意旋转后的裁剪形状。若页面仅在已有 host 上调用 `attachShadow()`，且没有其他可观察变化，新根会在下次滚动或刷新读取时发现。不能仅凭父元素在屏幕外就跳过整个分支，因为其定位后代仍可能可见；`visibility:hidden` 也可能被后代覆盖。初次发现节点的耗时仍受文档规模和浏览器布局成本影响。
+当前处理当前文档的普通 DOM 和 open Shadow DOM；不进入 closed shadow root 或 iframe，不判断遮挡层、CSS 蒙版或任意旋转后的裁剪形状。新 shadow root 在下次读取时发现。不能仅凭父元素在屏幕外就跳过整个分支，因为其定位后代仍可能可见；`visibility:hidden` 也可能被后代覆盖。初次发现节点的耗时仍受文档规模和浏览器布局成本影响。
 
 ## 安装和验证
 
@@ -131,6 +129,6 @@ python3 -m http.server 8765 --bind 127.0.0.1
 - `demo.html`：普通测试文章，使用真实扩展按钮操作。
 - `http://127.0.0.1:8765/test/browser-fixture.html`：普通网页适配器，运行真实 Worker 和模型，显示请求次数、输入长度和状态变化。
 - `http://127.0.0.1:8765/test/dom-read-fixture.html`：点击 **Run layout tests**，验证真实浏览器中的长节点、视口边界、内部滚动刷新、处理中缩放及标记写入清理。
-- `http://127.0.0.1:8765/test/shadow-dom-fixture.html`：点击 **Run shadow DOM tests**，验证嵌套评论、slot、宿主裁剪、动态加载和修改、推理期间的更新、内部滚动、样式和完整清理。
+- `http://127.0.0.1:8765/test/shadow-dom-fixture.html`：点击 **Run shadow DOM tests**，验证嵌套评论、slot、宿主裁剪、视口事件触发后的内容更新、样式和完整清理；确认内容变化与 shadow root 内部滚动本身不触发处理。
 
 离线训练见 [`training/README.md`](training/README.md)。

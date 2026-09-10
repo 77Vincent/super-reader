@@ -5,7 +5,11 @@
 
   /** Follow the rendered ancestry through slots and shadow hosts. */
   globalThis.SuperReader.parentElementAcrossRoots = function parentElementAcrossRoots(node) {
-    return node.assignedSlot || node.parentElement || node.parentNode?.host || node.host || null;
+    const parent = node.assignedSlot || node.parentElement;
+    if (parent) return parent;
+    // Only a shadow root supplies a host element. A link's .host is a URL string.
+    const root = node.nodeType === 11 ? node : node.parentNode;
+    return root?.nodeType === 11 ? root.host || null : null;
   };
 
   /** Walk ordinary children and nested open shadow roots, visiting each node once. */

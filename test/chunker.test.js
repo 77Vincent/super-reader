@@ -1,5 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { readFileSync } = require("node:fs");
+const { join } = require("node:path");
+const vm = require("node:vm");
 const {
   boundaryFallsInsideQuantityPhrase,
   boundaryFallsInsideWord,
@@ -11,6 +14,12 @@ const {
   tokenizeHanCharacters,
   visualLength,
 } = require("../src/backend/chunker.js");
+
+function withModel(scoreTokens) {
+  const context = vm.createContext({ SuperReaderModelBackend: { scoreTokens }, Intl });
+  vm.runInContext(readFileSync(join(__dirname, "../src/backend/chunker.js"), "utf8"), context);
+  return context.SuperReaderChunker;
+}
 
 test("model chunks preserve the complete source text", () => {
   const text = "我一直在思考明天早上的早餐吃什么";
@@ -138,6 +147,85 @@ test("boundary selection excludes protected gaps and invalid scores", () => {
   assert.equal(selectBestBoundary([NaN, Infinity, -Infinity, -3, -1]), 4);
   assert.equal(selectBestBoundary([NaN, Infinity, -Infinity]), null);
   assert.equal(selectBestBoundary([10, 20], () => false), null);
+});
+
+test("boundary selection searches only inside the requested fragment and returns its original index", () => {
+  const scores = [100, 2, 3, 2, 100];
+  assert.equal(selectBestBoundary(scores, undefined, 1, 4), 2);
+  assert.equal(selectBestBoundary(scores, (index) => index !== 2, 1, 4), 1);
+  assert.equal(selectBestBoundary(scores, undefined, 2, 2), null);
+});
+
+test("one model evaluation supplies every split in a clause, with scores local to that call", () => {
+  const text = "甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥天地";
+  const inputs = [];
+  const chunker = withModel((tokens) => {
+    inputs.push(Array.from(tokens));
+    assert.equal(tokens.join(""), text, "the model must never receive a recursive fragment");
+    const scores = Array(tokens.length - 1).fill(-100);
+    scores[7] = 5;
+    scores[15] = 10;
+    return scores;
+  });
+  const chunks = chunker.chunkText(text, { segmenter: null });
+  assert.deepEqual(Array.from(chunks), [text.slice(0, 8), text.slice(8, 16), text.slice(16)]);
+  assert.equal(inputs.length, 1);
+  // A new operation gets fresh scores; they are not retained across requests.
+  chunker.chunkText(text, { segmenter: null });
+  assert.equal(inputs.length, 2);
+});
+
+test("short clauses skip inference and separate long clauses receive separate score arrays", () => {
+  const inputs = [];
+  const chunker = withModel((tokens) => {
+    inputs.push(tokens.join(""));
+    return Array(tokens.length - 1).fill(0);
+  });
+  chunker.chunkText("甲乙丙丁戊己庚辛，中文。English", { segmenter: null });
+  assert.deepEqual(inputs, []);
+  const first = "甲乙丙丁戊己庚辛壬";
+  const second = "天地玄黄宇宙洪荒日";
+  const text = `${first}，中文。${second}`;
+  assert.equal(chunker.chunkText(text, { segmenter: null }).join(""), text);
+  assert.deepEqual(inputs, [first, second]);
+});
+
+test("fixed model windows score every gap once, without forcing cuts at window edges", () => {
+  for (const length of [255, 256, 257, 511, 512, 513, 1000]) {
+    const tokens = Array.from({ length }, (_, index) => String.fromCodePoint(0x20000 + index));
+    const inputs = [];
+    const gaps = [];
+    const chunker = withModel((windowTokens) => {
+      inputs.push(Array.from(windowTokens));
+      return windowTokens.slice(0, -1).map((token) => {
+        const index = token.codePointAt(0) - 0x20000;
+        gaps.push(index);
+        return (index + 1) % 8 === 0 ? 10 : -1;
+      });
+    });
+    const chunks = chunker.chunkText(tokens.join(""), { segmenter: null });
+    assert.equal(inputs.length, Math.ceil((length - 1) / 255));
+    assert.ok(inputs.every((window) => window.length >= 2 && window.length <= 256));
+    assert.deepEqual(inputs[0].concat(...inputs.slice(1).map((window) => window.slice(1))), tokens);
+    assert.deepEqual(gaps, Array.from({ length: length - 1 }, (_, index) => index));
+    assert.equal(chunks.join(""), tokens.join(""));
+    assert.equal(chunks.length, Math.ceil(length / 8));
+    assert.ok(chunks.slice(0, -1).every((chunk) => Array.from(chunk).length === 8));
+  }
+});
+
+test("long clauses with tied scores can split near one end without overflowing the call stack", () => {
+  const text = "甲".repeat(9000);
+  let calls = 0;
+  const chunker = withModel((tokens) => {
+    calls += 1;
+    return Array(tokens.length - 1).fill(0);
+  });
+  const chunks = chunker.chunkText(text, { segmenter: null });
+  assert.equal(chunks.join(""), text);
+  assert.equal(chunks.length, text.length - 7);
+  assert.equal(chunks.at(-1), "甲".repeat(8));
+  assert.equal(calls, Math.ceil((text.length - 1) / 255));
 });
 
 test("rejects candidate boundaries inside a segmented word", () => {
@@ -288,8 +376,8 @@ test("renders the reported Euler-method example with model scores", () => {
 
 test("model scoring keeps 方向盘 together at the current length threshold", () => {
   assert.deepEqual(chunkText("驾驶员会出于本能进行向左打方向盘等避险动作，"), [
-    "驾驶员会",
-    "出于本能进行",
+    "驾驶员会出于本能",
+    "进行",
     "向左打",
     "方向盘等避险动作，",
   ]);
