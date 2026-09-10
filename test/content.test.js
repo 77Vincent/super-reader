@@ -60,11 +60,8 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
     append(node) { node.remove(); this.childNodes.push(node); node.parentNode = this; }
     setAttribute(name, value) { this.attributes[name] = value; }
     getBoundingClientRect() { return { left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 }; }
-    closest() {
-      for (let node = this; node; node = node.parentElement) {
-        if (["PRE", "CODE", "BUTTON"].includes(node.tagName) || node.attributes["aria-hidden"] === "true") return node;
-      }
-      return null;
+    matches() {
+      return ["PRE", "CODE", "BUTTON"].includes(this.tagName) || this.attributes["aria-hidden"] === "true";
     }
     querySelectorAll() {
       const matches = [];
@@ -103,24 +100,25 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
       }),
     },
     createRange() {
-      let node, start, end;
+      let node;
       return {
-        setStart(source, offset) { node = source; start = offset; },
-        setEnd(source, offset) { assert.equal(source, node); end = offset; },
-        getBoundingClientRect() { return node.geometry(start, end); },
+        selectNodeContents(source) { node = source; },
+        getClientRects() { return [node.geometry(0, node.nodeValue.length)]; },
       };
     },
     createElement: (name) => new Element(name),
     querySelectorAll: () => html.querySelectorAll(),
-    createTreeWalker(root) {
-      const nodes = [];
-      function visit(node) {
-        if (node.nodeType === 3) nodes.push(node);
-        else node.childNodes.forEach(visit);
+    createTreeWalker(root, whatToShow, filter) {
+      function* visit(parent) {
+        for (const node of parent.childNodes) {
+          const result = ((1 << (node.nodeType - 1)) & whatToShow) ? filter.acceptNode(node) : 3;
+          if (result === 2) continue; // FILTER_REJECT prunes descendants.
+          if (result === 1) yield node;
+          if (node.nodeType === 1) yield* visit(node);
+        }
       }
-      visit(root);
-      let index = 0;
-      return { nextNode() { this.currentNode = nodes[index++]; return Boolean(this.currentNode); } };
+      const iterator = visit(root);
+      return { nextNode() { this.currentNode = iterator.next().value; return this.currentNode || null; } };
     },
   };
   const page = {
@@ -132,10 +130,12 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
     text(value, parent = paragraph) { const node = new TextNode(value); parent.append(node); return node; },
     element(tag, parent = paragraph) { const node = new Element(tag); parent.append(node); return node; },
   };
-  const context = vm.createContext({ document, NodeFilter: { SHOW_TEXT: 4 } });
+  const context = vm.createContext({ document, NodeFilter: { SHOW_ELEMENT: 1, SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2, FILTER_SKIP: 3 } });
   const run = (path) => vm.runInContext(
     readFileSync(join(__dirname, "..", path), "utf8"), context, { filename: path },
   );
+  run("src/frontend/viewport.js");
+  run("src/frontend/visibility.js");
   run("src/frontend/read.js");
   run("src/frontend/write.js");
   run("src/app/reader.js");
@@ -152,6 +152,8 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
     run("src/platform/chrome/content.js");
     run("src/start-reader.js");
     // Reinjecting must not register a second reader or message handler.
+    run("src/frontend/viewport.js");
+    run("src/frontend/visibility.js");
     run("src/frontend/read.js");
     run("src/frontend/write.js");
     run("src/app/reader.js");
@@ -246,11 +248,11 @@ test("the original viewport snapshot is used even if the viewport moves during p
   let complete;
   page.infer = () => new Promise((resolve) => { complete = resolve; });
   page.toggle();
-  assert.deepEqual(page.requests, [["甲".repeat(60)]]);
+  assert.deepEqual(page.requests, [[text]]);
   page.document.defaultView.visualViewport.offsetTop = 100;
   complete({ offsetsByText: [[4]] });
   await page.finish();
-  assert.equal(page.paragraph.childNodes[0].nodeValue.length, 204);
+  assert.equal(page.paragraph.childNodes[0].nodeValue.length, 4);
   assert.equal(page.paragraph.textContent, text);
   assert.equal(page.requests.length, 1);
 });

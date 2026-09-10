@@ -14,6 +14,8 @@
     <pre id="results">Ready</pre>
   </header>
   <div id="fixture"></div>
+  <script src="../src/frontend/viewport.js"></script>
+  <script src="../src/frontend/visibility.js"></script>
   <script src="../src/frontend/read.js"></script>
   <script src="../src/frontend/write.js"></script>
   <script>
@@ -43,20 +45,22 @@
       return { snapshot, elapsed };
     }
 
-    // Independent per-character oracle for small samples around the visible area.
-    function verifyCharacters(node, snapshot, clip = snapshot.viewport, start = 0, end = node.length) {
+    // Independently check characters until one is visible, then expect the whole node.
+    function verifyWholeNode(node, snapshot, visibleArea = snapshot.viewport) {
       const range = document.createRange();
-      for (let offset = start; offset < end;) {
+      let visible = false;
+      for (let offset = 0; offset < node.length && !visible;) {
         const size = node.nodeValue.codePointAt(offset) > 0xffff ? 2 : 1;
-        if (/\p{Script=Han}/u.test(node.nodeValue.slice(offset, offset + size))) {
-          range.setStart(node, offset);
-          range.setEnd(node, offset + size);
-          const visible = intersects(range.getBoundingClientRect(), clip);
-          const included = snapshot.sources.some((source) => source.node === node &&
-            source.start <= offset && source.end >= offset + size);
-          assert(visible === included, `visibility mismatch at offset ${offset}`);
-        }
+        range.setStart(node, offset);
+        range.setEnd(node, offset + size);
+        visible = intersects(range.getBoundingClientRect(), visibleArea);
         offset += size;
+      }
+      const sources = snapshot.sources.filter((source) => source.node === node);
+      assert(sources.length === (visible ? 1 : 0), "unexpected whole-node inclusion");
+      if (visible) {
+        assert(sources[0].start === 0 && sources[0].end === node.length, "text was clipped");
+        assert(sources[0].text === node.nodeValue, "text changed");
       }
     }
 
@@ -78,14 +82,14 @@
       assert(read().snapshot.texts.length === 0, "read offscreen text");
     });
 
-    addTest("wrapped text clipped at top and left viewport edges", () => {
+    addTest("wrapped text crossing viewport edges is captured whole", () => {
       fixture.style.top = "-8px";
       fixture.style.left = "-25px";
       fixture.textContent = "甲乙丙丁戊己庚辛壬癸".repeat(8);
       const node = fixture.firstChild;
       const { snapshot } = read();
       assert(snapshot.texts.length > 0, "missed visible text");
-      verifyCharacters(node, snapshot);
+      verifyWholeNode(node, snapshot);
     });
 
     addTest("100,000-character node spanning the viewport", () => {
@@ -94,16 +98,14 @@
       const node = fixture.firstChild;
       const { snapshot, elapsed } = read();
       const sources = snapshot.sources.filter((source) => source.node === node);
-      assert(sources.length > 0, "missed the visible middle of the long node");
-      const start = sources[0].start;
-      const end = sources[sources.length - 1].end;
+      assert(sources.length === 1, "expected one complete source for the long node");
+      assert(sources[0].start === 0 && sources[0].end === node.length, "long node was clipped");
       const length = snapshot.texts.reduce((sum, text) => sum + text.length, 0);
-      assert(start > 0 && end < node.length && length < 2000, "captured more than the viewport");
-      verifyCharacters(node, snapshot, snapshot.viewport, Math.max(0, start - 20), Math.min(node.length, end + 20));
+      assert(length === node.length, "did not capture the complete string");
       return `${length} / ${node.length} UTF-16 units; read ${elapsed.toFixed(1)} ms`;
     });
 
-    addTest("nested scroll container clips visible text", () => {
+    addTest("a node partially visible inside a scroll container is captured whole", () => {
       fixture.innerHTML = `<div style="height:65px;width:95px;overflow:auto;border:3px solid"><div></div></div>`;
       const scroller = fixture.firstChild;
       const content = scroller.firstChild;
@@ -114,7 +116,7 @@
       const rect = scroller.getBoundingClientRect();
       const left = rect.left + scroller.clientLeft;
       const top = rect.top + scroller.clientTop;
-      verifyCharacters(content.firstChild, snapshot, {
+      verifyWholeNode(content.firstChild, snapshot, {
         left, top, right: left + scroller.clientWidth, bottom: top + scroller.clientHeight,
       });
     });
@@ -123,7 +125,7 @@
       fixture.style.left = "-15px";
       fixture.textContent = "𠀀甲𠮷乙丙丁戊己";
       const { snapshot } = read();
-      verifyCharacters(fixture.firstChild, snapshot);
+      verifyWholeNode(fixture.firstChild, snapshot);
     });
 
     addTest("overflow on a plain inline span does not clip its text", () => {
@@ -143,9 +145,16 @@
       const rect = scroller.getBoundingClientRect();
       const left = rect.left + scroller.clientLeft * 1.5;
       const top = rect.top + scroller.clientTop * 1.5;
-      verifyCharacters(content.firstChild, snapshot, {
+      verifyWholeNode(content.firstChild, snapshot, {
         left, top, right: left + scroller.clientWidth * 1.5, bottom: top + scroller.clientHeight * 1.5,
       });
+    });
+
+    addTest("a fixed child of an offscreen parent remains eligible", () => {
+      fixture.style.top = `${innerHeight + 20}px`;
+      fixture.innerHTML = `<div>屏幕外的文字<span style="position:fixed;left:20px;top:100px">固定可见文字</span></div>`;
+      const { snapshot } = read();
+      assert(JSON.stringify(snapshot.texts) === JSON.stringify(["固定可见文字"]), "pruned a visible descendant");
     });
 
     addTest("snapshots retain their original text after DOM changes", () => {
@@ -158,12 +167,12 @@
       assert(second.texts[0] === "更新的中文", "new snapshot missed the update");
     });
 
-    addTest("write handles multiple clipped ranges in one native text node and clear restores it", () => {
+    addTest("write uses whole-node offsets and clear restores the original text", () => {
       fixture.style.left = "-25px";
       const original = "甲乙丙丁戊己庚辛壬癸".repeat(8);
       fixture.textContent = original;
       const { snapshot } = read();
-      assert(snapshot.sources.length > 1, "fixture must produce several visible ranges");
+      assert(snapshot.sources.length === 1, "expected one complete source node");
       const offsets = snapshot.texts.map((text) => text.length > 2 ? [1, 2] : []);
       const expected = snapshot.sources.flatMap((source, i) => offsets[i].map((offset) => source.start + offset));
       SuperReader.write(snapshot, offsets);

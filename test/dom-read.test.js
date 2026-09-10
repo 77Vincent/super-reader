@@ -4,27 +4,22 @@ const { readFileSync } = require("node:fs");
 const { join } = require("node:path");
 const vm = require("node:vm");
 
-const filename = join(__dirname, "../src/frontend/read.js");
-const script = readFileSync(filename, "utf8");
+const scripts = ["viewport.js", "visibility.js", "read.js"].map((name) => {
+  const filename = join(__dirname, "../src/frontend", name);
+  return { filename, source: readFileSync(filename, "utf8") };
+});
 const box = (left, top, width, height) => ({
   left, top, width, height, right: left + width, bottom: top + height,
 });
 function cells(rectangles) {
-  return (start, end) => {
-    const selected = rectangles.slice(start, end).filter(Boolean);
-    if (!selected.length) return box(0, 0, 0, 0);
-    const left = Math.min(...selected.map((rect) => rect.left));
-    const top = Math.min(...selected.map((rect) => rect.top));
-    return box(left, top,
-      Math.max(...selected.map((rect) => rect.right)) - left,
-      Math.max(...selected.map((rect) => rect.bottom)) - top);
-  };
+  return (start, end) => rectangles.slice(start, end).filter(Boolean);
 }
 
 // Only layout geometry is supplied by the test. Browser fixtures separately check
 // native Range measurements and CSS; this harness needs no DOM library or model.
 function createPage() {
   const measurements = [];
+  const visited = [];
   function element(tag = "p", options = {}) {
     const rect = options.rect || box(0, 0, 100, 100);
     const node = {
@@ -33,19 +28,15 @@ function createPage() {
       className: options.className || "", clientLeft: 0, clientTop: 0,
       clientWidth: rect.width, clientHeight: rect.height,
       getBoundingClientRect: () => rect,
-      closest(selector) {
-        const matches = (candidate, part) => {
-          if (part === candidate.tag) return true;
-          if (part.startsWith(".")) return candidate.className.split(" ").includes(part.slice(1));
-          if (part === "[hidden]") return "hidden" in candidate.attributes;
-          if (part === "[aria-hidden='true']") return candidate.attributes["aria-hidden"] === "true";
+      matches(selector) {
+        return selector.split(",").some((part) => {
+          if (part === this.tag) return true;
+          if (part.startsWith(".")) return this.className.split(" ").includes(part.slice(1));
+          if (part === "[hidden]") return "hidden" in this.attributes;
+          if (part === "[aria-hidden='true']") return this.attributes["aria-hidden"] === "true";
           return part === "[contenteditable]:not([contenteditable='false'])" &&
-            "contenteditable" in candidate.attributes && candidate.attributes.contenteditable !== "false";
-        };
-        for (let candidate = this; candidate; candidate = candidate.parentElement) {
-          if (selector.split(",").some((part) => matches(candidate, part))) return candidate;
-        }
-        return null;
+            "contenteditable" in this.attributes && this.attributes.contenteditable !== "false";
+        });
       },
     };
     node.parentElement?.childNodes.push(node);
@@ -63,32 +54,35 @@ function createPage() {
   const view = { getComputedStyle: computedStyle };
   const document = {
     body, documentElement: root, defaultView: view,
-    createTreeWalker(start) {
-      const texts = [];
-      function collect(node) {
-        if (node.nodeType === 3) texts.push(node);
-        else node.childNodes.forEach(collect);
+    createTreeWalker(root, whatToShow, filter) {
+      function* visit(parent) {
+        for (const node of parent.childNodes) {
+          visited.push(node);
+          const result = ((1 << (node.nodeType - 1)) & whatToShow) ? filter.acceptNode(node) : 3;
+          if (result === 2) continue;
+          if (result === 1) yield node;
+          if (node.nodeType === 1) yield* visit(node);
+        }
       }
-      collect(start);
-      let index = 0;
-      return { nextNode() { this.currentNode = texts[index++]; return this.currentNode || null; } };
+      const iterator = visit(root);
+      return { nextNode() { this.currentNode = iterator.next().value; return this.currentNode || null; } };
     },
     createRange() {
-      let node, start, end;
+      let node;
       return {
-        setStart(source, offset) { node = source; start = offset; },
-        setEnd(source, offset) { assert.equal(source, node); end = offset; },
-        getBoundingClientRect() {
-          measurements.push({ node, start, end });
-          return node.geometry(start, end);
+        selectNodeContents(source) { node = source; },
+        getClientRects() {
+          measurements.push({ node, start: 0, end: node.nodeValue.length });
+          const rectangles = node.geometry(0, node.nodeValue.length);
+          return Array.isArray(rectangles) ? rectangles : [rectangles];
         },
       };
     },
   };
-  const context = vm.createContext({ document, NodeFilter: { SHOW_TEXT: 4 } });
-  vm.runInContext(script, context, { filename });
+  const context = vm.createContext({ document, NodeFilter: { SHOW_ELEMENT: 1, SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2, FILTER_SKIP: 3 } });
+  for (const { filename, source } of scripts) vm.runInContext(source, context, { filename });
   return {
-    document, view, body, root, measurements,
+    document, view, body, root, measurements, visited,
     read: context.SuperReader.read,
     element: (tag, options = {}) => element(tag, { parent: body, ...options }),
     text(value, geometry = () => box(0, 0, 40, 20), parent = body) {
@@ -162,7 +156,55 @@ test("visibility overrides and display:contents work while ancestor opacity stil
   assert.deepEqual(Array.from(page.read().texts), ["重新可见", "没有父级盒子"]);
 });
 
-test("viewport edges exclude offscreen and zero-area text and retain partly visible characters", () => {
+test("excluded branches are pruned before their descendants are traversed", () => {
+  const page = createPage();
+  const excluded = [
+    page.element("pre"),
+    page.element("div", { style: { display: "none" } }),
+    page.element("div", { style: { opacity: "0" } }),
+    page.element("div", { style: { contentVisibility: "hidden" } }),
+    page.element("div", { attributes: { contenteditable: "true" } }),
+  ];
+  for (const element of excluded) {
+    Object.defineProperty(element, "childNodes", {
+      get() { assert.fail("traversed descendants of an excluded branch"); },
+    });
+  }
+  const visible = page.text("仍然读取正文");
+  assert.deepEqual(Array.from(page.read().texts), [visible.nodeValue]);
+  assert.deepEqual(page.visited, [...excluded, visible]);
+});
+
+test("excluded body or html prevents traversal even though TreeWalker does not filter its root", () => {
+  for (const target of ["body", "root"]) {
+    const page = createPage();
+    page[target].attributes.hidden = "";
+    page.text("不应该进入遍历");
+    assert.deepEqual(Array.from(page.read().texts), []);
+    assert.equal(page.visited.length, 0);
+  }
+});
+
+test("an offscreen parent does not prune a visible positioned descendant", () => {
+  const page = createPage();
+  const offscreen = page.element("div", { rect: box(0, 200, 100, 100) });
+  page.text("屏幕之外", () => box(0, 200, 40, 20), offscreen);
+  const fixed = page.element("span", { parent: offscreen, style: { position: "fixed" } });
+  page.text("屏幕之内", () => box(0, 0, 40, 20), fixed);
+  assert.deepEqual(Array.from(page.read().texts), ["屏幕之内"]);
+});
+
+test("text fully clipped by a scroll container is excluded even inside the viewport", () => {
+  const page = createPage();
+  const scroller = page.element("div", {
+    rect: box(20, 20, 40, 20), style: { overflowX: "hidden", overflowY: "auto" },
+  });
+  page.text("没有显示", () => box(20, 60, 40, 20), scroller);
+  page.text("显示一半也保留全部", () => box(20, 30, 40, 20), scroller);
+  assert.deepEqual(Array.from(page.read().texts), ["显示一半也保留全部"]);
+});
+
+test("viewport edges exclude offscreen and zero-area text and retain partially visible nodes", () => {
   const page = createPage();
   for (const rect of [box(-10, 0, 10, 10), box(100, 0, 10, 10), box(0, -10, 10, 10),
     box(0, 100, 10, 10), box(0, 0, 0, 10), box(0, 0, 10, 0)]) {
@@ -173,19 +215,19 @@ test("viewport edges exclude offscreen and zero-area text and retain partly visi
   assert.deepEqual(Array.from(page.read().texts), ["上", "下"]);
 });
 
-test("a 100,000-character node contributes only the visible middle range", () => {
+test("a partially visible 100,000-character node is captured whole with one range measurement", () => {
   const page = createPage();
   const node = page.text("汉".repeat(100_000), (start, end) => box(0, start * 10 - 500_000, 10, (end - start) * 10));
   const snapshot = page.read();
-  assert.deepEqual(Array.from(snapshot.texts), ["汉".repeat(10)]);
-  assert.equal(snapshot.sources[0].start, 50_000);
-  assert.equal(snapshot.sources[0].end, 50_010);
+  assert.deepEqual(Array.from(snapshot.texts), [node.nodeValue]);
+  assert.equal(snapshot.sources[0].start, 0);
+  assert.equal(snapshot.sources[0].end, 100_000);
   assert.equal(snapshot.sources[0].node, node);
   assert.equal(node.nodeValue.length, 100_000);
-  assert.ok(page.measurements.length < 100, `measured ${page.measurements.length} ranges`);
+  assert.equal(page.measurements.length, 1);
 });
 
-test("overflow clipping produces separate source ranges when hidden characters lie between them", () => {
+test("a node intersecting a scroll container is captured once, including its clipped characters", () => {
   const page = createPage();
   const parent = page.element("div", {
     rect: box(20, 0, 20, 40), style: { overflowX: "hidden", overflowY: "auto" },
@@ -193,8 +235,8 @@ test("overflow clipping produces separate source ranges when hidden characters l
   const rectangles = Array.from({ length: 12 }, (_, i) => box((i % 6) * 10, Math.floor(i / 6) * 20, 10, 20));
   const node = page.text("甲乙丙丁戊己庚辛壬癸子丑", cells(rectangles), parent);
   const snapshot = page.read();
-  assert.deepEqual(Array.from(snapshot.texts), ["丙丁", "壬癸"]);
-  assert.deepEqual(Array.from(snapshot.sources, ({ start, end }) => [start, end]), [[2, 4], [8, 10]]);
+  assert.deepEqual(Array.from(snapshot.texts), [node.nodeValue]);
+  assert.deepEqual(Array.from(snapshot.sources, ({ start, end }) => [start, end]), [[0, node.nodeValue.length]]);
   assert.ok(snapshot.sources.every((source) => source.node === node));
 });
 
@@ -204,13 +246,13 @@ test("a bounding rectangle crossing the viewport does not imply its characters a
   assert.deepEqual(Array.from(page.read().texts), []);
 });
 
-test("Han text outside the viewport does not make a visible English range eligible", () => {
+test("a partially visible mixed-language node is captured whole even when its Han text is offscreen", () => {
   const page = createPage();
   page.text("abc中文", cells([
     box(0, 0, 10, 10), box(10, 0, 10, 10), box(20, 0, 10, 10),
     box(100, 0, 10, 10), box(110, 0, 10, 10),
   ]));
-  assert.deepEqual(Array.from(page.read().texts), []);
+  assert.deepEqual(Array.from(page.read().texts), ["abc中文"]);
 });
 
 test("partly visible supplementary Han characters keep both UTF-16 code units", () => {
@@ -218,9 +260,9 @@ test("partly visible supplementary Han characters keep both UTF-16 code units", 
   page.view.visualViewport = { offsetLeft: 5, offsetTop: 0, width: 5, height: 10 };
   page.text("𠀀甲", cells([box(0, 0, 10, 10), box(0, 0, 10, 10), box(10, 0, 10, 10)]));
   const snapshot = page.read();
-  assert.deepEqual(Array.from(snapshot.texts), ["𠀀"]);
+  assert.deepEqual(Array.from(snapshot.texts), ["𠀀甲"]);
   assert.equal(snapshot.sources[0].start, 0);
-  assert.equal(snapshot.sources[0].end, 2);
+  assert.equal(snapshot.sources[0].end, 3);
   assert.ok(page.measurements.every(({ start, end }) => start !== 1 && end !== 1));
 });
 
@@ -232,8 +274,8 @@ test("snapshot text, source offsets, and visual viewport bounds stay fixed after
   node.nodeValue = "子丑寅卯辰巳";
   page.view.visualViewport.offsetLeft = 40;
   const second = page.read();
-  assert.deepEqual(Array.from(first.texts), ["丙丁"]);
+  assert.deepEqual(Array.from(first.texts), ["甲乙丙丁戊己"]);
   assert.equal(first.sources[0].text, "甲乙丙丁戊己");
   assert.deepEqual({ ...first.viewport }, { left: 20, top: 30, right: 40, bottom: 50 });
-  assert.deepEqual(Array.from(second.texts), ["辰巳"]);
+  assert.deepEqual(Array.from(second.texts), ["子丑寅卯辰巳"]);
 });

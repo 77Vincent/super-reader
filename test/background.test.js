@@ -80,6 +80,7 @@ test("toolbar clicks inject only the current page and toggle each page independe
   await background.click(1);
   assert.deepEqual(background.injected, [1]);
   assert.deepEqual(background.injectedFiles[0], [
+    "src/frontend/viewport.js", "src/frontend/visibility.js",
     "src/frontend/read.js", "src/frontend/write.js", "src/app/reader.js",
     "src/platform/chrome/content.js", "src/start-reader.js",
   ]);

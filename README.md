@@ -10,9 +10,9 @@
 失败 → 记录 error → 关闭并清理 → 解锁，等待用户重试
 ```
 
-一次处理的单位是开启时捕获的完整可视区域。`read()` 同步固定文本及其 DOM 映射；`process()` 将全部文本作为一个请求交给 Worker；全部结果返回后，`write()` 一次同步写入分隔标记。锁覆盖读取、推理、写入的全过程，处理中点击开关无效。
+一次处理的单位是开启时与可视区域相交的全部合格文本节点，每个节点保留完整字符串。`read()` 同步固定文本及其 DOM 映射；`process()` 将全部文本作为一个请求交给 Worker；全部结果返回后，`write()` 一次同步写入分隔标记。锁覆盖读取、推理、写入的全过程，处理中点击开关无效。
 
-没有按字符数切分的任务批次、批次间延迟、应用层任务队列或用户取消机制。屏幕可读文字通常有限，是当前工作量的设计假设，不是任意网页数据量或运行时间的硬保证。推理请求设有 5 秒超时，超时会终止 Worker 并报错。失败后保留错误信息、停止处理，用户可再次点击重试。
+没有按字符数切分的任务批次、批次间延迟、应用层任务队列或用户取消机制。视口用于选择节点，不裁剪字符，也不限制字符串长度；单个跨多屏的长节点会被完整处理，因此数据量和运行时间没有硬保证。推理请求设有 5 秒超时，超时会终止 Worker 并报错。失败后保留错误信息、停止处理，用户可再次点击重试。
 
 滚动、窗口缩放和动态内容触发的新任务暂未实现；已捕获的快照不随它们变化。此处“一次操作”指调度和锁的单位，不代表网页 DOM 被冻结：页面自行改变的源文本不会写入旧结果。
 
@@ -21,7 +21,9 @@
 | 文件 | 职责 |
 | --- | --- |
 | `src/app/reader.js` | `createReader()`：协调 read/process/write，管理 enabled、busy、error 和 toggle |
-| `src/frontend/read.js` | `read()` 读取可见文本并保存 DOM 映射 |
+| `src/frontend/read.js` | `read()` 跳过无关 DOM 分支，保留至少部分可见的完整文本节点，生成固定快照和 DOM 映射 |
+| `src/frontend/viewport.js` | `readViewport(document)` 捕获可视区域边界 |
+| `src/frontend/visibility.js` | `createVisibilityFilter(document, viewport)` 提供 `shouldSkipSubtree(element)` 和 `getVisibleArea(node)`；负责分支排除、隐藏判断及祖先溢出裁剪，样式缓存仅用于本次读取 |
 | `src/frontend/write.js` | `write()` 映射结果，`addMarkers()` 校验源节点并插入标记，`clearMarkers()` 清理 |
 | `src/backend/chunker.js` | `process(texts)` 返回每段文本的 UTF-16 分隔位置；负责标点分句、词语保护和模型驱动的递归切分 |
 | `src/backend/inference.js` | 纯 JavaScript CNN 数值计算，只接受模型数据输入 |
@@ -47,7 +49,9 @@
 核心只使用标准 DOM、Worker 和 JavaScript，不调用扩展 API。Chrome 调用集中在 `src/platform/chrome/`。普通脚本通过 `globalThis.SuperReader` 暴露接口，后台按以下顺序加载页面代码：
 
 ```text
-frontend/read.js → frontend/write.js → app/reader.js → platform/chrome/content.js → start-reader.js
+frontend/viewport.js → frontend/visibility.js
+  → frontend/read.js → frontend/write.js → app/reader.js
+  → platform/chrome/content.js → start-reader.js
 ```
 
 `start-reader.js` 注入依赖：
@@ -88,11 +92,15 @@ Chrome 的推理消息路径：
 }
 ```
 
-`sources` 与 `texts` 一一对应。`text` 保存读取时完整的节点值，`start`、`end` 是原始节点中的 UTF-16 偏移；`texts[i]` 等于 `source.text.slice(start, end)`。`process(texts)` 返回同样顺序的 `number[][]`，每个偏移严格递增、位于对应输入内部，并保留完整的 Unicode 字符。
+`sources` 与 `texts` 一一对应。`text` 保存读取时完整的节点值，`start` 固定为 `0`，`end` 为完整字符串的 UTF-16 长度；`texts[i]` 等于 `source.text.slice(start, end)`。`process(texts)` 返回同样顺序的 `number[][]`，每个偏移严格递增、位于对应输入内部，并保留完整的 Unicode 字符。
 
-读取使用文本 Range 的布局边界，因此跨越多屏的单个文本节点只贡献可见部分。写入从后往前处理源范围，保证同一节点内较早的偏移不受后续分割影响；写入前检查节点连接、父节点和原文。原有标签与文本保留，关闭时移除标记并合并相邻文本节点。
+`read.js` 先用 `TreeWalker` 遍历元素和文本。遇到代码、控件、可编辑区域或不能显示的分支时，直接跳过其后代；对其余文本节点，只要 `Range.getClientRects()` 的任一文本矩形与允许显示的区域相交，就保留整个节点，一节点一条输入，不再查找可见字符的起止位置。仅保留含中文的字符串。
 
-当前跳过代码、控件、隐藏、可编辑区域，只处理当前文档的普通 DOM。可见性考虑视口和普通滚动容器的矩形裁剪，不判断遮挡层、CSS 蒙版或任意旋转后的裁剪形状，也不进入 Shadow DOM 或 iframe。读取仍需遍历文档文本节点，耗时会受文档规模和浏览器布局成本影响。
+`visibility.js` 判断分支是否应排除，并计算视口与祖先滚动容器的矩形交集；`viewport.js` 捕获视口尺寸。对应的独立测试位于 `test/visibility.test.js` 和 `test/viewport.test.js`，`test/dom-read.test.js` 验证分支跳过、整节点选择和快照行为。
+
+写入前检查节点连接、父节点和原文。分隔位置从后往前写入，原有标签与文本保留，关闭时移除标记并合并相邻文本节点。
+
+当前只处理当前文档的普通 DOM，不判断遮挡层、CSS 蒙版或任意旋转后的裁剪形状，也不进入 Shadow DOM 或 iframe。不能仅凭父元素在屏幕外就跳过整个分支，因为其定位后代仍可能可见；`visibility:hidden` 也可能被后代覆盖。初次发现节点的耗时仍受文档规模和浏览器布局成本影响。
 
 ## 安装和验证
 
