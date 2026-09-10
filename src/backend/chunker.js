@@ -13,11 +13,10 @@
   "use strict";
 
   const HAN_CHARACTER = /\p{Script=Han}/u;
-  const CLAUSE_END_CHARACTER = /[，,、。.！？!?；;：:\n…（）()《》〈〉\/／]/u;
+  const CLAUSE_END_CHARACTER = /[，,、。.！？!?；;：:\n…（）()《》〈〉]/u;
   const TRAILING_CLOSER = /[”’」』）》】〉〕〗〙〛"'）)\]]/u;
   const NUMERIC_TOKEN = /^\p{Number}+(?:[.,]\p{Number}+)*$/u;
   const NUMERIC_EXPRESSION = /\p{Number}+(?:[.,]\p{Number}+)?(?:\s+\p{Number}+[\/／]\p{Number}+|[\/／]\p{Number}+)?/gu;
-  const NUMBER_CHARACTER = /^\p{Number}$/u;
   const SINGLE_HAN_WORD = /^\p{Script=Han}$/u;
   const WHITESPACE = /^\s+$/u;
   const BALANCE_LOG_WEIGHT = 0.25;
@@ -31,34 +30,6 @@
     );
     const numericExpressionLength = Array.from(text.matchAll(NUMERIC_EXPRESSION)).length;
     return hanLength + numericExpressionLength;
-  }
-
-  function isNumericSlash(characters, index) {
-    const character = characters[index];
-    if (character !== "/" && character !== "／") return false;
-
-    let leftIndex = index - 1;
-    let rightIndex = index + 1;
-    while (leftIndex >= 0 && WHITESPACE.test(characters[leftIndex])) leftIndex -= 1;
-    while (
-      rightIndex < characters.length &&
-      WHITESPACE.test(characters[rightIndex])
-    ) {
-      rightIndex += 1;
-    }
-    return (
-      leftIndex >= 0 &&
-      rightIndex < characters.length &&
-      NUMBER_CHARACTER.test(characters[leftIndex]) &&
-      NUMBER_CHARACTER.test(characters[rightIndex])
-    );
-  }
-
-  function isClauseEndAt(characters, index) {
-    return (
-      CLAUSE_END_CHARACTER.test(characters[index]) &&
-      !isNumericSlash(characters, index)
-    );
   }
 
   function tokenizeHanCharacters(text) {
@@ -103,11 +74,11 @@
         isInsideStraightDoubleQuote = !isInsideStraightDoubleQuote;
       }
 
-      if (!isClauseEndAt(characters, index)) continue;
+      if (!CLAUSE_END_CHARACTER.test(character)) continue;
 
       while (index + 1 < characters.length) {
         const nextCharacter = characters[index + 1];
-        const isTrailingPunctuation = isClauseEndAt(characters, index + 1);
+        const isTrailingPunctuation = CLAUSE_END_CHARACTER.test(nextCharacter);
         const isTrailingCloser =
           TRAILING_CLOSER.test(nextCharacter) &&
           (nextCharacter !== '"' || isInsideStraightDoubleQuote);

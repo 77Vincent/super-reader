@@ -78,28 +78,28 @@ test("treats punctuation and newlines as hard boundaries", () => {
   ]);
 });
 
-test("treats parentheses, slashes, and title marks as hard clause boundaries", () => {
+test("treats parentheses and title marks as hard clause boundaries", () => {
   const text = "语料库（或包含项目）用于训练/微调《家庭晚餐》。";
 
   assert.deepEqual(splitClauses(text), [
     "语料库（",
     "或包含项目）",
-    "用于训练/",
-    "微调《",
+    "用于训练/微调《",
     "家庭晚餐》。",
   ]);
   assert.equal(buildVisualChunks(text).some((chunk) => chunk.separated), false);
 });
 
-test("keeps a slash inside a numeric fraction but pre-splits an ordinary slash", () => {
-  assert.deepEqual(splitClauses("训练/微调1/4英寸，"), [
-    "训练/",
-    "微调1/4英寸，",
-  ]);
-  assert.deepEqual(splitClauses("比例为1 ／ 4，继续。"), [
-    "比例为1 ／ 4，",
-    "继续。",
-  ]);
+test("ordinary and numeric slashes stay inside clauses in both widths", () => {
+  for (const slash of ["/", "／"]) {
+    const clause = `训练${slash}微调1${slash}4英寸，`;
+    assert.deepEqual(splitClauses(clause), [clause]);
+    assert.deepEqual(chunkTextByClause(clause).map((chunks) => chunks.join("")), [clause]);
+    assert.deepEqual(splitClauses(`比例为1 ${slash} 4，继续。`), [
+      `比例为1 ${slash} 4，`,
+      "继续。",
+    ]);
+  }
 });
 
 test("title marks pre-split a title without drawing a divider beside it", () => {
