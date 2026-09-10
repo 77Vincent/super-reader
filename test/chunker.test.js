@@ -117,17 +117,27 @@ test("title marks pre-split a title without drawing a divider beside it", () => 
   );
 });
 
-test("uses boundary balance as a weak prior below model confidence", () => {
+test("selects the highest model score regardless of boundary position", () => {
   assert.equal(selectBestBoundary([]), null);
   assert.equal(selectBestBoundary([0, 0]), 0);
   assert.equal(selectBestBoundary([0, 2, 0]), 1);
   assert.equal(selectBestBoundary([0.01, 0]), 0);
-  assert.equal(selectBestBoundary([0, 0, 0]), 1);
+  assert.equal(selectBestBoundary([0, 0, 0]), 0);
+  assert.equal(selectBestBoundary([0.01, 0, 0]), 0);
+  assert.equal(selectBestBoundary([0, 0, 0.01]), 2);
   assert.equal(selectBestBoundary([1.5, 0, 0]), 0);
   assert.equal(
     selectBestBoundary([-10, -10, -10, -10, -10, 0, -10, 0.311, -10, -10]),
     7,
   );
+});
+
+test("boundary selection excludes protected gaps and invalid scores", () => {
+  assert.equal(selectBestBoundary([10, -2, -1], (index) => index !== 0), 2);
+  assert.equal(selectBestBoundary([0, 0, 0], (index) => index !== 0), 1);
+  assert.equal(selectBestBoundary([NaN, Infinity, -Infinity, -3, -1]), 4);
+  assert.equal(selectBestBoundary([NaN, Infinity, -Infinity]), null);
+  assert.equal(selectBestBoundary([10, 20], () => false), null);
 });
 
 test("rejects candidate boundaries inside a segmented word", () => {
@@ -220,17 +230,17 @@ test("punctuation-delimited clauses of eight characters or fewer stay intact", (
   ]);
 });
 
-test("recursively selects the highest combined score until every chunk is at most eight characters", () => {
+test("recursively selects the highest allowed model score until the length threshold is met", () => {
   const chunks = chunkText("同一个无标点子句内的短语块用细竖线分隔；");
 
   assert.deepEqual(chunks, ["同一个无标点", "子句内的短语块", "用细竖线分隔；"]);
   assert.ok(chunks.every((chunk) => visualLength(chunk) <= 8));
 });
 
-test("uses model confidence, weak balance, and word protection", () => {
+test("uses model scores and word protection for the reading example", () => {
   const chunks = chunkText("而是帮助大脑更快地识别信息结构。");
 
-  assert.deepEqual(chunks, ["而是帮助大脑", "更快地", "识别信息结构。"]);
+  assert.deepEqual(chunks, ["而是帮助大脑", "更快地识别信息", "结构。"]);
   assert.ok(chunks.every((chunk) => visualLength(chunk) <= 8));
 });
 
@@ -246,7 +256,7 @@ test("recursive splitting respects the eight-character threshold across clauses"
   assert.ok(chunks.every((chunk) => visualLength(chunk) <= 8));
 });
 
-test("uses combined scoring and word protection for a technical phrase", () => {
+test("uses model scores and word protection for a technical phrase", () => {
   assert.deepEqual(chunkText("因此它被称为一种数值积分方法"), [
     "因此",
     "它被称为",
@@ -255,7 +265,7 @@ test("uses combined scoring and word protection for a technical phrase", () => {
   assert.deepEqual(chunkText('"无数个小矩形累加"'), ['"无数个小矩形累加"']);
 });
 
-test("renders the reported Euler-method example with combined scoring", () => {
+test("renders the reported Euler-method example with model scores", () => {
   const text = '欧拉法是在积分无法直接计算时，用"无数个小矩形累加"来近似积分，因此它被称为一种数值积分方法（numerical integration method）。';
 
   assert.deepEqual(splitClauses(text), [
@@ -276,7 +286,7 @@ test("renders the reported Euler-method example with combined scoring", () => {
   ]);
 });
 
-test("combined scoring keeps 方向盘 together in the reported sentence", () => {
+test("model scoring keeps 方向盘 together at the current length threshold", () => {
   assert.deepEqual(chunkText("驾驶员会出于本能进行向左打方向盘等避险动作，"), [
     "驾驶员会",
     "出于本能进行",
@@ -309,8 +319,8 @@ test("visual chunks preserve punctuation-delimited boundaries", () => {
 test("vertical separators appear only at model boundaries inside one clause", () => {
   assert.deepEqual(buildVisualChunks("而是帮助大脑更快地识别信息结构。"), [
     { text: "而是帮助大脑", processed: true, separated: false },
-    { text: "更快地", processed: true, separated: true },
-    { text: "识别信息结构。", processed: true, separated: true },
+    { text: "更快地识别信息", processed: true, separated: true },
+    { text: "结构。", processed: true, separated: true },
   ]);
   assert.deepEqual(buildVisualChunks("春天来了，我们出发。"), [
     { text: "春天来了，", processed: true, separated: false },

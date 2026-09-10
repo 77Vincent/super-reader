@@ -19,7 +19,6 @@
   const NUMERIC_EXPRESSION = /\p{Number}+(?:[.,]\p{Number}+)?(?:\s+\p{Number}+[\/／]\p{Number}+|[\/／]\p{Number}+)?/gu;
   const SINGLE_HAN_WORD = /^\p{Script=Han}$/u;
   const WHITESPACE = /^\s+$/u;
-  const BALANCE_LOG_WEIGHT = 0.25;
   const SPLIT_LENGTH_THRESHOLD = 8;
   const MAX_MODEL_WINDOW_TOKENS = 256;
 
@@ -179,20 +178,14 @@
     if (!Array.isArray(scores) || scores.length === 0) return null;
 
     let bestIndex = null;
-    let bestCombinedScore = -Infinity;
+    let bestScore = -Infinity;
     for (let index = 0; index < scores.length; index += 1) {
-      if (!Number.isFinite(scores[index]) || !isAllowed(index)) continue;
-      const leftLength = index + 1;
-      const rightLength = scores.length - index;
-      const balance = Math.min(leftLength, rightLength) /
-        Math.max(leftLength, rightLength);
-      // Model confidence remains primary. The fourth root makes balance a
-      // weak prior that only breaks otherwise close boundary decisions.
-      const combinedScore = scores[index] +
-        BALANCE_LOG_WEIGHT * Math.log(balance);
-      if (bestIndex === null || combinedScore > bestCombinedScore) {
+      const score = scores[index];
+      if (!Number.isFinite(score) || !isAllowed(index)) continue;
+      // Use the model score directly; equal scores keep the first allowed gap.
+      if (score > bestScore) {
         bestIndex = index;
-        bestCombinedScore = combinedScore;
+        bestScore = score;
       }
     }
 
