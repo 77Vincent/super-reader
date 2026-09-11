@@ -15,6 +15,8 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
   let reader;
   const requests = [];
   const states = [];
+  const layoutObservers = new Set();
+  let bodyHeight = 600;
 
   class DomNode {
     constructor(nodeType) { this.nodeType = nodeType; this.parentNode = null; }
@@ -88,6 +90,7 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
   const paragraph = new Element(tag);
   paragraph.append(new TextNode(text));
   const body = new Element("body");
+  body.getBoundingClientRect = () => ({ left: 0, top: 0, right: 800, bottom: bodyHeight, width: 800, height: bodyHeight });
   body.append(paragraph);
   const html = new Element("html");
   html.append(body);
@@ -97,6 +100,11 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
       visualViewport: Object.assign(new EventTarget(), { offsetLeft: 0, offsetTop: 0, width: 800, height: 600 }),
       MutationObserver: class {
         constructor() { throw new Error("The reader must not observe DOM mutations"); }
+      },
+      ResizeObserver: class {
+        constructor(callback) { this.callback = callback; }
+        observe(target) { assert.equal(target, body); layoutObservers.add(this); }
+        disconnect() { layoutObservers.delete(this); }
       },
       getComputedStyle: () => ({
         display: "block", visibility: "visible", opacity: "1",
@@ -137,6 +145,10 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
     finish: drainPromises,
     scroll: () => document.defaultView.dispatchEvent(new Event("scroll")),
     resize: () => document.defaultView.dispatchEvent(new Event("resize")),
+    grow() {
+      bodyHeight += 100;
+      layoutObservers.forEach((observer) => observer.callback());
+    },
     async settle() { await new Promise((resolve) => setTimeout(resolve, 220)); await drainPromises(); },
     text(value, parent = paragraph) { const node = new TextNode(value); parent.append(node); return node; },
     element(tag, parent = paragraph) { const node = new Element(tag); parent.append(node); return node; },
@@ -456,6 +468,32 @@ test("Chrome translates state commands and publishing only delivers the supplied
   await drainPromises();
   assert.deepEqual(commands, [false], "publishing must not issue another control command");
   assert.deepEqual({ ...messages[0] }, { type: "SUPER_READER_STATE", ...finished });
+});
+
+test("an article arriving after the initial empty read is processed when the page grows", async () => {
+  const page = createPage("", "p", true);
+  page.applySetting(true);
+  await page.finish();
+  assert.equal(page.requests.length, 0);
+  assert.equal(page.states.at(-1).enabled, true);
+  page.text(sampleText);
+  page.grow();
+  page.grow();
+  await page.settle();
+  assert.deepEqual(page.requests, [[sampleText]]);
+  const marker = page.markers()[0];
+  assert.ok(marker);
+  page.grow(); // Later layout updates preserve already processed text.
+  await page.settle();
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.markers()[0], marker);
+  page.applySetting(false);
+  const states = page.states.length;
+  page.text("关闭之后新增的文字不应该被处理");
+  page.grow();
+  await page.settle();
+  assert.equal(page.states.length, states);
+  assert.equal(page.requests.length, 1);
 });
 
 test("scroll and resize process newly visible text once and leave overlapping markers unchanged", async () => {

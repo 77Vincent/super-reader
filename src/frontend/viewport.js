@@ -16,7 +16,7 @@
     };
   };
 
-  /** Notify changes immediately; the reader owns debouncing and scheduling. */
+  /** Watch viewport and page-size changes; the reader owns debouncing. */
   globalThis.SuperReader.watchViewport = function watchViewport(document, onChange) {
     const view = document.defaultView;
     const visual = view.visualViewport;
@@ -25,8 +25,20 @@
     view.addEventListener("resize", onChange);
     visual?.addEventListener("scroll", onChange, { passive: true });
     visual?.addEventListener("resize", onChange);
+    // Articles can arrive after the page load event, without scrolling or resizing
+    // the window. Their layout growth needs another read of the visible area.
+    const body = document.body || document.documentElement;
+    let size = body.getBoundingClientRect();
+    const layout = new view.ResizeObserver(() => {
+      const next = body.getBoundingClientRect();
+      if (next.width === size.width && next.height === size.height) return;
+      size = next;
+      onChange();
+    });
+    layout.observe(body);
 
     return () => {
+      layout.disconnect();
       view.removeEventListener("scroll", onChange, true);
       view.removeEventListener("resize", onChange);
       visual?.removeEventListener("scroll", onChange);

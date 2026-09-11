@@ -45,19 +45,38 @@ for (const hasVisualViewport of [false, true]) {
   test(`viewport subscriptions capture scrolling, report changes immediately, and unsubscribe (visual viewport: ${hasVisualViewport})`, () => {
     const view = eventTarget();
     if (hasVisualViewport) view.visualViewport = eventTarget();
+    let height = 300;
+    let callback;
+    let observed;
+    let disconnected = false;
+    const body = { getBoundingClientRect: () => ({ width: 640, height }) };
+    view.ResizeObserver = class {
+      constructor(onResize) { callback = onResize; }
+      observe(target) { observed = target; }
+      disconnect() { disconnected = true; }
+    };
     let changes = 0;
-    const stop = watchViewport({ defaultView: view }, () => { changes += 1; });
+    const stop = watchViewport({ body, defaultView: view }, () => { changes += 1; });
+    assert.equal(observed, body);
+    callback(); // ResizeObserver's initial notification must not reread the page.
+    assert.equal(changes, 0);
+    height += 100;
+    callback();
+    assert.equal(changes, 1);
+    callback();
+    assert.equal(changes, 1, "unchanged dimensions need no refresh");
     const scroll = view.listeners.find(({ type }) => type === "scroll");
     assert.equal(scroll.capture, true, "nested scrolling must reach the window listener");
     assert.equal(scroll.passive, true);
     view.emit("scroll");
     view.emit("resize");
-    assert.equal(changes, 2);
+    assert.equal(changes, 3);
     view.visualViewport?.emit("scroll");
     view.visualViewport?.emit("resize");
-    const expected = hasVisualViewport ? 4 : 2;
+    const expected = hasVisualViewport ? 5 : 3;
     assert.equal(changes, expected);
     stop();
+    assert.equal(disconnected, true);
     assert.equal(view.listeners.length, 0);
     assert.equal(view.visualViewport?.listeners.length ?? 0, 0);
     view.emit("scroll");
@@ -67,3 +86,21 @@ for (const hasVisualViewport of [false, true]) {
     assert.equal(changes, expected);
   });
 }
+
+test("layout growth before the observer's first notification is not missed", () => {
+  const view = eventTarget();
+  let height = 0;
+  let notify;
+  const root = { getBoundingClientRect: () => ({ width: 640, height }) };
+  view.ResizeObserver = class {
+    constructor(callback) { notify = callback; }
+    observe(target) { assert.equal(target, root); }
+    disconnect() {}
+  };
+  let changes = 0;
+  const stop = watchViewport({ defaultView: view, documentElement: root }, () => { changes += 1; });
+  height = 1200;
+  notify();
+  assert.equal(changes, 1);
+  stop();
+});

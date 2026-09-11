@@ -262,6 +262,35 @@
       }
     });
 
+    addTest("article arriving after page load is processed without scroll or window resize", async () => {
+      fixture.style.position = "relative";
+      const inputs = [];
+      const reader = SuperReader.createReader({
+        read: SuperReader.read,
+        async process(texts) { inputs.push([...texts]); return texts.map(() => [2]); },
+        write: SuperReader.write,
+        clear: SuperReader.clearMarkers,
+        remember: SuperReader.rememberProcessedText,
+        reset: SuperReader.clearProcessedText,
+        watch: (onChange) => SuperReader.watchViewport(document, onChange),
+        publishState() {},
+      });
+      try {
+        assert(document.readyState === "complete", "page has not finished loading");
+        reader.toggle(true);
+        await settle();
+        assert(inputs.length === 0, "initial snapshot should be empty");
+        fixture.textContent = "页面加载完成以后正文才显示出来";
+        await settle();
+        assert(inputs.length === 1, "late article was not processed");
+        assert(fixture.querySelectorAll(".super-reader-divider").length === 1, "late article has no marker");
+        await settle();
+        assert(inputs.length === 1, "layout changes repeated model work");
+      } finally {
+        reader.toggle(false);
+      }
+    });
+
     document.querySelector("#run").addEventListener("click", async (event) => {
       event.currentTarget.disabled = true;
       output.textContent = "Running";
