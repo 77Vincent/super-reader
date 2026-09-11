@@ -207,7 +207,7 @@
         publishState() {},
       });
       try {
-        reader.toggle();
+        reader.toggle(true);
         await settle();
         assert(JSON.stringify(inputs) === JSON.stringify([["首屏中文文字"]]), "unexpected initial input");
         scroller.scrollTop = scroller.scrollHeight;
@@ -218,7 +218,7 @@
         assert(inputs.length === 2, "processed an overlapping node twice");
         assert(fixture.querySelectorAll(".super-reader-divider").length === 2, "duplicated or lost markers");
       } finally {
-        if (reader.status().enabled) reader.toggle();
+        if (reader.status().enabled) reader.toggle(false);
       }
     });
 
@@ -246,7 +246,7 @@
         publishState() {},
       });
       try {
-        reader.toggle();
+        reader.toggle(true);
         next.style.top = "160px";
         for (let i = 0; i < 5; i += 1) window.dispatchEvent(new Event("resize"));
         await settle();
@@ -258,7 +258,7 @@
       } finally {
         finishFirst?.();
         await settle();
-        if (reader.status().enabled) reader.toggle();
+        if (reader.status().enabled) reader.toggle(false);
       }
     });
 

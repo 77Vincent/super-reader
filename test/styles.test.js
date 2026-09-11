@@ -10,7 +10,9 @@ test("the toolbar is the only extension control", () => {
   assert.equal(manifest.action.default_popup, undefined);
   assert.equal(manifest.commands, undefined);
   assert.equal(manifest.content_scripts, undefined);
-  assert.equal(manifest.permissions.includes("storage"), false);
+  assert.equal(manifest.permissions.includes("storage"), true);
+  assert.equal(manifest.permissions.includes("activeTab"), false);
+  assert.deepEqual(manifest.host_permissions, ["http://*/*", "https://*/*", "file:///*"]);
 });
 
 test("divider appearance lives in CSS without runtime style configuration", () => {

@@ -9,21 +9,61 @@ const runScript = (path, context) => vm.runInContext(
 );
 const drain = () => new Promise((resolve) => setImmediate(resolve));
 
-function createBackground() {
-  let click, message, navigate;
+function createBackground(saved = {}) {
+  let click, message, navigate, activate, focusWindow, startup, install;
+  let activeId = null;
   let offscreen = false;
   let creations = 0;
+  const tabs = new Map();
   const pages = new Map();
   const badges = new Map();
   const titles = new Map();
   const disabled = new Set();
-  const busyPages = new Set();
-  const toggles = [];
+  const commands = [];
+  const queries = [];
+  const writes = [];
   const injected = [];
   const injectedFiles = [];
   const requests = [];
-  const context = vm.createContext({ console });
-  context.chrome = {
+  const injectionDelays = new Map();
+  const statusDelays = new Map();
+
+  function publish(request, tabId = 1) {
+    return new Promise((resolve) => message(request,
+      { id: "test-extension", tab: { id: tabId }, frameId: 0 }, resolve));
+  }
+
+  // Use the real reader and Chrome page adapter. Only DOM work and inference
+  // are stubbed, so focus/toggle handling exercises both sides of the protocol.
+  function injectPage(id) {
+    let listener;
+    const page = { reads: 0, clears: 0, marker: null, process: async () => [[]] };
+    const context = vm.createContext({ setTimeout, clearTimeout, chrome: { runtime: {
+      getURL: (path) => path,
+      onMessage: { addListener: (callback) => { listener = callback; } },
+      sendMessage: (request) => publish(request, id),
+    } } });
+    runScript("src/app/reader.js", context);
+    runScript("src/platform/chrome/content.js", context);
+    const adapter = context.SuperReader.createReaderAdapter();
+    page.reader = context.SuperReader.createReader({
+      read() { page.reads += 1; return { texts: ["需要处理的中文"] }; },
+      process: (texts) => page.process(texts),
+      write() { page.marker = {}; },
+      clear() { page.clears += 1; page.marker = null; },
+      remember() {}, reset() {}, watch: () => () => {},
+      publishState: adapter.publishState,
+    });
+    adapter.connect(page.reader);
+    page.message = (request) => {
+      let response;
+      listener(request, {}, (value) => { response = value; });
+      return response;
+    };
+    pages.set(id, page);
+  }
+
+  const chrome = {
     action: {
       onClicked: { addListener: (callback) => { click = callback; } },
       async setBadgeText({ tabId, text }) { badges.set(tabId, text); },
@@ -33,25 +73,41 @@ function createBackground() {
     },
     tabs: {
       onUpdated: { addListener: (callback) => { navigate = callback; } },
-      async sendMessage(id, request) {
+      onActivated: { addListener: (callback) => { activate = callback; } },
+      async query(query) {
+        queries.push(query);
+        assert.equal(query.active, true, "never enumerate inactive tabs");
+        assert.equal(query.lastFocusedWindow, true);
+        return activeId === null ? [] : [{ ...tabs.get(activeId) }];
+      },
+      async sendMessage(id, request, options) {
+        assert.equal(options.frameId, 0);
+        commands.push({ id, ...request });
         if (!pages.has(id)) throw new Error("No receiver");
-        if (request.type === "SUPER_READER_TOGGLE") {
-          toggles.push(id);
-          pages.set(id, !pages.get(id));
-          message({ type: "SUPER_READER_STATE", enabled: pages.get(id), busy: false },
-            { id: "test-extension", tab: { id } }, () => {});
-          // A command response may arrive after a newer state publication.
-          return { enabled: pages.get(id), busy: true };
+        const response = pages.get(id).message(request);
+        if (request.type === "SUPER_READER_PING" && statusDelays.has(id)) {
+          const delay = statusDelays.get(id);
+          statusDelays.delete(id);
+          await delay;
         }
-        return { enabled: pages.get(id), busy: busyPages.has(id) };
+        return response;
       },
     },
+    windows: {
+      WINDOW_ID_NONE: -1,
+      onFocusChanged: { addListener: (callback) => { focusWindow = callback; } },
+    },
+    storage: { local: {
+      async get(defaults) { return { ...defaults, ...saved }; },
+      async set(value) { Object.assign(saved, value); writes.push({ ...value }); },
+    } },
     scripting: {
       async insertCSS() {},
       async executeScript({ target, files }) {
         injected.push(target.tabId);
         injectedFiles.push(Array.from(files));
-        pages.set(target.tabId, false);
+        await injectionDelays.get(target.tabId);
+        injectPage(target.tabId);
       },
     },
     offscreen: { async createDocument() { creations += 1; offscreen = true; } },
@@ -64,23 +120,61 @@ function createBackground() {
         return { offsetsByText: request.texts.map(() => [4]) };
       },
       onMessage: { addListener: (callback) => { message = callback; } },
+      onStartup: { addListener: (callback) => { startup = callback; } },
+      onInstalled: { addListener: (callback) => { install = callback; } },
     },
   };
   const manifest = JSON.parse(readFileSync(join(__dirname, "../manifest.json"), "utf8"));
-  runScript(manifest.background.service_worker, context);
+  const boot = () => runScript(manifest.background.service_worker, vm.createContext({ console, chrome }));
+  boot();
+
+  function addTab(id, url = "https://example.com/", status = "complete") {
+    tabs.set(id, { id, url, status, active: false });
+  }
+
+  function select(id) {
+    if (!tabs.has(id)) addTab(id);
+    for (const tab of tabs.values()) tab.active = tab.id === id;
+    activeId = id;
+  }
+
   return {
-    pages, badges, titles, disabled, busyPages, toggles, injected, injectedFiles, requests,
-    creations: () => creations,
-    async click(id, url = "https://example.com/") { click({ id, url }); await drain(); },
-    async navigate(id) { navigate(id, { status: "loading" }); await drain(); },
-    message(request, tabId = 1) {
-      return new Promise((resolve) => message(request, { id: "test-extension", tab: { id: tabId } }, resolve));
+    pages, badges, titles, disabled, commands, queries, writes, saved, tabs, injected, injectedFiles, requests,
+    addTab,
+    pauseInjection(id) {
+      let resume;
+      injectionDelays.set(id, new Promise((resolve) => { resume = resolve; }));
+      return resume;
     },
+    pauseStatus(id) {
+      let resume;
+      statusDelays.set(id, new Promise((resolve) => { resume = resolve; }));
+      return resume;
+    },
+    creations: () => creations,
+    async click(id) { select(id); click(tabs.get(id)); await drain(); },
+    async focus(id) { select(id); activate({ tabId: id }); await drain(); },
+    async windowFocus(id) { select(id); focusWindow(2); await drain(); },
+    async navigate(id) {
+      pages.delete(id);
+      const tab = tabs.get(id);
+      tab.status = "loading";
+      navigate(id, { status: "loading" }, { ...tab });
+      await drain();
+      tab.status = "complete";
+      navigate(id, { status: "complete" }, { ...tab });
+      await drain();
+    },
+    async restartWorker() { boot(); await drain(); },
+    async startup() { startup(); await drain(); },
+    async install() { install(); await drain(); },
+    message: publish,
   };
 }
 
-test("toolbar clicks inject only the current page and toggle each page independently", async () => {
+test("the saved switch is global but toggles and focus leave every inactive tab untouched", async () => {
   const background = createBackground();
+  background.addTab(2);
   await background.click(1);
   assert.deepEqual(background.injected, [1]);
   assert.deepEqual(background.injectedFiles[0], [
@@ -88,51 +182,232 @@ test("toolbar clicks inject only the current page and toggle each page independe
     "src/frontend/read.js", "src/frontend/write.js", "src/app/reader.js",
     "src/platform/chrome/content.js", "src/start-reader.js",
   ]);
-  assert.equal(background.pages.get(1), true);
-  await background.click(2);
-  await background.click(1);
-  assert.equal(background.pages.get(1), false);
-  assert.equal(background.pages.get(2), true);
+  assert.equal(background.saved.enabled, true);
+  assert.equal(background.pages.get(1).reader.status().enabled, true);
+  assert.equal(background.pages.has(2), false);
+  await background.focus(2);
+  assert.equal(background.pages.get(2).reader.status().enabled, true);
+  const first = background.pages.get(1);
+  const marker = first.marker;
+  await background.focus(1);
+  await background.focus(2);
+  assert.equal(first.marker, marker);
+  assert.equal(first.reads, 1);
+  const beforeToggle = background.commands.length;
+  await background.click(2); // OFF only touches the focused tab.
+  assert.equal(background.saved.enabled, false);
+  assert.equal(background.pages.get(2).reader.status().enabled, false);
+  assert.equal(first.reader.status().enabled, true);
+  assert.equal(first.marker, marker);
+  assert.ok(background.commands.slice(beforeToggle).every(({ id }) => id === 2));
+  await background.focus(1);
+  assert.equal(first.reader.status().enabled, false);
+  assert.equal(first.marker, null);
   assert.deepEqual(background.injected, [1, 2]);
   assert.equal(background.badges.get(1), "");
-  assert.equal(background.badges.get(2), "ON");
-  assert.equal(background.disabled.size, 0, "stale toggle responses must not relock completed pages");
-  await background.navigate(2);
   assert.equal(background.badges.get(2), "");
 });
 
-test("busy pages keep the same toolbar appearance and ignore clicks until ready", async () => {
+test("active reloads and new tabs use the saved switch; background reloads wait for focus", async () => {
+  const background = createBackground();
+  await background.click(1);
+  const oldPage = background.pages.get(1);
+  await background.navigate(1);
+  assert.notEqual(background.pages.get(1), oldPage);
+  assert.equal(background.pages.get(1).reads, 1);
+  assert.equal(background.badges.get(1), "ON");
+  await background.focus(2);
+  assert.equal(background.pages.get(2).reads, 1);
+  await background.navigate(1);
+  assert.equal(background.pages.has(1), false, "an inactive page reload must not initialize a reader");
+  await background.focus(1);
+  assert.equal(background.pages.get(1).reads, 1);
+  await background.click(1);
+  await background.navigate(1);
+  await background.focus(3);
+  assert.equal(background.pages.has(1), false);
+  assert.equal(background.pages.has(3), false);
+});
+
+test("a tab that missed OFF and ON keeps its existing results when focused again", async () => {
+  const background = createBackground();
+  await background.click(1);
+  const first = background.pages.get(1);
+  const marker = first.marker;
+  await background.focus(2);
+  const beforeToggle = background.commands.length;
+  await background.click(2);
+  await background.click(2);
+  assert.ok(background.commands.slice(beforeToggle).every(({ id }) => id === 2));
+  assert.equal(first.reads, 1);
+  assert.equal(first.marker, marker);
+  assert.equal(first.clears, 0);
+  await background.focus(1);
+  assert.equal(first.reads, 1);
+  assert.equal(first.clears, 0);
+  assert.equal(first.marker, marker);
+  await background.focus(1);
+  assert.equal(first.reads, 1);
+  assert.deepEqual(background.saved, { enabled: true });
+});
+
+test("worker and browser restarts retain the setting and window focus only checks its active tab", async () => {
+  const background = createBackground();
+  await background.click(1);
+  const marker = background.pages.get(1).marker;
+  await background.restartWorker();
+  await background.focus(1);
+  assert.equal(background.pages.get(1).marker, marker);
+  await background.windowFocus(2);
+  assert.equal(background.pages.get(2).reads, 1);
+  assert.equal(background.saved.enabled, true);
+  const restarted = createBackground(background.saved);
+  await restarted.focus(1);
+  await restarted.startup();
+  await restarted.install();
+  assert.equal(restarted.pages.get(1).reads, 1);
+  assert.equal(restarted.badges.get(1), "ON");
+  await restarted.click(1);
+  const stopped = createBackground(background.saved);
+  await stopped.focus(1);
+  assert.equal(stopped.pages.size, 0);
+});
+
+test("busy clicks are ignored without flicker, and inactive pages are neither queried nor stopped", async () => {
   const background = createBackground();
   await background.click(1);
   const title = background.titles.get(1);
-  for (let cycle = 0; cycle < 3; cycle += 1) {
-    background.busyPages.add(1);
-    await background.message({ type: "SUPER_READER_STATE", enabled: true, busy: true });
-    assert.equal(background.badges.get(1), "ON");
-    assert.equal(background.titles.get(1), title);
-    assert.equal(background.disabled.size, 0);
-    await background.click(1);
-    await background.click(1);
-    assert.equal(background.pages.get(1), true);
-    assert.deepEqual(background.toggles, [1], "busy clicks must be discarded, not forwarded or queued");
-    background.busyPages.delete(1);
-    await background.message({ type: "SUPER_READER_STATE", enabled: true, busy: false });
-    assert.equal(background.badges.get(1), "ON");
-    assert.equal(background.titles.get(1), title);
-  }
-  background.busyPages.add(1);
-  await background.click(2);
-  assert.equal(background.pages.get(2), true, "one busy page must not block another page");
-  background.busyPages.delete(1);
+  let complete;
+  const first = background.pages.get(1);
+  first.reader.toggle(false);
+  first.process = () => new Promise((resolve) => { complete = resolve; });
+  first.reader.toggle(true);
+  await drain();
+  const writes = background.writes.length;
   await background.click(1);
-  assert.equal(background.pages.get(1), false);
+  await background.click(1);
+  assert.equal(background.writes.length, writes, "busy clicks are discarded");
+  assert.equal(background.badges.get(1), "ON");
+  assert.equal(background.titles.get(1), title);
+  assert.equal(background.disabled.size, 0);
+  await background.focus(2);
+  const beforeToggle = background.commands.length;
+  await background.click(2);
+  assert.equal(background.saved.enabled, false);
+  assert.equal(first.reader.status().busy, true);
+  assert.ok(background.commands.slice(beforeToggle).every(({ id }) => id === 2));
+  complete([[]]);
+  await drain();
+  assert.equal(first.reader.status().enabled, true, "inactive completion does not apply a new toggle");
+  await background.focus(1);
+  assert.equal(first.reader.status().enabled, false);
+});
+
+test("a busy tab ignores global OFF and synchronizes on its next idle focus", async () => {
+  const background = createBackground();
+  await background.click(1);
+  const first = background.pages.get(1);
+  let finish;
+  first.reader.toggle(false);
+  first.process = () => new Promise((resolve) => { finish = resolve; });
+  first.reader.toggle(true);
+  await background.focus(2);
+  await background.click(2); // Global OFF.
+  await background.focus(1); // The running reader ignores OFF.
+  assert.equal(first.reader.status().busy, true);
+  assert.equal(first.reader.status().enabled, true);
+  finish([[]]);
+  await drain();
+  assert.equal(first.reader.status().enabled, true, "completion must not apply a discarded command");
+  assert.equal(first.reader.status().busy, false);
+  assert.equal(first.reads, 2);
+  assert.equal(first.clears, 1);
+  assert.equal(background.saved.enabled, false);
+  await background.focus(2);
+  await background.focus(1);
+  assert.equal(first.reader.status().enabled, false);
+  assert.equal(first.marker, null);
+  assert.equal(first.clears, 2);
   assert.equal(background.badges.get(1), "");
-  await background.message({ type: "SUPER_READER_STATE", enabled: false, busy: false, error: "failed" });
-  assert.equal(background.disabled.has(1), false);
+});
+
+test("page failures stay local and focusing again doesn't retry or flip the global switch", async () => {
+  const background = createBackground();
+  await background.click(1);
+  const first = background.pages.get(1);
+  first.reader.toggle(false);
+  first.process = async () => { throw new Error("failed"); };
+  first.reader.toggle(true);
+  await drain();
+  const reads = first.reads;
+  assert.equal(background.saved.enabled, true);
   assert.equal(background.badges.get(1), "ERR");
-  assert.equal(background.titles.get(1), "failed");
-  await background.click(3, "chrome://extensions/");
-  assert.equal(background.pages.has(3), false);
+  await background.focus(2);
+  assert.equal(background.pages.get(2).reader.status().enabled, true);
+  await background.click(2);
+  await background.click(2);
+  await background.focus(1);
+  assert.equal(first.reads, reads);
+  assert.equal(background.badges.get(1), "ERR");
+  first.process = async () => [[]];
+  await background.click(1);
+  await background.click(1);
+  assert.equal(first.reader.status().enabled, true);
+  assert.equal(background.badges.get(1), "ON");
+});
+
+test("restricted pages allow switching the global preference without script injection", async () => {
+  const background = createBackground();
+  background.addTab(1, "chrome://extensions/");
+  await background.click(1);
+  assert.equal(background.saved.enabled, true);
+  assert.equal(background.injected.length, 0);
+  await background.focus(2);
+  assert.equal(background.pages.get(2).reader.status().enabled, true);
+});
+
+test("switching away during script loading leaves that tab inert until it is focused again", async () => {
+  const background = createBackground({ enabled: true });
+  const resume = background.pauseInjection(1);
+  await background.focus(1);
+  await background.focus(2);
+  resume();
+  await drain();
+  assert.equal(background.pages.get(1).reads, 0);
+  assert.equal(background.pages.get(2).reads, 1);
+  assert.ok(!background.commands.some(({ id, type }) => id === 1 && type === "SUPER_READER_APPLY_SETTING"));
+  await background.focus(1);
+  assert.equal(background.pages.get(1).reads, 1);
+  assert.equal(background.injected.filter((id) => id === 1).length, 1);
+});
+
+test("a reload finishing during an old status check gets a fresh check without another focus event", async () => {
+  const background = createBackground();
+  await background.click(1);
+  const oldPage = background.pages.get(1);
+  const resume = background.pauseStatus(1);
+  await background.focus(1);
+  await background.navigate(1);
+  resume();
+  await drain();
+  assert.ok(background.pages.has(1), "the replacement document must receive its own reader");
+  assert.notEqual(background.pages.get(1), oldPage);
+  assert.equal(background.pages.get(1).reads, 1);
+  assert.deepEqual(background.injected, [1, 1]);
+});
+
+test("overlapping focus events recheck only the latest active tab", async () => {
+  const background = createBackground();
+  await background.click(1);
+  const resume = background.pauseStatus(1);
+  await background.focus(1);
+  await background.focus(2);
+  await background.focus(3);
+  resume();
+  await drain();
+  assert.equal(background.pages.has(2), false, "intermediate tabs must not be queued for processing");
+  assert.equal(background.pages.get(3).reads, 1);
+  assert.equal(background.pages.get(1).reads, 1);
 });
 
 test("whole viewports are forwarded intact and concurrent pages share one lazy offscreen context", async () => {

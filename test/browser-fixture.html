@@ -67,7 +67,12 @@
         },
         publishState: renderFixtureState,
         connect(reader) {
-          fixtureToggle.addEventListener("click", () => { reader.toggle(); });
+          fixtureToggle.addEventListener("click", () => {
+            const state = reader.status();
+            if (state.busy) return;
+            if (state.error) reader.toggle(false);
+            reader.toggle(!state.enabled);
+          });
           renderFixtureState(reader.status());
         },
       });

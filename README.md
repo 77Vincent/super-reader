@@ -1,6 +1,8 @@
 # Super Reader
 
-用于梳理核心流程的最小 Chrome 中文阅读辅助扩展。只有工具栏开关，作用于当前网页；刷新页面后默认关闭。直接加载源码即可运行，不需要安装依赖或构建。
+用于梳理核心流程的最小 Chrome 中文阅读辅助扩展。只有一个全局工具栏开关，保存在本地，刷新页面或重启浏览器后仍保留。页面在获得焦点时应用开关，后台标签页不会因开关变化而收到消息或开始处理。直接加载源码即可运行，不需要安装依赖或构建。
+
+切回已经处理的页面时，只同步当前全局 ON/OFF 状态。状态相同就保留原有标记和处理记录，即使页面在后台期间错过了关闭再开启也无需重做。新标签页在首次聚焦时处理，当前页面刷新后重新处理。后台页面只在下次聚焦时响应，没有向所有标签页广播、遍历后台页面或后台同步任务。
 
 ## 核心流程
 
@@ -13,7 +15,7 @@
 
 一次处理的单位是任务开始时与可视区域相交、尚未处理的合格文本节点，每个节点保留完整字符串。`read()` 同步固定文本及其 DOM 映射；`process()` 将全部文本作为一个请求交给 Worker；全部结果返回后，`write()` 一次同步写入分隔标记。锁覆盖读取、推理、写入的全过程，处理中点击开关无效。
 
-没有按字符数切分的任务批次、批次间延迟、应用层任务队列或用户取消机制。视口用于选择节点，不裁剪字符，也不限制字符串长度；单个跨多屏的长节点会被完整处理，因此数据量和运行时间没有硬保证。推理请求设有 5 秒超时，超时会终止 Worker 并报错。失败后保留错误信息、停止处理，用户可再次点击重试。
+没有按字符数切分的任务批次、批次间延迟、应用层任务队列或用户取消机制。视口用于选择节点，不裁剪字符，也不限制字符串长度；单个跨多屏的长节点会被完整处理，因此数据量和运行时间没有硬保证。推理请求设有 5 秒超时，超时会终止 Worker 并报错。失败只停止当前页面，保留错误信息，不改变全局开关；切换标签页不会重试，刷新该页面，或在该页面关闭再开启后重试。
 
 页面滚动、普通 DOM 内部滚动容器滚动、窗口及 visual viewport 的滚动和尺寸变化都会请求刷新。连续变化重置 200ms 防抖定时器；每页只有一个运行中的任务和一个 `refreshPending` 布尔标志，只有任务完成且定时器到期后才开始下一次读取。中间画面不排队，当前任务不取消。关闭或失败时移除监听、清除定时器和待刷新标志。已捕获的快照不随页面变化。此处“一次操作”指调度和锁的单位，不代表网页 DOM 被冻结：页面自行改变的源文本不会写入旧结果。
 
@@ -21,7 +23,7 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `src/app/reader.js` | `createReader()`：协调 read/process/write，管理 enabled、busy、error、toggle 和防抖刷新 |
+| `src/app/reader.js` | 定义应用接口；`createReader()` 协调 read/process/write，通过 `toggle(flag)` 管理状态、开关和防抖刷新 |
 | `src/frontend/read.js` | `read()` 跳过无关 DOM 分支，保留至少部分可见的完整文本节点，生成固定快照和 DOM 映射 |
 | `src/frontend/dom-tree.js` | 遍历普通 DOM 和嵌套的 open Shadow DOM；跨 slot 和 shadow host 查找显示层级中的父元素 |
 | `src/frontend/viewport.js` | `readViewport(document)` 捕获可视区域边界；`watchViewport(document, onChange)` 监听变化并返回取消监听函数 |
@@ -35,8 +37,8 @@
 | `src/inference-service.js` | 管理标准 Worker 生命周期、请求与响应对应、超时及错误 |
 | `src/start-reader.js` | 每页的通用装配入口：将 DOM 工具和适配器注入 reader，再连接控件 |
 | `src/start-inference.js` | 推理宿主的通用装配入口：创建服务、连接宿主消息 |
-| `src/platform/chrome/background.js` | Chrome 入口：工具栏、脚本注入、状态显示、消息转发和隐藏页面创建 |
-| `src/platform/chrome/content.js` | 将 Chrome 消息转换成 process、publishState、toggle/status 调用 |
+| `src/platform/chrome/background.js` | Chrome 入口：保存全局开关，聚焦及当前页面加载完成时检查状态，按需注入脚本，转发推理消息并创建隐藏页面 |
+| `src/platform/chrome/content.js` | 将 Chrome 消息转换成 `reader.toggle(flag)` / `status()`，转发推理请求与状态通知 |
 | `src/platform/chrome/inference.js` | 提供 Worker 地址，将 Chrome 消息连接到推理服务 |
 | `src/platform/interfaces.js` | 适配器的 JSDoc 接口说明，无运行时代码 |
 | `src/inference.html` | Chrome 隐藏页面，承载推理服务 |
@@ -75,9 +77,17 @@ const reader = SuperReader.createReader({
 adapter.connect(reader);
 ```
 
-阅读器提供 `status()` 和 `toggle()`。适配器发布状态、连接控件、转发整个 `texts` 数组并提供分隔线样式地址；DOM 引用始终留在页面里。
+应用在 `app/reader.js` 中定义 `Reader` 和 `ReaderState` 接口，只提供 `status()` 和 `toggle(flag)`。`toggle(true)` 请求开启，`toggle(false)` 请求关闭。相同状态不重启；忙碌时直接忽略所有开关请求，不保存待应用设置。失败后重复 ON 不重试，收到 OFF 再 ON 或刷新页面才重试。按钮调用方负责计算目标状态，并在忙碌时忽略点击。
 
-后台依据阅读器的状态通知更新按钮，避免滞后的 toggle 回复覆盖新状态。Shadow DOM 中的标记加载同一个 `src/content.css`，该文件在 manifest 中声明为可访问资源，前端无需调用 Chrome API。
+适配器只翻译接口：将设置消息传给 `reader.toggle(flag)`，将 `PING` 转成 `status()`，转发整个 `texts` 数组并提供分隔线样式地址。`publishState()` 仅发送通知，不再触发任何 reader 控制操作。DOM 引用始终留在页面里。当前启动代码明确加载 Chrome 适配器；其他浏览器可提供同一个应用接口的实现。
+
+后台使用 `chrome.storage.local` 只保存 `{ enabled }`，按钮以全局开关为准，页面错误单独显示。标签页切换、浏览器窗口聚焦及当前标签页加载完成时，只查询当前窗口的活动标签页；`PING` 检查页面是否已有 reader，随后通过 `APPLY_SETTING` 传递目标布尔值。reader 负责忽略相同状态和忙碌时的开关请求。若聚焦时 reader 仍在处理，当前同步请求会被忽略；任务完成后不会补做同步，下次空闲时的聚焦检查再应用全局状态。当前页面忙碌时，按钮点击不响应；其他后台页面不会被查询。
+
+后台同时只做一次活动页检查。检查期间若再次聚焦或页面刷新完成，只设一个 `checkPending` 标志；当前检查结束后重新查询最新活动页和当前文档，不保存中间标签页队列。旧文档的延迟状态回复不再让新文档错过检查。
+
+自动处理新网站需要 manifest 中的 HTTP、HTTPS 和本地文件访问权限，替代原来只覆盖用户点击页面的 `activeTab`；修改 manifest 后需要重新加载扩展。本地文件还需打开“允许访问文件网址”。浏览器自身页面等受限页面不注入。相关权限要求见 [Chrome 内容脚本文档](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts#inject-programmatically)。
+
+Shadow DOM 中的标记加载同一个 `src/content.css`，该文件在 manifest 中声明为可访问资源，前端无需调用 Chrome API。
 
 Chrome 的推理消息路径：
 
@@ -85,7 +95,7 @@ Chrome 的推理消息路径：
 页面适配器 → Chrome 后台 → inference.html → inference-service → Worker → backend
 ```
 
-隐藏页面和 Worker 按需创建，多个页面共享模型；服务使用请求 ID 匹配各页的结果。关闭一页只清理该页。Worker 超时或崩溃会拒绝共享 Worker 上尚未完成的请求，后续请求可创建新 Worker。
+隐藏页面和 Worker 按需创建，多个页面共享模型；服务使用请求 ID 匹配各页的结果。全局关闭立即清理当前页面，后台页面保留原样，直到下次聚焦再清理。已经开始的任务仍会完成，原有滚动和缩放处理逻辑不变。Worker 超时或崩溃会拒绝共享 Worker 上尚未完成的请求，后续请求可创建新 Worker。
 
 普通网页测试页提供另一套适配器，复用相同的 reader、DOM、启动入口和推理实现。以后支持其他浏览器时，可替换适配器和安装配置；当前仅实现 Chrome 适配。`jsconfig.json` 与 JSDoc 用于编辑器提示，无需构建。
 
@@ -117,7 +127,8 @@ Chrome 的推理消息路径：
 
 1. 在 `chrome://extensions/` 开启开发者模式，加载本目录。
 2. 打开普通网页，点击 Super Reader 工具栏按钮。开启后始终显示 `ON`，处理中保持相同外观和标题，点击不响应、不排队；`ERR` 表示失败，悬停可看错误。
-3. 处理完成后再次点击关闭。使用本地文件时，需要开启扩展的“允许访问文件网址”。
+3. 切到其他普通网页会沿用全局开关；切回已处理页面不会重复处理。刷新当前页面也会沿用开关。
+4. 处理完成后再次点击全局关闭。后台标签页不会收到通知，下次聚焦时才清理。使用本地文件时，需要开启扩展的“允许访问文件网址”。
 
 ```bash
 npm test

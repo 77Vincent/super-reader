@@ -129,7 +129,11 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
     paragraph, document, requests, states,
     infer: async (texts) => ({ offsetsByText: texts.map((text) => text.length > 4 ? [4] : []) }),
     markers: () => document.querySelectorAll(),
-    toggle: () => reader.toggle(),
+    click() {
+      const state = reader.status();
+      if (state.busy) return state;
+      return reader.toggle(!state.enabled);
+    },
     finish: drainPromises,
     scroll: () => document.defaultView.dispatchEvent(new Event("scroll")),
     resize: () => document.defaultView.dispatchEvent(new Event("resize")),
@@ -172,11 +176,26 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
     run("src/platform/chrome/content.js");
     run("src/start-reader.js");
     assert.equal(listeners.length, 1);
-    reader = { toggle() {
+    let globalEnabled = false;
+    page.applySetting = (enabled) => {
+      globalEnabled = enabled;
       let response;
-      listeners[0]({ type: "SUPER_READER_TOGGLE" }, {}, (value) => { response = value; });
+      listeners[0]({ type: "SUPER_READER_APPLY_SETTING", enabled }, {}, (value) => { response = value; });
       return response;
-    } };
+    };
+    reader = {
+      status() {
+        let response;
+        listeners[0]({ type: "SUPER_READER_PING" }, {}, (value) => { response = value; });
+        return response;
+      },
+      toggle(enabled) { return page.applySetting(enabled); },
+    };
+    page.click = () => {
+      const state = reader.status();
+      if (state.busy) return state;
+      return reader.toggle(!globalEnabled);
+    };
   } else {
     // A second adapter implementation uses local callbacks, with no Chrome API.
     context.SuperReader.createReaderAdapter = () => ({
@@ -200,12 +219,12 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
 test("the page is inert until toggled, then renders and restores its original text", async () => {
   const page = createPage();
   assert.equal(page.requests.length, 0);
-  assert.equal(page.toggle().enabled, true);
+  assert.equal(page.click().enabled, true);
   await page.finish();
   assert.deepEqual(page.requests, [[sampleText]]);
   assert.equal(page.markers().length, 1);
   assert.equal(page.paragraph.textContent, sampleText);
-  assert.equal(page.toggle().enabled, false);
+  assert.equal(page.click().enabled, false);
   assert.equal(page.markers().length, 0);
   assert.equal(page.paragraph.childNodes.length, 1);
   assert.equal(page.paragraph.textContent, sampleText);
@@ -218,36 +237,36 @@ test("one request includes all visible texts, including strings longer than 128 
   page.text(sampleText, strong);
   const offscreen = page.text("屏幕外的文字不参与本次处理");
   offscreen.geometry = () => ({ left: 0, top: 700, right: 100, bottom: 720, width: 100, height: 20 });
-  page.toggle();
+  page.click();
   await page.finish();
   assert.deepEqual(page.requests, [[text, sampleText]]);
   assert.deepEqual(page.states.map(({ busy }) => busy), [true, false]);
   assert.equal(page.markers().length, 2);
   assert.equal(strong.querySelectorAll().length, 1);
   assert.equal(strong.textContent, sampleText);
-  page.toggle();
+  page.click();
   assert.equal(page.paragraph.childNodes[0].nodeValue, text);
   assert.equal(page.paragraph.childNodes[1], strong);
 });
 
-test("toggle is rejected for the entire viewport and all results are written before unlock", async () => {
+test("button clicks are ignored for the entire viewport and all results are written before unlock", async () => {
   const page = createPage();
   page.text("这里是屏幕里的第二段中文文本");
   let complete;
   page.infer = () => new Promise((resolve) => { complete = resolve; });
-  page.toggle();
+  page.click();
   assert.equal(page.requests.length, 1);
   assert.equal(page.markers().length, 0);
   for (let click = 0; click < 3; click += 1) {
-    assert.equal(page.toggle().busy, true);
-    assert.equal(page.toggle().enabled, true);
+    assert.equal(page.click().busy, true);
+    assert.equal(page.click().enabled, true);
   }
   assert.equal(page.states.length, 1);
   complete({ offsetsByText: [[4], [5]] });
   await page.finish();
   assert.equal(page.markers().length, 2);
   assert.deepEqual(page.states.map(({ busy }) => busy), [true, false]);
-  assert.equal(page.toggle().enabled, false);
+  assert.equal(page.click().enabled, false);
   assert.equal(page.markers().length, 0);
 });
 
@@ -260,7 +279,7 @@ test("the original viewport snapshot is used even if the viewport moves during p
   });
   let complete;
   page.infer = () => new Promise((resolve) => { complete = resolve; });
-  page.toggle();
+  page.click();
   assert.deepEqual(page.requests, [[text]]);
   page.document.defaultView.visualViewport.offsetTop = 100;
   complete({ offsetsByText: [[4]] });
@@ -299,7 +318,7 @@ test("whole-node offsets are written from the end without shifting earlier posit
 test("a failed operation disables and unlocks the reader, retains the error, and permits retry", async () => {
   const page = createPage(sampleText, "p", true);
   page.infer = async () => ({ error: "inference timed out" });
-  page.toggle();
+  page.click();
   await page.finish();
   const failed = page.states.at(-1);
   assert.equal(failed.enabled, false);
@@ -309,7 +328,8 @@ test("a failed operation disables and unlocks the reader, retains the error, and
   await page.finish();
   assert.equal(page.requests.length, 1); // No automatic retry.
   page.infer = async () => ({ offsetsByText: [[4]] });
-  assert.equal(page.toggle().error, null);
+  page.click(); // Global OFF; failure only stopped this page's reader.
+  assert.equal(page.click().error, null);
   await page.finish();
   assert.equal(page.markers().length, 1);
 });
@@ -319,7 +339,7 @@ for (const mutation of ["change", "append", "detach", "reparent"]) {
     const page = createPage();
     let complete;
     page.infer = () => new Promise((resolve) => { complete = resolve; });
-    page.toggle();
+    page.click();
     const node = page.paragraph.childNodes[0];
     if (mutation === "change") node.nodeValue = "页面更新了这段中文";
     if (mutation === "append") node.nodeValue += "后面新增的文字";
@@ -335,13 +355,13 @@ for (const mutation of ["change", "append", "detach", "reparent"]) {
 test("pages have independent switches and excluded text never enters the processing input", async () => {
   const first = createPage();
   const second = createPage();
-  first.toggle();
+  first.click();
   await first.finish();
   assert.equal(second.requests.length, 0);
   assert.equal(second.markers().length, 0);
   for (const tag of ["code", "pre", "button"]) {
     const page = createPage(sampleText, tag);
-    page.toggle();
+    page.click();
     await page.finish();
     assert.deepEqual(page.requests, []);
     assert.equal(page.markers().length, 0);
@@ -353,11 +373,89 @@ test("Chrome rejects an incomplete viewport response before any markers are writ
   const page = createPage(sampleText, "p", true);
   page.text("第二段文字也需要一个完整的结果");
   page.infer = async () => ({ offsetsByText: [[4]] });
-  page.toggle();
+  page.click();
   await page.finish();
   assert.match(page.states.at(-1).error, /incomplete viewport result/u);
   assert.equal(page.states.at(-1).enabled, false);
   assert.equal(page.markers().length, 0);
+});
+
+test("global ON and OFF commands are idempotent and an ON command doesn't retry a failed page", async () => {
+  const page = createPage(sampleText, "p", true);
+  page.applySetting(true);
+  page.applySetting(true);
+  await page.finish();
+  const marker = page.markers()[0];
+  page.applySetting(true);
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.markers().length, 1);
+  assert.equal(page.markers()[0], marker);
+  page.applySetting(false);
+  page.applySetting(false);
+  assert.equal(page.markers().length, 0);
+  assert.equal(page.states.at(-1).enabled, false);
+
+  page.infer = async () => ({ error: "failed" });
+  page.applySetting(true);
+  await page.finish();
+  page.applySetting(true);
+  await page.finish();
+  assert.equal(page.requests.length, 2, "repeated global synchronization must not retry failures");
+  assert.equal(page.states.at(-1).error, "failed");
+  page.applySetting(false);
+  page.infer = async () => ({ offsetsByText: [[4]] });
+  page.applySetting(true);
+  await page.finish();
+  assert.equal(page.requests.length, 3);
+  assert.equal(page.markers().length, 1);
+  page.applySetting(false);
+});
+
+test("a global OFF received while busy is ignored until another idle command", async () => {
+  const page = createPage(sampleText, "p", true);
+  let finish;
+  page.infer = () => new Promise((resolve) => { finish = resolve; });
+  page.applySetting(true);
+  const stillRunning = page.applySetting(false);
+  assert.equal(stillRunning.busy, true);
+  assert.equal(stillRunning.enabled, true);
+  assert.equal(page.states.length, 1);
+  finish({ offsetsByText: [[4]] });
+  await page.finish();
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.markers().length, 1);
+  assert.equal(page.states.at(-1).enabled, true);
+  assert.equal(page.states.at(-1).busy, false);
+  page.applySetting(false);
+  assert.equal(page.markers().length, 0);
+  assert.equal(page.states.at(-1).enabled, false);
+});
+
+test("Chrome translates state commands and publishing only delivers the supplied state", async () => {
+  let listener;
+  const commands = [];
+  const messages = [];
+  const state = { enabled: true, busy: true, error: null };
+  const context = vm.createContext({ chrome: { runtime: {
+    getURL: (path) => path,
+    onMessage: { addListener(callback) { listener = callback; } },
+    async sendMessage(message) { messages.push(message); return {}; },
+  } } });
+  vm.runInContext(readFileSync(join(__dirname, "../src/platform/chrome/content.js"), "utf8"), context);
+  const adapter = context.SuperReader.createReaderAdapter();
+  adapter.connect({
+    status() { throw new Error("Only a PING should ask for status"); },
+    toggle(value) { commands.push(value); return state; },
+  });
+  let response;
+  listener({ type: "SUPER_READER_APPLY_SETTING", enabled: false }, {}, (value) => { response = value; });
+  assert.equal(response, state);
+  assert.deepEqual(commands, [false]);
+  const finished = { enabled: false, busy: false, error: null };
+  adapter.publishState(finished);
+  await drainPromises();
+  assert.deepEqual(commands, [false], "publishing must not issue another control command");
+  assert.deepEqual({ ...messages[0] }, { type: "SUPER_READER_STATE", ...finished });
 });
 
 test("scroll and resize process newly visible text once and leave overlapping markers unchanged", async () => {
@@ -365,7 +463,7 @@ test("scroll and resize process newly visible text once and leave overlapping ma
   const nextParent = page.element("strong");
   const next = page.text("滚动后新出现的文字需要处理", nextParent);
   next.geometry = () => ({ left: 0, top: 700, right: 80, bottom: 720, width: 80, height: 20 });
-  page.toggle();
+  page.click();
   await page.finish();
   const originalMarker = page.markers()[0];
   next.geometry = () => ({ left: 0, top: 100, right: 80, bottom: 120, width: 80, height: 20 });
@@ -379,13 +477,13 @@ test("scroll and resize process newly visible text once and leave overlapping ma
   await page.settle();
   assert.equal(page.requests.length, 2);
   assert.equal(page.markers().length, 2);
-  page.toggle();
+  page.click();
 });
 
 test("nodes needing no markers are remembered, while changed text is processed again", async () => {
   const page = createPage();
   page.infer = async (texts) => ({ offsetsByText: texts.map(() => []) });
-  page.toggle();
+  page.click();
   await page.finish();
   page.resize();
   await page.settle();
@@ -394,32 +492,32 @@ test("nodes needing no markers are remembered, while changed text is processed a
   page.scroll();
   await page.settle();
   assert.deepEqual(page.requests, [[sampleText], ["页面已更新这段中文文字"]]);
-  page.toggle();
+  page.click();
 });
 
 test("disable cancels scheduled refreshes, removes listeners, and resets processed text for re-enable", async () => {
   const page = createPage();
-  page.toggle();
+  page.click();
   await page.finish();
   page.scroll();
-  page.toggle();
+  page.click();
   page.scroll();
   page.resize();
   await page.settle();
   assert.equal(page.requests.length, 1);
   assert.equal(page.markers().length, 0);
-  page.toggle();
+  page.click();
   await page.finish();
   assert.deepEqual(page.requests, [[sampleText], [sampleText]]);
   assert.equal(page.markers().length, 1);
-  page.toggle();
+  page.click();
 });
 
 test("a stale result is not remembered and the pending refresh processes the changed node", async () => {
   const page = createPage();
   let finishFirst;
   page.infer = () => new Promise((resolve) => { finishFirst = resolve; });
-  page.toggle();
+  page.click();
   page.paragraph.childNodes[0].nodeValue = "处理期间页面更新的新中文文字";
   page.scroll();
   await page.settle();
@@ -429,5 +527,5 @@ test("a stale result is not remembered and the pending refresh processes the cha
   await page.finish();
   assert.deepEqual(page.requests, [[sampleText], ["处理期间页面更新的新中文文字"]]);
   assert.equal(page.markers().length, 1);
-  page.toggle();
+  page.click();
 });

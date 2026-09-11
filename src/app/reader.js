@@ -3,6 +3,22 @@
 globalThis.SuperReader ??= {};
 
 /**
+ * Application state, independent of the host's message format.
+ * @typedef {Object} ReaderState
+ * @property {boolean} enabled
+ * @property {boolean} busy
+ * @property {string | null} error
+ */
+
+/**
+ * @typedef {Object} Reader
+ * @property {() => ReaderState} status
+ * @property {(enabled: boolean) => ReaderState} toggle
+ * Apply a desired state while idle. Busy requests and matching states do
+ * nothing. Repeated ON preserves a failure until OFF then ON.
+ */
+
+/**
  * A fixed viewport snapshot. The DOM layer retains its mapping in this object;
  * only texts are passed to segmentation.
  * @typedef {Object} ViewportSnapshot
@@ -24,8 +40,8 @@ globalThis.SuperReader ??= {};
  * @property {() => void} reset Forget previously handled data.
  * @property {(onChange: () => void) => (() => void)} watch Subscribe to input
  * changes; return a function that removes the subscription.
- * @property {(state: ReaderState) => void} publishState Adapter: deliver state;
- * handle delivery errors inside the adapter.
+ * @property {(state: ReaderState) => void} publishState Report state only;
+ * the adapter handles delivery errors and never changes reader state here.
  */
 
 /**
@@ -103,24 +119,28 @@ globalThis.SuperReader.createReader = function createReader({
       reset();
     } finally {
       busy = false;
-      publishState({ ...status() });
+      publishState(status());
       refreshWhenReady();
     }
   }
 
-  function toggle() {
+  function toggle(value) {
     if (busy) return status();
+    if (value && error) return status();
+    if (value === enabled && !error) return status();
 
     error = null;
-    enabled = !enabled;
-    if (enabled) {
+    if (value) {
+      enabled = true;
       stopWatching = watch(requestRefresh);
-      // Keep toggle synchronous for the adapter; completion is published separately.
       void runTask();
     } else {
-      stopRefreshes();
-      clear();
-      reset();
+      if (enabled) {
+        enabled = false;
+        stopRefreshes();
+        clear();
+        reset();
+      }
       publishState(status());
     }
     return status();

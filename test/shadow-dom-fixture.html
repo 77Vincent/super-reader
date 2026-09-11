@@ -59,7 +59,7 @@
     return p;
   }
   async function enable() {
-    reader.toggle();
+    reader.toggle(true);
     await until(() => !reader.status().busy, "initial operation did not finish");
     assert(reader.status().enabled, reader.status().error);
   }
@@ -81,7 +81,7 @@
     const stableStates = states.length;
     await delay(500);
     assert(states.length === stableStates && inputs.length === 1, "marker writes caused a feedback refresh");
-    reader.toggle();
+    reader.toggle(false);
     assert(markers(inner).length === 0 && !inner.querySelector("link"), "shadow artifacts survived disable");
     assert(p.textContent === fullText && p.firstChild.nodeValue === original, "text was not restored");
     await enable();
@@ -191,7 +191,7 @@
     processInput = (texts) => inputs.length === 1
       ? new Promise((resolve) => { finish = () => resolve(texts.map(() => [2])); })
       : Promise.resolve(texts.map(() => [2]));
-    reader.toggle();
+    reader.toggle(true);
     try {
       p.firstChild.nodeValue = "变化过程中的中间评论文字";
       resize();
@@ -236,7 +236,7 @@
     const original = p.textContent;
     await enable();
     root.host.remove();
-    reader.toggle();
+    reader.toggle(false);
     assert(markers(root).length === 0 && !root.querySelector("link"), "detached root was not cleaned");
     assert(p.textContent === original && p.childNodes.length === 1, "detached text was not restored");
     const count = states.length;
@@ -257,7 +257,7 @@
       fixture.replaceChildren();
       try { await run(); results.push(`PASS ${name}`); }
       catch (error) { results.push(`FAIL ${name}: ${error.message}`); }
-      if (reader.status().enabled && !reader.status().busy) reader.toggle();
+      if (reader.status().enabled && !reader.status().busy) reader.toggle(false);
     }
     fixture.replaceChildren();
     output.textContent = `${results.filter((line) => line.startsWith("PASS")).length}/${tests.length} passed\n${results.join("\n")}`;

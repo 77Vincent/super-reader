@@ -104,13 +104,13 @@ test("only completed writes are remembered, and disabling resets the record", as
     remember: (value) => remembered.push(value),
     reset: () => { resets += 1; },
   });
-  reader.toggle();
+  reader.toggle(true);
   await drain();
   assert.equal(remembered.length, 0);
   writing.resolve(written);
   await drain();
   assert.equal(remembered[0], written);
-  reader.toggle();
+  reader.toggle(false);
   assert.equal(resets, 1);
 });
 
@@ -122,7 +122,7 @@ test("failed writing cannot mark data as processed and resets earlier records", 
     remember: () => { remembered = true; },
     reset: () => { resets += 1; },
   });
-  reader.toggle();
+  reader.toggle(true);
   await drain();
   assert.equal(remembered, false);
   assert.equal(resets, 1);
@@ -138,7 +138,7 @@ test("synchronous rendering is recorded before queued page changes can run", asy
     },
     remember() { calls.push("remember"); },
   });
-  reader.toggle();
+  reader.toggle(true);
   await drain();
   assert.deepEqual(calls, ["remember", "page change"]);
 });
@@ -167,7 +167,7 @@ test("status, toggle results, and notifications are snapshots of private state",
   Object.assign(editable, { enabled: true, busy: true, error: "external change" });
   assert.deepEqual({ ...reader.status() }, { enabled: false, busy: false, error: null });
 
-  const started = reader.toggle();
+  const started = reader.toggle(true);
   Object.assign(started, { enabled: false, busy: false, error: "external change" });
   assert.deepEqual({ ...reader.status() }, { enabled: true, busy: true, error: null });
   await drain();
@@ -206,13 +206,13 @@ test("reader stays locked through the complete processing and writing, then allo
 
   assert.deepEqual({ ...reader.status() }, { enabled: false, busy: false, error: null });
   assert.deepEqual(calls, []);
-  assert.deepEqual({ ...reader.toggle() }, { enabled: true, busy: true, error: null });
+  assert.deepEqual({ ...reader.toggle(true) }, { enabled: true, busy: true, error: null });
   assert.deepEqual(calls, ["read", "process"]);
 
   for (const phase of ["processing", "writing"]) {
     await drain();
-    for (let click = 0; click < 3; click += 1) {
-      assert.deepEqual({ ...reader.toggle() }, { enabled: true, busy: true, error: null });
+    for (let repeat = 0; repeat < 3; repeat += 1) {
+      assert.deepEqual({ ...reader.toggle(false) }, { enabled: true, busy: true, error: null });
     }
     assert.deepEqual(calls, phase === "processing" ? ["read", "process"] : ["read", "process", "write"]);
     assert.equal(clears(), 0);
@@ -225,22 +225,22 @@ test("reader stays locked through the complete processing and writing, then allo
   await drain();
   assert.deepEqual({ ...reader.status() }, { enabled: true, busy: false, error: null });
   assert.equal(states.length, 2);
-  assert.deepEqual({ ...reader.toggle() }, { enabled: false, busy: false, error: null });
+  assert.deepEqual({ ...reader.toggle(false) }, { enabled: false, busy: false, error: null });
   assert.equal(clears(), 1);
   assert.deepEqual(states.at(-1), { enabled: false, busy: false, error: null });
 });
 
-test("the lock also blocks toggles made during the initial state notification", async () => {
+test("OFF during the initial state notification is ignored", async () => {
   let reads = 0;
   const nestedToggles = [];
   const { reader, states, clears } = createReader({
     read() { reads += 1; return { texts: [] }; },
     publishState(state) {
-      if (state.busy) nestedToggles.push({ ...reader.toggle() });
+      if (state.busy) nestedToggles.push({ ...reader.toggle(false) });
     },
   });
 
-  reader.toggle();
+  reader.toggle(true);
   await drain();
   assert.equal(reads, 1);
   assert.equal(clears(), 0);
@@ -264,19 +264,19 @@ test("disable clears before notifying, and re-enabling reads a fresh snapshot", 
     publishState(state) { if (!state.enabled) events.push("disabled"); },
   });
 
-  reader.toggle();
+  reader.toggle(true);
   await drain();
   assert.equal(written[0].snapshot, snapshots[0]);
   assert.deepEqual(written[0].results, [[]]);
   assert.equal(clears(), 0);
 
-  assert.deepEqual({ ...reader.toggle() }, { enabled: false, busy: false, error: null });
+  assert.deepEqual({ ...reader.toggle(false) }, { enabled: false, busy: false, error: null });
   assert.deepEqual(events, ["clear", "disabled"]);
   await drain();
   assert.equal(reads, 1);
   assert.equal(written.length, 1);
 
-  reader.toggle();
+  reader.toggle(true);
   await drain();
   assert.equal(reads, 2);
   assert.equal(written.length, 2);
@@ -312,10 +312,10 @@ for (const [failedStage, mode] of [
       clear() { cleanupStates.push({ ...reader.status() }); },
     });
 
-    reader.toggle();
+    reader.toggle(true);
     if (mode === "rejects") {
       await drain();
-      assert.deepEqual({ ...reader.toggle() }, { enabled: true, busy: true, error: null });
+      assert.deepEqual({ ...reader.toggle(true) }, { enabled: true, busy: true, error: null });
       assert.equal(clears(), 0);
       failure.reject(new Error(`${failedStage} failed`));
     }
@@ -338,7 +338,8 @@ for (const [failedStage, mode] of [
 
     shouldFail = false;
     calls.length = 0;
-    assert.deepEqual({ ...reader.toggle() }, { enabled: true, busy: true, error: null });
+    reader.toggle(false);
+    assert.deepEqual({ ...reader.toggle(true) }, { enabled: true, busy: true, error: null });
     await drain();
     assert.deepEqual(calls, stages);
     assert.equal(clears(), 1);
@@ -351,7 +352,7 @@ test("non-Error rejections are retained as a readable error message", async () =
   const failure = deferred();
   const { reader, states, clears } = createReader({ process: () => failure.promise });
 
-  reader.toggle();
+  reader.toggle(true);
   failure.reject("worker disconnected");
   await drain();
   const failedState = { enabled: false, busy: false, error: "worker disconnected" };
@@ -365,14 +366,14 @@ test("reader instances isolate enabled state, busy locks, failures, and cleanup"
   const first = createReader({ process: () => processing.promise });
   const second = createReader();
 
-  first.reader.toggle();
+  first.reader.toggle(true);
   assert.deepEqual({ ...second.reader.status() }, { enabled: false, busy: false, error: null });
-  second.reader.toggle();
+  second.reader.toggle(true);
   await drain();
   assert.deepEqual({ ...first.reader.status() }, { enabled: true, busy: true, error: null });
   assert.deepEqual({ ...second.reader.status() }, { enabled: true, busy: false, error: null });
 
-  second.reader.toggle();
+  second.reader.toggle(false);
   assert.equal(first.clears(), 0);
   assert.equal(second.clears(), 1);
   processing.reject(new Error("first reader failed"));
@@ -380,7 +381,7 @@ test("reader instances isolate enabled state, busy locks, failures, and cleanup"
   assert.equal(first.clears(), 1);
   assert.deepEqual({ ...second.reader.status() }, { enabled: false, busy: false, error: null });
 
-  second.reader.toggle();
+  second.reader.toggle(true);
   await drain();
   assert.deepEqual({ ...second.reader.status() }, { enabled: true, busy: false, error: null });
   assert.deepEqual({ ...first.reader.status() }, {
@@ -395,7 +396,7 @@ test("rapid input changes produce one refresh after 200 ms, reading only the lat
     read() { inputs.push(currentText); return { texts: [currentText] }; },
   });
   assert.equal(page.starts(), 0);
-  page.reader.toggle();
+  page.reader.toggle(true);
   await drain();
   assert.equal(page.starts(), 1);
 
@@ -427,7 +428,7 @@ test("a settled refresh waits for both processing and writing, then captures the
     process: () => inputs.length === 1 ? processing.promise : Promise.resolve([[]]),
     write: () => ++writes === 1 ? writing.promise : undefined,
   });
-  page.reader.toggle();
+  page.reader.toggle(true);
   currentText = "变化后的画面";
   page.change();
   page.change();
@@ -452,7 +453,7 @@ test("finishing a task does not bypass a debounce timer that is still running", 
     read() { reads += 1; return { texts: ["文字"] }; },
     process: () => reads === 1 ? processing.promise : Promise.resolve([[]]),
   });
-  page.reader.toggle();
+  page.reader.toggle(true);
   page.change();
   page.clock.tick(50);
   processing.resolve([[]]);
@@ -473,7 +474,7 @@ test("a new change restarts the settling period even after an earlier timer expi
     read() { reads += 1; return { texts: ["文字"] }; },
     process: () => reads === 1 ? processing.promise : Promise.resolve([[]]),
   });
-  page.reader.toggle();
+  page.reader.toggle(true);
   page.change();
   page.clock.tick(200);
   page.change();
@@ -501,7 +502,7 @@ test("changes during the next operation can request one further run without over
       return [[]];
     },
   });
-  page.reader.toggle();
+  page.reader.toggle(true);
   await drain();
   page.change();
   page.clock.tick(200);
@@ -521,17 +522,17 @@ test("changes during the next operation can request one further run without over
 test("disable removes the subscription and pending timer; re-enable starts clean", async () => {
   let reads = 0;
   const page = createWatchedReader({ read() { reads += 1; return { texts: ["文字"] }; } });
-  page.reader.toggle();
+  page.reader.toggle(true);
   await drain();
   page.change();
   page.clock.tick(100);
-  page.reader.toggle();
+  page.reader.toggle(false);
   assert.equal(page.stops(), 1);
   assert.equal(page.clock.pending(), 0);
   page.change(); // A late notification after unsubscribe must also be harmless.
   page.clock.tick(1000);
   assert.equal(reads, 1);
-  page.reader.toggle();
+  page.reader.toggle(true);
   await drain();
   page.clock.tick(1000);
   assert.equal(page.starts(), 2);
@@ -546,7 +547,7 @@ for (const elapsed of [100, 200]) {
       read() { reads += 1; return { texts: ["文字"] }; },
       process: () => reads === 1 ? processing.promise : Promise.resolve([[]]),
     });
-    page.reader.toggle();
+    page.reader.toggle(true);
     page.change();
     page.clock.tick(elapsed);
     processing.reject(new Error("计算失败"));
@@ -557,7 +558,8 @@ for (const elapsed of [100, 200]) {
     page.change();
     page.clock.tick(1000);
     assert.equal(reads, 1);
-    page.reader.toggle();
+    page.reader.toggle(false);
+    page.reader.toggle(true);
     await drain();
     page.clock.tick(1000);
     assert.equal(reads, 2);
@@ -571,7 +573,7 @@ test("empty snapshots complete without inference or writing and remain subscribe
     process: () => { calls += 1; },
     write: () => { calls += 1; },
   });
-  page.reader.toggle();
+  page.reader.toggle(true);
   page.change();
   page.clock.tick(200);
   await drain();
@@ -580,4 +582,61 @@ test("empty snapshots complete without inference or writing and remain subscribe
   assert.equal(page.reader.status().busy, false);
   assert.equal(page.starts(), 1);
   assert.equal(page.stops(), 0);
+});
+
+test("toggle is idempotent and failures require a new enable cycle", async () => {
+  let reads = 0;
+  let fail = false;
+  const page = createWatchedReader({
+    read() { reads += 1; return { texts: ["文字"] }; },
+    process: async () => { if (fail) throw new Error("failed"); return [[]]; },
+  });
+  page.reader.toggle(false);
+  assert.equal(page.clears(), 0);
+  page.reader.toggle(true);
+  page.reader.toggle(true);
+  await drain();
+  page.reader.toggle(true);
+  assert.equal(reads, 1);
+  assert.equal(page.starts(), 1);
+  page.reader.toggle(false);
+  page.reader.toggle(false);
+  assert.equal(page.clears(), 1);
+  fail = true;
+  page.reader.toggle(true);
+  await drain();
+  page.reader.toggle(true);
+  assert.equal(reads, 2, "reapplying ON must not repeatedly retry a failed reader");
+  assert.equal(page.reader.status().error, "failed");
+  page.reader.toggle(false);
+  fail = false;
+  page.reader.toggle(true);
+  await drain();
+  assert.equal(reads, 3);
+  assert.equal(page.reader.status().error, null);
+  page.reader.toggle(false);
+});
+
+test("ignored busy OFF requests do not cancel a pending viewport refresh", async () => {
+  const processing = deferred();
+  let reads = 0;
+  const page = createWatchedReader({
+    read() { reads += 1; return { texts: ["文字"] }; },
+    process: () => reads === 1 ? processing.promise : Promise.resolve([[]]),
+  });
+  page.reader.toggle(true);
+  page.change();
+  page.clock.tick(200);
+  page.reader.toggle(false);
+  processing.resolve([[]]);
+  await drain();
+  assert.equal(reads, 2);
+  assert.equal(page.reader.status().enabled, true);
+  assert.equal(page.reader.status().busy, false);
+  assert.equal(page.clears(), 0);
+  assert.equal(page.stops(), 0);
+  page.reader.toggle(false);
+  assert.equal(page.reader.status().enabled, false);
+  assert.equal(page.clears(), 1);
+  assert.equal(page.stops(), 1);
 });

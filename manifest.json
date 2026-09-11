@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "minimum_chrome_version": "109",
   "description": "将中文长句按词义边界切成短语块，并用细竖向分隔线辅助阅读。",
-  "permissions": ["activeTab", "offscreen", "scripting"],
+  "permissions": ["offscreen", "scripting", "storage"],
+  "host_permissions": ["http://*/*", "https://*/*", "file:///*"],
   "action": {
     "default_title": "Super Reader"
   },

@@ -24,7 +24,8 @@ globalThis.SuperReader.createReaderAdapter = function createChromeReaderAdapter(
     connect(reader) {
       chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (message?.type === "SUPER_READER_PING") sendResponse(reader.status());
-        if (message?.type === "SUPER_READER_TOGGLE") sendResponse(reader.toggle());
+        if (message?.type !== "SUPER_READER_APPLY_SETTING" || typeof message.enabled !== "boolean") return;
+        sendResponse(reader.toggle(message.enabled));
       });
     },
   };

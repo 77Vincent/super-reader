@@ -3,9 +3,16 @@
 // Chrome entry point: toolbar, script loading, routing, and offscreen host.
 const INFERENCE_PAGE = "src/inference.html";
 let creatingInferencePage = null;
-const openingTabs = new Set();
+let enabled = false;
+let toggling = false;
+let checkingActiveTab = false;
+let checkPending = false;
+const settingsReady = chrome.storage.local.get({ enabled: false }).then((saved) => {
+  enabled = saved.enabled;
+  return updateAction();
+});
 
-function updateAction(tabId, { enabled = false, error } = {}) {
+function updateAction(tabId, error) {
   // Busy is a click lock, not a visual state.
   const title = error || (enabled ? "Super Reader（点击关闭）" : "Super Reader（点击开启）");
   return Promise.all([
@@ -42,17 +49,27 @@ async function runInference(texts) {
   });
 }
 
-async function toggleTab(tab) {
-  if (!tab?.id || openingTabs.has(tab.id)) return;
-  openingTabs.add(tab.id);
+async function readerStatus(tabId) {
   try {
-    if (!/^(https?|file):/u.test(tab.url || "")) throw new Error("当前页面不支持阅读辅助");
-    let ready;
-    try {
-      ready = await chrome.tabs.sendMessage(tab.id, { type: "SUPER_READER_PING" });
-    } catch (_) { /* The page may predate extension installation. */ }
-    if (ready?.busy) return;
+    return await chrome.tabs.sendMessage(tabId, { type: "SUPER_READER_PING" }, { frameId: 0 });
+  } catch (_) { /* The document may not have a reader yet. */ }
+}
+
+function supportsReader(tab) {
+  return tab?.id != null && !tab.discarded && tab.status !== "loading" && /^(https?|file):/u.test(tab.url || "");
+}
+
+async function activeTab() {
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  return tab;
+}
+
+async function applyToTab(tab) {
+  if (!supportsReader(tab)) return;
+  try {
+    const ready = await readerStatus(tab.id);
     if (!ready) {
+      if (!enabled) return;
       await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["src/content.css"] });
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
@@ -63,24 +80,73 @@ async function toggleTab(tab) {
         ],
       });
     }
-    // The reader publishes every transition. A command response can already be
-    // stale when it arrives, so it must not overwrite a newer published state.
-    await chrome.tabs.sendMessage(tab.id, { type: "SUPER_READER_TOGGLE" });
+    // Injection can outlast a tab switch. Leave that page inert until visited.
+    if ((await activeTab())?.id !== tab.id) return;
+    const state = await chrome.tabs.sendMessage(tab.id, {
+      type: "SUPER_READER_APPLY_SETTING", enabled,
+    }, { frameId: 0 });
+    await updateAction(tab.id, enabled ? state?.error : null);
   } catch (error) {
-    await updateAction(tab.id, { error: error.message }).catch(() => {});
-  } finally {
-    openingTabs.delete(tab.id);
+    await updateAction(tab.id, error.message).catch(() => {});
   }
 }
 
-chrome.action.onClicked.addListener((tab) => { void toggleTab(tab); });
-chrome.tabs.onUpdated.addListener((tabId, change) => {
-  if (change.status === "loading") void updateAction(tabId).catch(() => {});
+async function applyToActiveTab() {
+  checkPending = true;
+  if (checkingActiveTab) return;
+  checkingActiveTab = true;
+  try {
+    await settingsReady;
+    while (checkPending) {
+      checkPending = false;
+      // A reload or focus event during a check requests another check of the
+      // latest document in the focused tab. Intermediate tabs aren't queued.
+      const tab = await activeTab();
+      if (!tab) continue;
+      await updateAction(tab.id);
+      await applyToTab(tab);
+    }
+  } finally {
+    checkingActiveTab = false;
+  }
+}
+
+async function toggleGlobal(tab) {
+  if (toggling) return;
+  toggling = true;
+  try {
+    await settingsReady;
+    // Only the clicked page's task locks this click. Other tabs apply the new
+    // setting when visited, without interrupting their current operation.
+    if ((await readerStatus(tab.id))?.busy) return;
+    const next = !enabled;
+    await chrome.storage.local.set({ enabled: next });
+    enabled = next;
+    await updateAction();
+    await applyToActiveTab();
+  } catch (error) {
+    await updateAction(tab?.id, error.message).catch(() => {});
+  } finally {
+    toggling = false;
+  }
+}
+
+chrome.action.onClicked.addListener((tab) => { void toggleGlobal(tab); });
+chrome.tabs.onActivated.addListener(() => { void applyToActiveTab().catch(() => {}); });
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  if (windowId !== chrome.windows.WINDOW_ID_NONE) void applyToActiveTab().catch(() => {});
 });
+chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
+  if (change.status === "loading") void settingsReady.then(() => updateAction(tabId)).catch(() => {});
+  if (change.status === "complete" && tab.active) void applyToActiveTab().catch(() => {});
+});
+chrome.runtime.onInstalled.addListener(() => { void applyToActiveTab().catch(() => {}); });
+chrome.runtime.onStartup.addListener(() => { void applyToActiveTab().catch(() => {}); });
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (sender.id !== chrome.runtime.id || !sender.tab?.id) return;
+  if (sender.id !== chrome.runtime.id || sender.tab?.id == null || sender.frameId !== 0) return;
   if (message?.type === "SUPER_READER_STATE") {
-    void updateAction(sender.tab.id, message).catch(() => {});
+    // Page failures don't change the saved global preference or other pages.
+    void settingsReady.then(() => updateAction(sender.tab.id, enabled ? message.error : null)).catch(() => {});
     sendResponse({});
   }
   if (message?.type !== "SUPER_READER_PROCESS") return;
