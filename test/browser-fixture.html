@@ -6,7 +6,7 @@
     <link rel="stylesheet" href="../src/content.css">
     <style>
       body { max-width: 720px; margin: 24px auto; font: 20px/1.6 system-ui; }
-      #metrics { font: 12px/1.4 monospace; white-space: pre-wrap; }
+      #metrics { height: 240px; overflow: auto; font: 12px/1.4 monospace; white-space: pre-wrap; }
       #offscreen { position: absolute; top: 100000px; }
     </style>
   </head>
@@ -35,14 +35,16 @@
       let inputLengths = [];
       let states = [];
       let started = 0;
+      let wasEnabled = false;
 
       function renderFixtureState(state) {
-        if (state.busy) {
+        if (state.enabled && !wasEnabled) {
           requests = 0;
           inputLengths = [];
           states = [];
           started = performance.now();
         }
+        wasEnabled = state.enabled;
         states.push({ ...state, markers: document.querySelectorAll(".super-reader-divider").length });
         fixtureToggle.disabled = state.busy;
         fixtureToggle.textContent = state.error ? "出错，点击重试" : state.busy ? "处理中" : state.enabled ? "关闭" : "开启";

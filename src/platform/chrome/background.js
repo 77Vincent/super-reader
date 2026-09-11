@@ -85,7 +85,9 @@ async function applyToTab(tab) {
     const state = await chrome.tabs.sendMessage(tab.id, {
       type: "SUPER_READER_APPLY_SETTING", enabled,
     }, { frameId: 0 });
-    await updateAction(tab.id, enabled ? state?.error : null);
+    // A successful reply can predate an error already published by the reader.
+    // Only restore a retained error here; transitions publish their own state.
+    if (state?.error) await updateAction(tab.id, enabled ? state.error : null);
   } catch (error) {
     await updateAction(tab.id, error.message).catch(() => {});
   }

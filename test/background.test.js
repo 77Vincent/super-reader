@@ -27,6 +27,7 @@ function createBackground(saved = {}) {
   const requests = [];
   const injectionDelays = new Map();
   const statusDelays = new Map();
+  const settingDelays = new Map();
 
   function publish(request, tabId = 1) {
     return new Promise((resolve) => message(request,
@@ -90,6 +91,11 @@ function createBackground(saved = {}) {
           statusDelays.delete(id);
           await delay;
         }
+        if (request.type === "SUPER_READER_APPLY_SETTING" && settingDelays.has(id)) {
+          const delay = settingDelays.get(id);
+          settingDelays.delete(id);
+          await delay;
+        }
         return response;
       },
     },
@@ -149,6 +155,11 @@ function createBackground(saved = {}) {
     pauseStatus(id) {
       let resume;
       statusDelays.set(id, new Promise((resolve) => { resume = resolve; }));
+      return resume;
+    },
+    pauseSettingReply(id) {
+      let resume;
+      settingDelays.set(id, new Promise((resolve) => { resume = resolve; }));
       return resume;
     },
     creations: () => creations,
@@ -354,6 +365,22 @@ test("page failures stay local and focusing again doesn't retry or flip the glob
   await background.click(1);
   assert.equal(first.reader.status().enabled, true);
   assert.equal(background.badges.get(1), "ON");
+});
+
+test("a delayed busy command reply cannot erase a newer inference error", async () => {
+  const background = createBackground();
+  await background.click(1);
+  const first = background.pages.get(1);
+  first.reader.toggle(false);
+  first.process = async () => { throw new Error("model failed"); };
+  const resume = background.pauseSettingReply(1);
+  await background.focus(1);
+  assert.match(first.reader.status().error, /model failed/u);
+  assert.equal(background.badges.get(1), "ERR");
+  resume();
+  await drain();
+  assert.equal(background.badges.get(1), "ERR");
+  assert.match(background.titles.get(1), /model failed/u);
 });
 
 test("restricted pages allow switching the global preference without script injection", async () => {
