@@ -206,7 +206,7 @@ test("the saved switch is global but toggles and focus leave every inactive tab 
   assert.deepEqual(background.injected, [1]);
   assert.deepEqual(background.injectedFiles[0], [
     "src/frontend/dom-tree.js", "src/frontend/viewport.js", "src/frontend/visibility.js", "src/frontend/processed-text.js",
-    "src/frontend/read.js", "src/frontend/write.js", "src/app/reader.js",
+    "src/frontend/read.js", "src/frontend/write.js", "src/frontend/content-changes.js", "src/app/reader.js",
     "src/platform/chrome/content.js", "src/start-reader.js",
   ]);
   assert.equal(background.saved.enabled, true);

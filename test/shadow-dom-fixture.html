@@ -17,6 +17,7 @@
 <script src="../src/frontend/processed-text.js"></script>
 <script src="../src/frontend/read.js"></script>
 <script src="../src/frontend/write.js"></script>
+<script src="../src/frontend/content-changes.js"></script>
 <script src="../src/app/reader.js"></script>
 <script>
   let reader;
@@ -64,6 +65,23 @@
     assert(reader.status().enabled, reader.status().error);
   }
 
+  test("replacing a processed title with identical text restores markers without any size or viewport change", async () => {
+    const p = paragraph(fixture, "精灵6号和小米SU7，谁才是年轻人的驾驶者之车");
+    const original = p.textContent;
+    await enable();
+    assert(markers(p).length === 1 && inputs.length === 1, "initial title was not processed");
+    const height = document.body.getBoundingClientRect().height;
+    p.textContent = original;
+    assert(markers(p).length === 0, "page replacement did not remove the original marker");
+    assert(document.body.getBoundingClientRect().height === height, "test changed the body size");
+    await until(() => inputs.length === 2 && markers(p).length === 1, "replacement title was not processed automatically");
+    assert(p.textContent === original && reader.status().enabled, "title or enabled state changed");
+    assert(inputs[1].length === 1 && inputs[1][0] === original, "replacement title was not captured intact");
+    const stableStates = states.length;
+    await delay(500);
+    assert(states.length === stableStates && inputs.length === 2, "marker insertion caused a refresh loop");
+  });
+
   test("nested comments render with their own stylesheet and fully restore on disable", async () => {
     const outer = shadow();
     const inner = shadow(shadow(outer));
@@ -106,8 +124,7 @@
       const next = paragraph(fixture, "链接更新之后新增的新闻文字");
       await delay(30);
       assert(errors.length === 0, errors.join("; "));
-      resize();
-      await until(() => markers(next).length === 1, "resize did not process the replacement link text");
+      await until(() => markers(next).length === 1, "replacement link text was not processed");
       assert(SuperReader.parentElementAcrossRoots(link) === null, "detached anchor acquired a false parent");
       assert(SuperReader.parentElementAcrossRoots(area) === null, "detached area acquired a false parent");
     } finally { window.removeEventListener("error", onError); }
@@ -144,23 +161,18 @@
     assert(inputs.length === 1 && inputs[0][0] === "隐藏的评论随后显示", "wrong revealed input");
   });
 
-  test("late comments and text changes wait for a viewport event", async () => {
+  test("late comments and text changes are processed without a viewport event", async () => {
     const root = shadow();
     await enable();
     assert(inputs.length === 0, "expected empty initial snapshot");
     const inner = shadow(root);
     const p = paragraph(inner, "后来加载进来的评论文字");
-    await delay(250);
-    assert(inputs.length === 0 && markers(inner).length === 0, "content change unexpectedly triggered processing");
-    resize();
     await until(() => markers(inner).length === 1, "late nested comments were missed");
     p.textContent = "服务器更新之后的新评论文字";
-    resize();
     await until(() => inputs.length === 2 && markers(inner).length === 1, "replacement comment was missed");
     const unchangedFragment = p.firstChild;
     const changedText = "直接修改现有文本节点的评论";
     unchangedFragment.nodeValue = changedText;
-    resize();
     await until(() => inputs.length === 3 && !reader.status().busy, "characterData change was missed");
     assert(inputs[2][0] === changedText, "changed text was not captured intact");
     await delay(450);
@@ -178,13 +190,12 @@
     pageObserver.observe(p, { childList: true });
     try {
       await enable();
-      resize();
       await until(() => inputs.length === 2 && !reader.status().busy, "page update was incorrectly remembered as processed");
       assert(inputs[1][0] === updated, "updated text was not processed intact");
     } finally { pageObserver.disconnect(); }
   });
 
-  test("viewport events during inference wait and coalesce into the latest comment", async () => {
+  test("content changes during inference wait and coalesce into the latest comment", async () => {
     const root = shadow();
     const p = paragraph(root, "开始处理时捕获的评论文字");
     let finish;
@@ -194,10 +205,8 @@
     reader.toggle(true);
     try {
       p.firstChild.nodeValue = "变化过程中的中间评论文字";
-      resize();
       await delay(240);
       p.firstChild.nodeValue = "最后一次更新之后的评论文字";
-      resize();
       await delay(240);
       assert(inputs.length === 1 && reader.status().busy, "started a concurrent operation");
       finish();

@@ -5,17 +5,22 @@
   // Shared per-page startup; the loaded adapter supplies the implementation.
   const {
     read, write, clearMarkers, rememberProcessedText, clearProcessedText,
-    watchViewport, createReader, createReaderAdapter,
+    watchViewport, createContentChanges, createReader, createReaderAdapter,
   } = globalThis.SuperReader;
   const adapter = createReaderAdapter();
+  const changes = createContentChanges(document);
   const reader = createReader({
-    read,
+    read: () => read(changes.observeRoot),
     process: adapter.process,
-    write: (snapshot, results) => write(snapshot, results, adapter.markerStyleUrl),
+    write: (snapshot, results) => changes.withoutObservation(() => write(snapshot, results, adapter.markerStyleUrl)),
     clear: clearMarkers,
     remember: rememberProcessedText,
     reset: clearProcessedText,
-    watch: (onChange) => watchViewport(document, onChange),
+    watch(onChange) {
+      const stopContent = changes.watch(onChange);
+      const stopViewport = watchViewport(document, onChange);
+      return () => { stopContent(); stopViewport(); };
+    },
     publishState: adapter.publishState,
   });
   adapter.connect(reader);

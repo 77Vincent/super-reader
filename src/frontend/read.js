@@ -17,9 +17,10 @@
    * The viewport selects nodes; it does not limit their string lengths.
    * Visibility is geometric: viewport and rectangular overflow clipping, not
    * occlusion by overlays or CSS masks. Includes nested open shadow roots.
+   * @param {(root: ShadowRoot) => void} [onRoot] Register roots for content observation.
    * @returns {ViewportSnapshot & {sources: TextSource[], viewport: Object}}
    */
-  globalThis.SuperReader.read = function read() {
+  globalThis.SuperReader.read = function read(onRoot = () => {}) {
     const { readViewport, createVisibilityFilter, isProcessedText, walkDOM, parentElementAcrossRoots } = globalThis.SuperReader;
     const viewport = readViewport(document);
     const snapshot = { texts: [], sources: [], viewport };
@@ -32,6 +33,7 @@
     }
     const domRange = document.createRange();
     for (const node of walkDOM(document.body, shouldSkipSubtree)) {
+      if (node.nodeType === 11) onRoot(node);
       if (node.nodeType !== 3) continue;
       if (isProcessedText(node)) continue;
       const text = node.nodeValue;

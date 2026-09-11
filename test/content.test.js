@@ -99,7 +99,10 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
     defaultView: Object.assign(new EventTarget(), {
       visualViewport: Object.assign(new EventTarget(), { offsetLeft: 0, offsetTop: 0, width: 800, height: 600 }),
       MutationObserver: class {
-        constructor() { throw new Error("The reader must not observe DOM mutations"); }
+        // Mutation delivery is covered by content-changes.test.js and native DOM fixtures.
+        observe() {}
+        disconnect() {}
+        takeRecords() { return []; }
       },
       ResizeObserver: class {
         constructor(callback) { this.callback = callback; }
@@ -163,6 +166,7 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
   run("src/frontend/processed-text.js");
   run("src/frontend/read.js");
   run("src/frontend/write.js");
+  run("src/frontend/content-changes.js");
   run("src/app/reader.js");
   if (useChromeAdapter) {
     const listeners = [];

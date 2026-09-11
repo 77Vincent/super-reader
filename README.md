@@ -19,7 +19,7 @@
 
 没有按字符数切分的任务批次、批次间延迟、应用层任务队列或用户取消机制。视口用于选择节点，不裁剪字符，也不限制字符串长度；单个跨多屏的长节点会被完整处理，因此数据量和运行时间没有硬保证。推理请求设有 5 秒超时，超时会终止 Worker 并报错。失败只停止当前页面，保留错误信息，不改变全局开关；切换标签页不会重试，刷新该页面，或在该页面关闭再开启后重试。
 
-页面滚动、普通 DOM 内部滚动容器滚动、窗口及 visual viewport 的滚动和尺寸变化，以及正文容器的尺寸变化都会请求刷新。`ResizeObserver` 监听 body 尺寸，让加载完成后才出现的正文也能触发读取；初始通知和尺寸不变的通知不会重复触发。连续变化重置 200ms 防抖定时器；每页只有一个运行中的任务和一个 `refreshPending` 布尔标志，只有任务完成且定时器到期后才开始下一次读取。中间画面不排队，当前任务不取消。关闭或失败时移除监听、清除定时器和待刷新标志。已捕获的快照不随页面变化。此处“一次操作”指调度和锁的单位，不代表网页 DOM 被冻结：页面自行改变的源文本不会写入旧结果。
+页面滚动、普通 DOM 内部滚动容器滚动、窗口及 visual viewport 的滚动和尺寸变化，以及正文容器的尺寸变化都会请求刷新。`ResizeObserver` 监听 body 尺寸；`MutationObserver` 监听文本和子节点变化，捕捉尺寸不变的内容替换。两者都只请求重新读取当前可视区域，未变化的已处理文本仍会跳过。连续变化重置 200ms 防抖定时器；每页只有一个运行中的任务和一个 `refreshPending` 布尔标志，只有任务完成且定时器到期后才开始下一次读取。中间画面不排队，当前任务不取消。关闭或失败时移除监听、清除定时器和待刷新标志。已捕获的快照不随页面变化。此处“一次操作”指调度和锁的单位，不代表网页 DOM 被冻结：页面自行改变的源文本不会写入旧结果。
 
 ## 文件职责
 
@@ -29,6 +29,7 @@
 | `src/frontend/read.js` | `read()` 跳过无关 DOM 分支，保留至少部分可见的完整文本节点，生成固定快照和 DOM 映射 |
 | `src/frontend/dom-tree.js` | 遍历普通 DOM 和嵌套的 open Shadow DOM；跨 slot 和 shadow host 查找显示层级中的父元素 |
 | `src/frontend/viewport.js` | `readViewport(document)` 捕获可视区域边界；`watchViewport(document, onChange)` 监听滚动、视口及 body 尺寸变化并返回取消监听函数 |
+| `src/frontend/content-changes.js` | 观察文档及读取时发现的 open shadow root 的文本和子节点变化；请求刷新，并在同步写入标记时暂停观察 |
 | `src/frontend/visibility.js` | `createVisibilityFilter(document, viewport)` 提供 `shouldSkipSubtree(element)` 和 `getVisibleArea(node)`；负责分支排除、隐藏判断及祖先溢出裁剪，样式缓存仅用于本次读取 |
 | `src/frontend/processed-text.js` | 独立记录已处理文本节点及其当前值、父节点；由 reader 在写入成功后记录、关闭或失败时重置 |
 | `src/frontend/write.js` | 校验源节点、插入标记及 shadow root 样式，返回成功处理的文本片段；`clearMarkers()` 清理，包括已脱离文档的根 |
@@ -58,7 +59,7 @@
 
 ```text
 frontend/dom-tree.js → frontend/viewport.js → frontend/visibility.js → frontend/processed-text.js
-  → frontend/read.js → frontend/write.js → app/reader.js
+  → frontend/read.js → frontend/write.js → frontend/content-changes.js → app/reader.js
   → platform/chrome/content.js → start-reader.js
 ```
 
@@ -66,15 +67,20 @@ frontend/dom-tree.js → frontend/viewport.js → frontend/visibility.js → fro
 
 ```js
 const adapter = SuperReader.createReaderAdapter();
+const changes = SuperReader.createContentChanges(document);
 const reader = SuperReader.createReader({
-  read: SuperReader.read,
+  read: () => SuperReader.read(changes.observeRoot),
   process: adapter.process,
-  write: (snapshot, results) =>
-    SuperReader.write(snapshot, results, adapter.markerStyleUrl),
+  write: (snapshot, results) => changes.withoutObservation(() =>
+    SuperReader.write(snapshot, results, adapter.markerStyleUrl)),
   clear: SuperReader.clearMarkers,
   remember: SuperReader.rememberProcessedText,
   reset: SuperReader.clearProcessedText,
-  watch: (onChange) => SuperReader.watchViewport(document, onChange),
+  watch(onChange) {
+    const stopContent = changes.watch(onChange);
+    const stopViewport = SuperReader.watchViewport(document, onChange);
+    return () => { stopContent(); stopViewport(); };
+  },
   publishState: adapter.publishState,
 });
 adapter.connect(reader);
@@ -126,9 +132,11 @@ Chrome 的推理消息路径：
 
 `processed-text.js` 的记录是弱引用，但 writer 为关闭时清理而保存的标记 `Set` 和 shadow 样式 `Map` 是强引用。已脱离页面的标记和其关联子树仍可能保留到关闭或刷新页面；大量替换内容的长会话需要关注这部分内存。
 
-当前没有 DOM 内容变化观察器。新增正文或评论若改变 body 尺寸，会通过 `ResizeObserver` 请求处理；不改变 body 尺寸的文本、属性或 slot 分配变化仍需等下一次滚动、缩放或重新开启。只在 shadow root 内传播的滚动事件也不会触发刷新。读取和写入直接调用 DOM 工具；关闭或失败时会断开尺寸观察器。
+`content-changes.js` 观察文档及已发现的 open shadow root 的 `childList` 和 `characterData`。含中文的文本新增、移除、替换和修改会请求刷新；新增带 open shadow root 的宿主也会请求读取。脚本、样式、代码、控件和可编辑区域以及纯数字计时变化不触发内容刷新。不观察属性：尺寸不变的样式、可见性或 slot 分配变化仍需等下一次视口事件。只在 shadow root 内传播的滚动事件也不会触发刷新。
 
-当前处理当前文档的普通 DOM 和 open Shadow DOM；不进入 closed shadow root 或 iframe，不判断遮挡层、CSS 蒙版或任意旋转后的裁剪形状。新 shadow root 在下次读取时发现。不能仅凭父元素在屏幕外就跳过整个分支，因为其定位后代仍可能可见；`visibility:hidden` 也可能被后代覆盖。初次发现节点的耗时仍受文档规模和浏览器布局成本影响。
+装配层在同步写入标记期间暂停内容观察，写入前先处理已经排队的页面变化，写入后立即恢复观察，避免标记造成反馈循环；页面随后自行修改 DOM 仍会被捕捉。关闭或失败时断开两种观察器。内容观察器会释放脱离文档的 shadow root。
+
+当前处理当前文档的普通 DOM 和 open Shadow DOM；不进入 closed shadow root 或 iframe，不判断遮挡层、CSS 蒙版或任意旋转后的裁剪形状。新 shadow root 在下次读取时发现；如果已存在的宿主稍后才调用 `attachShadow()`，且没有已观察到的 DOM 或尺寸变化，则仍需等下一次视口事件。不能仅凭父元素在屏幕外就跳过整个分支，因为其定位后代仍可能可见；`visibility:hidden` 也可能被后代覆盖。初次发现节点的耗时仍受文档规模和浏览器布局成本影响。
 
 ## 安装和验证
 
@@ -145,6 +153,6 @@ python3 -m http.server 8765 --bind 127.0.0.1
 - `demo.html`：普通测试文章，使用真实扩展按钮操作。
 - `http://127.0.0.1:8765/test/browser-fixture.html`：普通网页适配器，运行真实 Worker 和模型，显示请求次数、输入长度和状态变化。
 - `http://127.0.0.1:8765/test/dom-read-fixture.html`：点击 **Run layout tests**，验证真实浏览器中的长节点、视口边界、内部滚动刷新、处理中缩放、加载完成后出现的正文及标记写入清理。
-- `http://127.0.0.1:8765/test/shadow-dom-fixture.html`：点击 **Run shadow DOM tests**，验证嵌套评论、slot、宿主裁剪、视口事件触发后的内容更新、样式和完整清理；确认不改变 body 尺寸的内容变化与 shadow root 内部滚动本身不触发处理。
+- `http://127.0.0.1:8765/test/shadow-dom-fixture.html`：点击 **Run shadow DOM tests**，验证同尺寸标题替换后自动恢复标记、晚到及更新的嵌套评论、处理中合并更新、避免标记反馈循环、slot、宿主裁剪、样式和完整清理。
 
 离线训练见 [`training/README.md`](training/README.md)。
