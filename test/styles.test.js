@@ -5,10 +5,12 @@ const { join } = require("node:path");
 
 const read = (path) => readFileSync(join(__dirname, "..", path), "utf8");
 
-test("the toolbar is the only extension control", () => {
+test("the keyboard shortcut invokes the toolbar action without a popup", () => {
   const manifest = JSON.parse(read("manifest.json"));
   assert.equal(manifest.action.default_popup, undefined);
-  assert.equal(manifest.commands, undefined);
+  assert.deepEqual(manifest.commands, {
+    _execute_action: { suggested_key: "Alt+Shift+R" },
+  });
   assert.equal(manifest.content_scripts, undefined);
   assert.equal(manifest.permissions.includes("storage"), true);
   assert.equal(manifest.permissions.includes("activeTab"), false);

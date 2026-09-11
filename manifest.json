@@ -9,6 +9,11 @@
   "action": {
     "default_title": "Super Reader"
   },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": "Alt+Shift+R"
+    }
+  },
   "background": {
     "service_worker": "src/platform/chrome/background.js"
   },

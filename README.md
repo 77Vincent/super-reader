@@ -2,6 +2,8 @@
 
 用于梳理核心流程的最小 Chrome 中文阅读辅助扩展。只有一个全局工具栏开关，保存在本地，刷新页面或重启浏览器后仍保留。页面在获得焦点时应用开关，后台标签页不会因开关变化而收到消息或开始处理。直接加载源码即可运行，不需要安装依赖或构建。
 
+在 Chrome 中按 **Shift + Option + R**（macOS；其他平台为 **Shift + Alt + R**）可切换开关。快捷键通过 manifest 的 `_execute_action` 触发同一个工具栏点击处理函数，处理中同样不响应，无需额外事件监听。重新加载扩展后生效；可在 `chrome://extensions/shortcuts` 查看或修改绑定。声明方式见 [Chrome 快捷键文档](https://developer.chrome.com/docs/extensions/reference/api/commands#action-commands)。
+
 切回已经处理的页面时，只同步当前全局 ON/OFF 状态。状态相同就保留原有标记和处理记录，即使页面在后台期间错过了关闭再开启也无需重做。新标签页在首次聚焦时处理，当前页面刷新后重新处理。后台页面只在下次聚焦时响应，没有向所有标签页广播、遍历后台页面或后台同步任务。
 
 ## 核心流程
@@ -43,7 +45,7 @@
 | `src/platform/interfaces.js` | 适配器的 JSDoc 接口说明，无运行时代码 |
 | `src/inference.html` | Chrome 隐藏页面，承载推理服务 |
 | `src/content.css` | 分隔线的固定样式 |
-| `manifest.json` | Chrome 权限、工具栏和后台入口 |
+| `manifest.json` | Chrome 权限、工具栏、快捷键和后台入口 |
 | `test/` | 单元测试、集成测试与浏览器测试页 |
 | `training/` | 独立的离线训练和导出工具 |
 
