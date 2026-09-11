@@ -15,8 +15,14 @@ const settingsReady = chrome.storage.local.get({ enabled: false }).then((saved) 
 function updateAction(tabId, error) {
   // Busy is a click lock, not a visual state.
   const title = error || (enabled ? "Super Reader（点击关闭）" : "Super Reader（点击开启）");
+  const icon = enabled ? "on" : "off";
   return Promise.all([
-    chrome.action.setBadgeText({ tabId, text: error ? "ERR" : enabled ? "ON" : "" }),
+    chrome.action.setIcon({ tabId, path: {
+      // setIcon fetches relative to this worker, which lives in a subdirectory.
+      16: chrome.runtime.getURL(`icons/${icon}-16.png`),
+      32: chrome.runtime.getURL(`icons/${icon}-32.png`),
+    } }),
+    chrome.action.setBadgeText({ tabId, text: error ? "ERR" : "" }),
     chrome.action.setTitle({ tabId, title }),
   ]);
 }

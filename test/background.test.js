@@ -17,6 +17,7 @@ function createBackground(saved = {}) {
   const tabs = new Map();
   const pages = new Map();
   const badges = new Map();
+  const icons = new Map();
   const titles = new Map();
   const disabled = new Set();
   const commands = [];
@@ -68,6 +69,21 @@ function createBackground(saved = {}) {
     action: {
       onClicked: { addListener: (callback) => { click = callback; } },
       async setBadgeText({ tabId, text }) { badges.set(tabId, text); },
+      async setIcon({ tabId, path }) {
+        const resolved = {};
+        // Chrome's service-worker binding fetches paths relative to the worker URL.
+        for (const [size, imagePath] of Object.entries(path)) {
+          const url = new URL(imagePath, chrome.runtime.getURL(manifest.background.service_worker));
+          assert.equal(url.protocol, "chrome-extension:");
+          assert.equal(url.hostname, chrome.runtime.id);
+          const png = readFileSync(join(__dirname, "..", url.pathname.slice(1)));
+          assert.equal(png.subarray(1, 4).toString(), "PNG");
+          assert.equal(png.readUInt32BE(16), Number(size));
+          assert.equal(png.readUInt32BE(20), Number(size));
+          resolved[size] = url.href;
+        }
+        icons.set(tabId, resolved);
+      },
       async setTitle({ tabId, title }) { titles.set(tabId, title); },
       async disable(id) { disabled.add(id); },
       async enable(id) { disabled.delete(id); },
@@ -145,7 +161,7 @@ function createBackground(saved = {}) {
   }
 
   return {
-    pages, badges, titles, disabled, commands, queries, writes, saved, tabs, injected, injectedFiles, requests,
+    pages, badges, icons, titles, disabled, commands, queries, writes, saved, tabs, injected, injectedFiles, requests,
     addTab,
     pauseInjection(id) {
       let resume;
@@ -217,6 +233,11 @@ test("the saved switch is global but toggles and focus leave every inactive tab 
   assert.deepEqual(background.injected, [1, 2]);
   assert.equal(background.badges.get(1), "");
   assert.equal(background.badges.get(2), "");
+  assert.deepEqual(background.icons.get(1), {
+    16: "chrome-extension://test-extension/icons/off-16.png",
+    32: "chrome-extension://test-extension/icons/off-32.png",
+  });
+  assert.deepEqual(background.icons.get(2), background.icons.get(1));
 });
 
 test("active reloads and new tabs use the saved switch; background reloads wait for focus", async () => {
@@ -226,7 +247,11 @@ test("active reloads and new tabs use the saved switch; background reloads wait 
   await background.navigate(1);
   assert.notEqual(background.pages.get(1), oldPage);
   assert.equal(background.pages.get(1).reads, 1);
-  assert.equal(background.badges.get(1), "ON");
+  assert.equal(background.badges.get(1), "");
+  assert.deepEqual(background.icons.get(1), {
+    16: "chrome-extension://test-extension/icons/on-16.png",
+    32: "chrome-extension://test-extension/icons/on-32.png",
+  });
   await background.focus(2);
   assert.equal(background.pages.get(2).reads, 1);
   await background.navigate(1);
@@ -277,7 +302,11 @@ test("worker and browser restarts retain the setting and window focus only check
   await restarted.startup();
   await restarted.install();
   assert.equal(restarted.pages.get(1).reads, 1);
-  assert.equal(restarted.badges.get(1), "ON");
+  assert.equal(restarted.badges.get(1), "");
+  assert.deepEqual(restarted.icons.get(1), {
+    16: "chrome-extension://test-extension/icons/on-16.png",
+    32: "chrome-extension://test-extension/icons/on-32.png",
+  });
   await restarted.click(1);
   const stopped = createBackground(background.saved);
   await stopped.focus(1);
@@ -288,6 +317,7 @@ test("busy clicks are ignored without flicker, and inactive pages are neither qu
   const background = createBackground();
   await background.click(1);
   const title = background.titles.get(1);
+  const icon = background.icons.get(1);
   let complete;
   const first = background.pages.get(1);
   first.reader.toggle(false);
@@ -298,7 +328,8 @@ test("busy clicks are ignored without flicker, and inactive pages are neither qu
   await background.click(1);
   await background.click(1);
   assert.equal(background.writes.length, writes, "busy clicks are discarded");
-  assert.equal(background.badges.get(1), "ON");
+  assert.equal(background.badges.get(1), "");
+  assert.deepEqual(background.icons.get(1), icon);
   assert.equal(background.titles.get(1), title);
   assert.equal(background.disabled.size, 0);
   await background.focus(2);
@@ -364,7 +395,11 @@ test("page failures stay local and focusing again doesn't retry or flip the glob
   await background.click(1);
   await background.click(1);
   assert.equal(first.reader.status().enabled, true);
-  assert.equal(background.badges.get(1), "ON");
+  assert.equal(background.badges.get(1), "");
+  assert.deepEqual(background.icons.get(1), {
+    16: "chrome-extension://test-extension/icons/on-16.png",
+    32: "chrome-extension://test-extension/icons/on-32.png",
+  });
 });
 
 test("a delayed busy command reply cannot erase a newer inference error", async () => {

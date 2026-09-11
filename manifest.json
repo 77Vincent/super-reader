@@ -6,8 +6,18 @@
   "description": "将中文长句按词义边界切成短语块，并用细竖向分隔线辅助阅读。",
   "permissions": ["offscreen", "scripting", "storage"],
   "host_permissions": ["http://*/*", "https://*/*", "file:///*"],
+  "icons": {
+    "16": "icons/on-16.png",
+    "32": "icons/on-32.png",
+    "48": "icons/on-48.png",
+    "128": "icons/on-128.png"
+  },
   "action": {
-    "default_title": "Super Reader"
+    "default_title": "Super Reader",
+    "default_icon": {
+      "16": "icons/off-16.png",
+      "32": "icons/off-32.png"
+    }
   },
   "commands": {
     "_execute_action": {
