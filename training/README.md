@@ -1,5 +1,40 @@
 # Boundary model smoke test
 
+## Quality baseline before tuning
+
+Run the shipped JavaScript model against a fixed validation sample before changing
+weights or segmentation rules:
+
+```bash
+npm run model:baseline
+```
+
+This uses the existing local `training/data/processed/validation.jsonl`; it does
+not download data or train a model. A seeded reservoir selects 500 examples from
+each domain, preserving the within-domain length distribution. The report records
+model, implementation, input and sample fingerprints; top-1/top-3, rank, unknown
+characters, confidence buckets and warm Node inference timings; and outputs for
+the unlabeled cases in `evaluation-cases.json`. Demo inline text nodes remain
+separate inputs. The generated JSON includes every sampled prediction.
+
+The default output is the ignored `training/artifacts/model-baseline.json`.
+Preserve separate files when comparing experiments:
+
+```bash
+npm run model:baseline -- --output training/artifacts/before-tuning.json
+npm run model:baseline -- --output training/artifacts/candidate.json
+```
+
+Keep the input, seed and per-domain limit unchanged for paired comparisons.
+Other options are `--input`, `--seed`, `--per-domain` and `--cases`.
+Use validation for tuning; reserve test data for the final comparison.
+
+See [MODEL_BASELINE.md](MODEL_BASELINE.md) for the initial measurements and
+limitations. Single-gap accuracy measures recovery of removed punctuation;
+the project still needs human-reviewed labels for complete reading chunks.
+
+## Training experiment
+
 This experiment checks the complete weak-supervision pipeline without claiming
 production model quality. Its default dataset uses every eligible pair in each
 split without equalizing or downsampling source domains. All retained source
