@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Content observation benchmark</title>
+<link rel="stylesheet" href="../src/content.css">
+<style>
+  body { margin: 16px; font: 16px/24px sans-serif; }
+  iframe { width: 100%; height: 700px; border: 1px solid #ccc; }
+  pre { white-space: pre-wrap; }
+  #visible { position: absolute; top: 0; left: 0; width: 620px; }
+  #offscreen { position: absolute; top: 100000px; left: 0; width: 620px; }
+  p { margin: 0; }
+</style>
+<button id="run">Run benchmark</button>
+<pre id="results">Ready. Approximately two minutes; keep this tab visible.</pre>
+<script src="../src/frontend/dom-tree.js"></script>
+<script src="../src/frontend/viewport.js"></script>
+<script src="../src/frontend/visibility.js"></script>
+<script src="../src/frontend/processed-text.js"></script>
+<script src="../src/frontend/read.js"></script>
+<script src="../src/frontend/write.js"></script>
+<script src="../src/frontend/content-changes.js"></script>
+<script src="../src/app/reader.js"></script>
+<script>
+// The actual extension only injects into frame 0. Run measurements in a child
+// frame so an enabled installed extension cannot double-process our fixture.
+if (!new URL(location.href).searchParams.has("frame")) {
+  const frame = document.createElement("iframe");
+  frame.src = `${location.pathname}?frame=1`;
+  document.body.append(frame);
+  const button = document.querySelector("#run");
+  const output = document.querySelector("#results");
+  button.addEventListener("click", () => {
+    button.disabled = true;
+    frame.contentWindow.postMessage({ benchmark: "run" }, location.origin);
+  });
+  window.addEventListener("message", (event) => {
+    if (event.source !== frame.contentWindow || event.origin !== location.origin) return;
+    if (event.data.progress) output.textContent = event.data.progress;
+    if (event.data.result) {
+      output.textContent = JSON.stringify(event.data.result, null, 2);
+      button.disabled = false;
+    }
+  });
+} else {
+  document.querySelector("#run").remove();
+  document.querySelector("#results").remove();
+  const visible = document.createElement("div");
+  visible.id = "visible";
+  const offscreen = document.createElement("div");
+  offscreen.id = "offscreen";
+  document.body.append(visible, offscreen);
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const sum = (values) => values.reduce((a, b) => a + b, 0);
+  const percentile = (values, p) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted.length ? sorted[Math.ceil(sorted.length * p) - 1] : 0;
+  };
+  const assert = (ok, message) => { if (!ok) throw new Error(message); };
+  let metrics = null;
+  let running = false;
+  let hidden = false;
+  document.addEventListener("visibilitychange", () => { if (document.hidden && running) hidden = true; });
+
+  // Instrument only this fixture's observer callbacks, without changing runtime files.
+  const NativeObserver = window.MutationObserver;
+  window.MutationObserver = class extends NativeObserver {
+    constructor(callback) {
+      super((records, observer) => {
+        const current = metrics;
+        const start = performance.now();
+        try { callback(records, observer); }
+        finally {
+          if (current) {
+            current.observerMs += performance.now() - start;
+            current.deliveries += 1;
+            current.records += records.length;
+          }
+        }
+      });
+    }
+  };
+
+  async function measure(size, enabled, repetition) {
+    visible.replaceChildren();
+    offscreen.replaceChildren();
+    for (let i = 0; i < 8; i++) {
+      const p = document.createElement("p");
+      p.textContent = `屏幕内已经处理过的第${i}段中文文字保持不变`;
+      visible.append(p);
+    }
+    const host = document.createElement("div");
+    offscreen.append(host);
+    const outer = host.attachShadow({ mode: "open" });
+    const innerHost = document.createElement("div");
+    outer.append(innerHost);
+    const inner = innerHost.attachShadow({ mode: "open" });
+    const nodes = [];
+    for (let i = 0; i < size; i++) {
+      const p = document.createElement("p");
+      const span = document.createElement("span");
+      span.textContent = `屏幕外尚未处理的第${i}条中文评论等待显示`;
+      p.append(span);
+      inner.append(p);
+      nodes.push(span.firstChild);
+    }
+    const counter = document.createTextNode("00:00");
+    inner.append(counter);
+    const changes = SuperReader.createContentChanges(document);
+    const reader = SuperReader.createReader({
+      read() {
+        const start = performance.now();
+        const snapshot = SuperReader.read(enabled ? changes.observeRoot : undefined);
+        if (metrics) metrics.scans.push(performance.now() - start);
+        return snapshot;
+      },
+      async process(texts) {
+        if (metrics) metrics.processCalls += 1;
+        // Inference is deliberately stubbed: measure observation and DOM costs.
+        return texts.map(() => [2]);
+      },
+      write(snapshot, results) {
+        const start = performance.now();
+        const written = changes.withoutObservation(() =>
+          SuperReader.write(snapshot, results, new URL("../src/content.css", location.href).href));
+        if (metrics) metrics.writeMs += performance.now() - start;
+        return written;
+      },
+      remember: SuperReader.rememberProcessedText,
+      reset: SuperReader.clearProcessedText,
+      clear: SuperReader.clearMarkers,
+      watch(onChange) {
+        const stopContent = enabled ? changes.watch(() => {
+          if (metrics) metrics.refreshRequests += 1;
+          onChange();
+        }) : () => {};
+        const stopViewport = SuperReader.watchViewport(document, () => {
+          if (metrics) metrics.viewportRequests += 1;
+          onChange();
+        });
+        return () => { stopContent(); stopViewport(); };
+      },
+      publishState(state) { if (state.error) throw new Error(state.error); },
+    });
+    try {
+      reader.toggle(true);
+      await delay(400);
+      assert(!reader.status().busy && reader.status().enabled, "initial processing failed");
+      assert(visible.querySelectorAll(".super-reader-divider").length === 8, "visible text was not processed exactly once");
+      assert(inner.querySelectorAll(".super-reader-divider").length === 0, "offscreen text was processed");
+
+      const scanSamples = [];
+      for (let i = 0; i < 18; i++) {
+        const start = performance.now();
+        const snapshot = SuperReader.read();
+        const elapsed = performance.now() - start;
+        assert(snapshot.texts.length === 0, "an unchanged viewport has new work");
+        if (i >= 3) scanSamples.push(elapsed);
+      }
+      const rows = [];
+      for (const scenario of ["idle", "numeric-40hz", "han-40hz", "han-spaced"]) {
+        const current = {
+          scenario, offscreenTexts: size, observer: enabled, repetition,
+          deliveries: 0, records: 0, observerMs: 0, refreshRequests: 0,
+          viewportRequests: 0, scans: [], processCalls: 0, writeMs: 0,
+        };
+        metrics = current;
+        const started = performance.now();
+        if (scenario === "idle") await delay(500);
+        else {
+          const count = scenario === "han-spaced" ? 6 : 40;
+          const interval = scenario === "han-spaced" ? 300 : 25;
+          for (let i = 0; i < count; i++) {
+            if (scenario === "numeric-40hz") counter.nodeValue = `00:${i}`;
+            else nodes[i % nodes.length].nodeValue = `屏幕外内容发生第${i}次更新仍然不在可视区域`;
+            await delay(interval);
+          }
+        }
+        await delay(350); // Include the final debounced refresh.
+        current.elapsedMs = performance.now() - started;
+        metrics = null;
+        assert(current.processCalls === 0, "offscreen updates caused inference");
+        assert(current.viewportRequests === 0, "viewport movement contaminated the measurement");
+        assert(enabled || current.scans.length === 0, "baseline refreshed unexpectedly");
+        current.scanMs = sum(current.scans);
+        current.scanMedianMs = percentile(current.scans, 0.5);
+        current.scanP95Ms = percentile(current.scans, 0.95);
+        current.measuredWorkMs = current.scanMs + current.observerMs + current.writeMs;
+        rows.push(current);
+      }
+      return { size, observer: enabled, repetition, scanSamples, rows };
+    } finally {
+      metrics = null;
+      reader.toggle(false);
+    }
+  }
+
+  window.addEventListener("message", async (event) => {
+    if (event.source !== parent || event.origin !== location.origin || event.data.benchmark !== "run" || running) return;
+    running = true;
+    hidden = document.hidden;
+    const result = {
+      startedAt: new Date().toISOString(), userAgent: navigator.userAgent,
+      viewport: { width: innerWidth, height: innerHeight },
+      inference: "stubbed; only observer callbacks and real DOM read/write are timed",
+      note: "Native observer bookkeeping, unrelated browser work and rendering are not included in measuredWorkMs.",
+      runs: [],
+    };
+    try {
+      for (let repetition = 1; repetition <= 3; repetition++) {
+        for (const size of [300, 1000, 5000]) {
+          // Alternate order to reduce systematic warm-up bias.
+          for (const enabled of repetition % 2 ? [false, true] : [true, false]) {
+            parent.postMessage({ progress: `Repetition ${repetition}/3; ${size} offscreen texts; observer ${enabled ? "ON" : "OFF"}` }, location.origin);
+            result.runs.push(await measure(size, enabled, repetition));
+          }
+        }
+      }
+      result.passed = true;
+    } catch (error) { result.error = error.stack; }
+    finally {
+      result.hiddenDuringRun = hidden;
+      result.finishedAt = new Date().toISOString();
+      running = false;
+      parent.postMessage({ result }, location.origin);
+    }
+  });
+}
+</script>
+</html>
