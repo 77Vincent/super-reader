@@ -19,7 +19,7 @@
   const NUMERIC_EXPRESSION = /\p{Number}+(?:[.,]\p{Number}+)?(?:\s+\p{Number}+[\/／]\p{Number}+|[\/／]\p{Number}+)?/gu;
   const SINGLE_HAN_WORD = /^\p{Script=Han}$/u;
   const WHITESPACE = /^\s+$/u;
-  const SPLIT_LENGTH_THRESHOLD = 8;
+  const SPLIT_LENGTH_THRESHOLD = 12;
   const MAX_MODEL_WINDOW_TOKENS = 256;
 
   function visualLength(text) {

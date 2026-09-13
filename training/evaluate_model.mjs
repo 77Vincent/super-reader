@@ -106,7 +106,7 @@ const confidenceBucket = (p) => p < 0.5 ? "0-50%" : p < 0.9 ? "50-90%" : p < 0.9
 
 function optionsFrom(args) {
   const options = {
-    input: "training/data/processed/validation.jsonl", "per-domain": "500", seed: "20260911",
+    input: "training/data/processed/no-enumeration-aligned-eval-20260912/validation.jsonl", "per-domain": "500", seed: "20260911",
     cases: "training/evaluation-cases.json", output: "training/artifacts/model-baseline.json",
   };
   for (let i = 0; i < args.length; i += 2) {
@@ -126,7 +126,12 @@ async function main() {
   const inputHash = createHash("sha256");
   stream.on("data", (data) => inputHash.update(data));
   for await (const line of createInterface({ input: stream, crlfDelay: Infinity })) {
-    if (line.trim()) sampler.add(JSON.parse(line));
+    if (!line.trim()) continue;
+    const record = JSON.parse(line);
+    if (record.punctuation?.includes("、")) {
+      throw new Error(`Enumeration proxy label remains: ${record.id}; regenerate the evaluation split`);
+    }
+    sampler.add(record);
   }
   const { counts, records } = sampler.result();
   if (!records.length) throw new Error("No evaluation records found");

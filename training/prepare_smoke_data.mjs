@@ -19,12 +19,13 @@ const RAW_DIR = join(SCRIPT_DIR, "data", "raw");
 const DEFAULT_PROCESSED_DIR = join(SCRIPT_DIR, "data", "processed");
 const SEGMENTER = new Intl.Segmenter("zh-CN", { granularity: "word" });
 const HAN_CHARACTER = /\p{Script=Han}/u;
+// List items stay together; enumeration commas are removed during cleaning.
 const PROXY_PUNCTUATION = new Set([
-  "，", ",", "。", ".", "！", "!", "？", "?", "；", ";", "：", ":", "、", "…",
+  "，", ",", "。", ".", "！", "!", "？", "?", "；", ";", "：", ":", "…",
 ]);
 const LENGTH_BUCKET_MAXIMUMS = [8, 16, 32];
 
-const SOURCES = [
+export const SOURCES = [
   {
     domain: "news",
     filename: "tnews_public.zip",
@@ -329,7 +330,7 @@ async function readWikipediaDocuments(paths, limit, seed) {
   return documents.slice(0, limit);
 }
 
-async function documentsFromSource(source, downloaded, options) {
+export async function documentsFromSource(source, downloaded, options) {
   if (source.domain === "wikipedia") {
     return readWikipediaDocuments(downloaded, options.wikipediaDocs, options.seed);
   }
@@ -840,6 +841,7 @@ async function main() {
 
   const summary = {
     seed: options.seed,
+    excluded_proxy_punctuation: ["、"],
     tokenization: options.tokenization,
     candidate_positions: options.tokenization === "word"
       ? "between adjacent Intl.Segmenter word tokens"

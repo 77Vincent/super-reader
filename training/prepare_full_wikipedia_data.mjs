@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import {
   mkdir,
@@ -13,7 +14,7 @@ import {
 } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   buildAdjacentSamples,
@@ -34,7 +35,7 @@ const BLOOM_BIT_MASK = 0x7fffffff;
 const BLOOM_HASHES = 7;
 const BUFFER_CHARACTERS = 1024 * 1024;
 
-function parseArguments(argv) {
+export function parseArguments(argv) {
   const options = {
     sourceDir: DEFAULT_SOURCE_DIR,
     outputDir: DEFAULT_OUTPUT_DIR,
@@ -67,11 +68,19 @@ function parseArguments(argv) {
     "maxSamplesPerDocument",
     "positionBins",
   ]) {
-    if (!Number.isInteger(options[name]) || options[name] < (name === "maxBlocks" ? 0 : 1)) {
+    const minimum = ["maxBlocks", "maxSequenceLength", "maxSamplesPerDocument"].includes(name) ? 0 : 1;
+    if (!Number.isInteger(options[name]) || options[name] < minimum) {
       throw new Error(`--${name} must be a valid integer`);
     }
   }
   return options;
+}
+
+export function cappedDocumentSamples(candidates, maximum) {
+  if (maximum === 0 || candidates.length <= maximum) return candidates;
+  return Array.from({ length: maximum }, (_, index) => (
+    candidates[Math.floor(((index + 0.5) * candidates.length) / maximum)]
+  ));
 }
 
 async function forEachJsonLine(path, callback) {
@@ -249,7 +258,7 @@ async function addSample(sample, domainIndex, bloom, writer, statistics, options
     return;
   }
   const length = sample.tokens.length;
-  if (length > options.maxSequenceLength) {
+  if (options.maxSequenceLength > 0 && length > options.maxSequenceLength) {
     statistics.overlength_filtered += 1;
     return;
   }
@@ -272,6 +281,12 @@ async function addSample(sample, domainIndex, bloom, writer, statistics, options
 }
 
 async function seedEvaluationBloom(sourceDir, bloom, holdoutDocuments) {
+  try {
+    const ids = JSON.parse(await readFile(join(sourceDir, "holdout-documents.json"), "utf8"));
+    for (const id of ids) holdoutDocuments.add(id);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
   let samples = 0;
   for (const split of ["test", "validation"]) {
     await forEachJsonLine(join(sourceDir, `${split}.jsonl`), (record) => {
@@ -297,6 +312,10 @@ async function rebuildTrainingBloom(outputDir, shardCount, bloom) {
 
 async function main() {
   const options = parseArguments(process.argv.slice(2));
+  const sourceSummary = JSON.parse(await readFile(join(options.sourceDir, "summary.json"), "utf8"));
+  if (!sourceSummary.excluded_proxy_punctuation?.includes("、")) {
+    throw new Error("Source data uses an outdated proxy definition; regenerate every split in a fresh directory");
+  }
   await mkdir(options.outputDir, { recursive: true });
   const manifestPath = join(options.outputDir, "manifest.json");
   try {
@@ -338,6 +357,8 @@ async function main() {
 
   const bloom = new BloomFilter();
   const holdoutDocuments = new Set();
+  const holdoutHashes = new Set(await readFile(join(options.sourceDir, "holdout-document-hashes.json"), "utf8")
+    .then(JSON.parse).catch((error) => { if (error.code === "ENOENT") return []; throw error; }));
   const evaluationSamples = await seedEvaluationBloom(
     options.sourceDir,
     bloom,
@@ -391,16 +412,15 @@ async function main() {
       const documents = wikipediaDocumentsFromXml(xml, offset);
       for (const document of documents) {
         state.statistics.documents_seen += 1;
-        if (holdoutDocuments.has(document.id)) {
+        const documentHash = createHash("sha256").update(
+          Array.from(document.text.normalize("NFKC")).filter((character) => /\p{Script=Han}/u.test(character)).join(""),
+        ).digest("hex");
+        if (holdoutDocuments.has(document.id) || holdoutHashes.has(documentHash)) {
           state.statistics.holdout_documents_filtered += 1;
           continue;
         }
         const candidates = buildAdjacentSamples(document, { tokenization: "character" });
-        const samples = candidates.length <= options.maxSamplesPerDocument
-          ? candidates
-          : Array.from({ length: options.maxSamplesPerDocument }, (_, index) => (
-            candidates[Math.floor(((index + 0.5) * candidates.length) / options.maxSamplesPerDocument)]
-          ));
+        const samples = cappedDocumentSamples(candidates, options.maxSamplesPerDocument);
         state.statistics.document_sample_cap_filtered += candidates.length - samples.length;
         if (samples.length > 0) state.statistics.documents_with_samples += 1;
         for (const sample of samples) {
@@ -442,6 +462,7 @@ async function main() {
   }
   const manifest = {
     format: "super-reader-sharded-training-v1",
+    excluded_proxy_punctuation: ["、"],
     source: "full downloaded Chinese Wikipedia dump plus non-Wikipedia CLUE training data",
     source_identity: identity,
     evaluation_source_dir: relative(PROJECT_DIR, options.sourceDir),
@@ -455,6 +476,7 @@ async function main() {
     length_bucket_maximums: LENGTH_BUCKET_MAXIMUMS,
     position_bins: options.positionBins,
     maximum_sequence_length: options.maxSequenceLength,
+    preparation_options: state.options,
     evaluation_samples_seeded: evaluationSamples,
     blocks: offsets.length,
     shards,
@@ -464,7 +486,6 @@ async function main() {
   console.log(JSON.stringify(manifest, null, 2));
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+  main().catch((error) => { console.error(error); process.exitCode = 1; });
+}

@@ -41,6 +41,81 @@ test("colons and ellipses create training boundaries", async () => {
   );
 });
 
+test("enumeration commas keep list items together without creating training targets", async () => {
+  const { buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
+  const document = { id: "fixture:enumeration", domain: "fixture" };
+
+  for (const tokenization of ["character", "word"]) {
+    assert.deepEqual(buildAdjacentSamples({
+      ...document,
+      text: "我买了苹果、香蕉、橙子。",
+    }, { tokenization }), []);
+
+    const samples = buildAdjacentSamples({
+      ...document,
+      text: "我买了苹果、香蕉，准备制作果汁、沙拉。",
+    }, { tokenization });
+    assert.equal(samples.length, 1);
+    const [sample] = samples;
+    assert.equal(sample.punctuation, ",");
+    assert.equal(sample.tokens.slice(0, sample.target_index + 1).join(""), "我买了苹果香蕉");
+    assert.equal(sample.tokens.slice(sample.target_index + 1).join(""), "准备制作果汁沙拉");
+  }
+});
+
+test("regenerated validation and test use the revised proxies and retain document ownership", async () => {
+  const { samplesForReferenceDocument } = await import("../training/prepare_retraining_base.mjs");
+  const owners = new Map([["train-doc", "train"], ["validation-doc", "validation"], ["test-doc", "test"]]);
+  for (const [id, split] of owners) {
+    const result = samplesForReferenceDocument({ id, domain: "fixture", text: "我买了苹果、香蕉，准备做果汁。" }, owners);
+    assert.equal(result.split, split);
+    assert.equal(result.samples.length, 1);
+    const [sample] = result.samples;
+    assert.equal(sample.punctuation, ",");
+    assert.equal(sample.tokens.slice(0, sample.target_index + 1).join(""), "我买了苹果香蕉");
+    assert.equal(sample.tokens.slice(sample.target_index + 1).join(""), "准备做果汁");
+  }
+  const empty = samplesForReferenceDocument({ id: "test-doc", domain: "fixture", text: "苹果、香蕉。" }, owners);
+  assert.equal(empty.split, "test");
+  assert.deepEqual(empty.samples, []);
+  assert.equal(owners.get("test-doc"), "test");
+  assert.equal(samplesForReferenceDocument({ id: "unknown", text: "甲，乙。" }, owners), null);
+});
+
+test("corrected holdouts exclude known training pairs and reject enumeration labels", () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, rmSync } = require("node:fs");
+  const { tmpdir } = require("node:os");
+  const { join } = require("node:path");
+  const { execFileSync, spawnSync } = require("node:child_process");
+  const directory = mkdtempSync(join(tmpdir(), "reader-holdout-test-"));
+  const record = (id, text, punctuation = ",") => ({ id, document_id: id, domain: "fixture", tokens: Array.from(text), target_index: 1, punctuation });
+  try {
+    const input = join(directory, "input");
+    const output = join(directory, "output");
+    mkdirSync(input);
+    const seen = record("seen", "已有样本");
+    const clean = record("clean", "全新边界");
+    const heldout = record("test", "独立测试");
+    writeFileSync(join(input, "validation.jsonl"), [seen, clean].map(JSON.stringify).join("\n") + "\n");
+    writeFileSync(join(input, "test.jsonl"), JSON.stringify(heldout) + "\n");
+    const shard = join(directory, "train.jsonl");
+    writeFileSync(shard, JSON.stringify(["已有样本", 1, 0, 0, 5]) + "\n");
+    const manifest = join(directory, "manifest.json");
+    writeFileSync(manifest, JSON.stringify({ shards: [{ path: shard, bytes: statSync(shard).size }] }));
+    const args = ["training/filter_retraining_holdouts.py", "--data-dir", input, "--output-dir", output, "--training-manifest", manifest];
+    execFileSync("python3", args);
+    assert.deepEqual(JSON.parse(readFileSync(join(output, "validation.jsonl"), "utf8")), clean);
+    assert.deepEqual(JSON.parse(readFileSync(join(output, "test.jsonl"), "utf8")), heldout);
+    const summary = JSON.parse(readFileSync(join(output, "summary.json"), "utf8"));
+    assert.equal(summary.splits.validation.removed_training_overlap.fixture, 1);
+    writeFileSync(join(input, "validation.jsonl"), JSON.stringify(record("bad", "苹果香蕉", "、")) + "\n");
+    args[4] = join(directory, "invalid-output");
+    const rejected = spawnSync("python3", args, { encoding: "utf8" });
+    assert.notEqual(rejected.status, 0);
+    assert.match(rejected.stderr, /Enumeration label remains/u);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test("Wikipedia XML keeps article text and removes wiki markup", async () => {
   const { wikipediaDocumentsFromXml } = await import(
     "../training/prepare_smoke_data.mjs"

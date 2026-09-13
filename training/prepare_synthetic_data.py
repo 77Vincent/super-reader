@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add a bounded, deduplicated Ultra-FineWeb-L3 sample to existing shards."""
+"""Add deduplicated Ultra-FineWeb-L3 data, optionally exhausting cached sources."""
 
 from __future__ import annotations
 
@@ -33,7 +33,8 @@ SPLIT = "train"
 SYNTHETIC_DOMAIN = "synthetic_multistyle"
 BASE_DOMAINS = ["news", "academic", "encyclopedia", "dialogue", "wikipedia"]
 LENGTH_BUCKET_MAXIMUMS = [8, 16, 32]
-PROXY_PUNCTUATION = frozenset("，,。.！!？?；;：:、…")
+# List items stay together; enumeration commas are removed during cleaning.
+PROXY_PUNCTUATION = frozenset("，,。.！!？?；;：:…")
 URL_PATTERN = re.compile(r"https?://\S+", re.IGNORECASE)
 SPACE_PATTERN = re.compile(r"\s+")
 MARKDOWN_FENCE_PATTERN = re.compile(r"```.*?```", re.DOTALL)
@@ -49,7 +50,10 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--base-manifest", type=Path, default=DEFAULT_BASE_MANIFEST)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--raw-dir", type=Path, default=DEFAULT_RAW_DIR)
-    parser.add_argument("--target-samples", type=int, default=5_000_000)
+    parser.add_argument("--source-manifest", type=Path,
+                        help="Reuse and verify the cached sources recorded by a previous combined manifest")
+    parser.add_argument("--target-samples", type=int, default=5_000_000,
+                        help="0 exhausts the cached files in --source-manifest")
     parser.add_argument("--synthetic-shards", type=int, default=32)
     parser.add_argument("--max-sequence-length", type=int, default=2048)
     parser.add_argument("--max-samples-per-document", type=int, default=128)
@@ -149,12 +153,21 @@ def quality_document(text: str) -> bool:
 
 
 def evenly_capped(items: list[T], maximum: int) -> list[T]:
-    if len(items) <= maximum:
+    if maximum == 0 or len(items) <= maximum:
         return items
     return [
         items[int(((index + 0.5) * len(items)) / maximum)]
         for index in range(maximum)
     ]
+
+
+def target_reached(samples: int, target: int) -> bool:
+    return target > 0 and samples >= target
+
+
+def document_signature(text: str) -> str:
+    han = "".join(character for character in unicodedata.normalize("NFKC", text) if is_han(character))
+    return hashlib.sha256(han.encode("utf-8")).hexdigest()
 
 
 def update_hashes(hashes: tuple[int, int], value: str) -> tuple[int, int]:
@@ -287,6 +300,7 @@ def empty_statistics(position_bins: int) -> dict[str, Any]:
         "documents_seen": 0,
         "documents_with_samples": 0,
         "quality_documents_filtered": 0,
+        "holdout_documents_filtered": 0,
         "document_sample_cap_filtered": 0,
         "domain_samples": {SYNTHETIC_DOMAIN: 0},
         "position_histogram": [0] * position_bins,
@@ -309,7 +323,7 @@ def add_sample(
         statistics["duplicate_or_bloom_filtered"] += 1
         return
     length = len(text)
-    if length > options.max_sequence_length:
+    if options.max_sequence_length > 0 and length > options.max_sequence_length:
         statistics["overlength_filtered"] += 1
         return
     bucket = next(
@@ -332,7 +346,21 @@ def add_sample(
     )
 
 
-def source_urls() -> list[str]:
+def source_urls(source_manifest: Path | None = None, raw_dir: Path = DEFAULT_RAW_DIR) -> list[str]:
+    if source_manifest is not None:
+        source = load_json(source_manifest)["synthetic_source"]
+        if (source["dataset"], source["config"], source["split"]) != (DATASET, CONFIG, SPLIT):
+            raise ValueError("Reference manifest describes a different synthetic source")
+        downloads = sorted(source["downloads"], key=lambda item: item["source_index"])
+        for index, item in enumerate(downloads):
+            if item["source_index"] != index:
+                raise ValueError("Reference source files must have contiguous indices starting at zero")
+            path = raw_dir / f"{index:05d}.parquet"
+            if sha256_file(path) != item["sha256"]:
+                raise ValueError(f"Cached synthetic source checksum mismatch: {path}")
+        if not downloads:
+            raise ValueError("Reference manifest contains no cached source files")
+        return [item["source_url"] for item in downloads]
     endpoint = (
         f"https://huggingface.co/api/datasets/{DATASET}/parquet/"
         f"{CONFIG}/{SPLIT}"
@@ -397,6 +425,7 @@ def compatible_state(
         state.get("format_version") == 1
         and state.get("base_manifest_sha256") == base_sha256
         and state.get("options") == expected
+        and state.get("source_manifest_sha256") == options.source_manifest_sha256
     )
 
 
@@ -415,6 +444,7 @@ def combine_statistics(
         "documents_seen",
         "documents_with_samples",
         "document_sample_cap_filtered",
+        "holdout_documents_filtered",
     ):
         result[key] = result.get(key, 0) + synthetic.get(key, 0)
     result["quality_documents_filtered"] = synthetic["quality_documents_filtered"]
@@ -444,14 +474,21 @@ def main() -> None:
         "batch_rows",
         "checkpoint_documents",
     ):
-        if getattr(options, name) < 1:
-            raise ValueError(f"--{name.replace('_', '-')} must be positive")
+        minimum = 0 if name in ("target_samples", "max_sequence_length", "max_samples_per_document") else 1
+        if getattr(options, name) < minimum:
+            raise ValueError(f"--{name.replace('_', '-')} must be at least {minimum}")
+    if options.target_samples == 0 and options.source_manifest is None:
+        raise ValueError("Unlimited preparation requires --source-manifest to bound the run to cached files")
     if options.synthetic_shards & (options.synthetic_shards - 1):
         raise ValueError("--synthetic-shards must be a power of two")
 
     base_manifest_path = options.base_manifest.resolve()
     output_dir = options.output_dir.resolve()
     raw_dir = options.raw_dir.resolve()
+    options.source_manifest_sha256 = (
+        hashlib.sha256(options.source_manifest.read_bytes()).hexdigest()
+        if options.source_manifest else None
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = output_dir / "manifest.json"
     if manifest_path.exists():
@@ -459,6 +496,8 @@ def main() -> None:
         return
 
     base_manifest = load_json(base_manifest_path)
+    if "、" not in base_manifest.get("excluded_proxy_punctuation", []):
+        raise ValueError("Base shards use an outdated proxy definition; regenerate them in a fresh directory")
     base_sha256 = hashlib.sha256(base_manifest_path.read_bytes()).hexdigest()
     domains = list(base_manifest.get("domains", BASE_DOMAINS))
     if SYNTHETIC_DOMAIN in domains:
@@ -475,6 +514,7 @@ def main() -> None:
         state = {
             "format_version": 1,
             "base_manifest_sha256": base_sha256,
+            "source_manifest_sha256": options.source_manifest_sha256,
             "options": {
                 "target_samples": options.target_samples,
                 "synthetic_shards": options.synthetic_shards,
@@ -503,11 +543,15 @@ def main() -> None:
         list(state["shard_sizes"]),
     )
     writer.open()
-    urls = source_urls()
+    urls = source_urls(options.source_manifest, raw_dir)
+    holdout_hash_path = project_path(base_manifest["evaluation_source_dir"]) / "holdout-document-hashes.json"
+    holdout_hashes = set(load_json(holdout_hash_path)) if holdout_hash_path.exists() else set()
     try:
-        while state["statistics"]["samples"] < options.target_samples:
+        while not target_reached(state["statistics"]["samples"], options.target_samples):
             file_index = state["source_file_index"]
             if file_index >= len(urls):
+                if options.target_samples == 0:
+                    break
                 raise RuntimeError("Synthetic source exhausted before reaching target")
             source_path, download = ensure_download(urls[file_index], file_index, raw_dir)
             if not any(item["source_index"] == file_index for item in state["downloads"]):
@@ -528,6 +572,9 @@ def main() -> None:
                     source_row += 1
                     state["statistics"]["documents_seen"] += 1
                     state["rows_processed_in_file"] = source_row
+                    if document_signature(str(content or "")) in holdout_hashes:
+                        state["statistics"]["holdout_documents_filtered"] = state["statistics"].get("holdout_documents_filtered", 0) + 1
+                        continue
                     normalized = normalize_document(content)
                     if not quality_document(normalized):
                         state["statistics"]["quality_documents_filtered"] += 1
@@ -539,7 +586,7 @@ def main() -> None:
                     )
                     before = state["statistics"]["samples"]
                     for text, target in samples:
-                        if state["statistics"]["samples"] >= options.target_samples:
+                        if target_reached(state["statistics"]["samples"], options.target_samples):
                             break
                         add_sample(
                             text,
@@ -564,12 +611,12 @@ def main() -> None:
                             f"file={file_index} row={source_row}",
                             flush=True,
                         )
-                    if state["statistics"]["samples"] >= options.target_samples:
+                    if target_reached(state["statistics"]["samples"], options.target_samples):
                         break
-                if state["statistics"]["samples"] >= options.target_samples:
+                if target_reached(state["statistics"]["samples"], options.target_samples):
                     break
 
-            if state["statistics"]["samples"] < options.target_samples:
+            if not target_reached(state["statistics"]["samples"], options.target_samples):
                 state["source_file_index"] += 1
                 state["rows_processed_in_file"] = 0
             writer.flush_all()
@@ -590,9 +637,11 @@ def main() -> None:
 
     combined = {
         "format": "super-reader-sharded-training-v1",
+        "excluded_proxy_punctuation": ["、"],
         "source": "full Chinese Wikipedia plus CLUE and Ultra-FineWeb-L3 Chinese multi-style synthetic data",
         "base_manifest": project_relative(base_manifest_path),
         "base_manifest_sha256": base_sha256,
+        "source_manifest_sha256": options.source_manifest_sha256,
         "synthetic_source": {
             "dataset": DATASET,
             "config": CONFIG,
@@ -606,6 +655,8 @@ def main() -> None:
         "length_bucket_maximums": LENGTH_BUCKET_MAXIMUMS,
         "position_bins": 10,
         "maximum_sequence_length": options.max_sequence_length,
+        "preparation_options": state["options"],
+        "source_exhausted": state["source_file_index"] == len(urls),
         "shards": [*base_manifest["shards"], *synthetic_shards],
         "statistics": combine_statistics(
             base_manifest["statistics"],

@@ -193,6 +193,8 @@ def read_evaluation_records(
             if not line.strip():
                 continue
             record = json.loads(line)
+            if "、" in record.get("punctuation", ""):
+                raise ValueError(f"Enumeration proxy label remains in {path}: {record.get('id')}")
             record["training_weight"] = 1.0
             record["token_ids"] = [
                 vocabulary.get(token, unknown)
@@ -293,6 +295,9 @@ def main() -> None:
     manifest = load_json(manifest_path)
     if manifest.get("format") != "super-reader-sharded-training-v1":
         raise ValueError(f"Unsupported shard manifest: {manifest_path}")
+    data_summary = load_json(data_dir / "summary.json")
+    if any("、" not in source.get("excluded_proxy_punctuation", []) for source in (manifest, data_summary)):
+        raise ValueError("Training/evaluation data uses an outdated proxy definition; regenerate it in fresh directories")
     vocabulary_path = (
         args.vocabulary.resolve()
         if args.vocabulary

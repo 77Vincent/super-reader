@@ -1,7 +1,7 @@
 # Boundary model result
 
-These metrics describe the checkpoint currently exported to
-`src/boundary-model-data.js`.
+These historical metrics describe the checkpoint exported on 2026-09-06.
+The currently bundled checkpoint is documented in [BUNDLED_MODEL.md](BUNDLED_MODEL.md).
 
 Run date: 2026-09-06
 

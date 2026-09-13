@@ -193,9 +193,9 @@ test("boundary selection searches only inside the requested fragment and returns
 test("balance uses visual units including leading numbers, fractions and supplementary Han", () => {
   const chunker = withModel((tokens) => Array(tokens.length - 1).fill(0));
   for (const [text, expected] of [
-    ["1甲乙丙丁戊己庚辛", ["1甲乙丙", "丁戊己庚辛"]],
-    ["甲乙丙丁戊己庚辛 1 2", ["甲乙丙丁戊", "己庚辛 1 2"]],
-    ["1/4 English 𠀀甲乙丙丁戊己庚", ["1/4 English 𠀀甲乙", "丙丁戊己庚"]],
+    ["1甲乙丙丁戊己庚辛壬癸子丑", ["1甲乙丙丁戊", "己庚辛壬癸子丑"]],
+    ["甲乙丙丁戊己庚辛壬癸子丑 1 2", ["甲乙丙丁戊己庚", "辛壬癸子丑 1 2"]],
+    ["1/4 English 𠀀甲乙丙丁戊己庚辛壬癸子", ["1/4 English 𠀀甲乙丙丁", "戊己庚辛壬癸子"]],
   ]) {
     const chunks = Array.from(chunker.chunkText(text, { segmenter: null }));
     assert.deepEqual(chunks, expected);
@@ -228,10 +228,10 @@ test("short clauses skip inference and separate long clauses receive separate sc
     inputs.push(tokens.join(""));
     return Array(tokens.length - 1).fill(0);
   });
-  chunker.chunkText("甲乙丙丁戊己庚辛，中文。English", { segmenter: null });
+  chunker.chunkText("甲乙丙丁戊己庚辛壬癸子丑，中文。English", { segmenter: null });
   assert.deepEqual(inputs, []);
-  const first = "甲乙丙丁戊己庚辛壬";
-  const second = "天地玄黄宇宙洪荒日";
+  const first = "甲乙丙丁戊己庚辛壬癸子丑寅";
+  const second = "天地玄黄宇宙洪荒日月盈昃辰";
   const text = `${first}，中文。${second}`;
   assert.equal(chunker.chunkText(text, { segmenter: null }).join(""), text);
   assert.deepEqual(inputs, [first, second]);
@@ -247,7 +247,7 @@ test("fixed model windows score every gap once, without forcing cuts at window e
       return windowTokens.slice(0, -1).map((token) => {
         const index = token.codePointAt(0) - 0x20000;
         gaps.push(index);
-        return (index + 1) % 8 === 0 ? 10 : -1;
+        return (index + 1) % 12 === 0 ? 10 : -1;
       });
     });
     const chunks = chunker.chunkText(tokens.join(""), { segmenter: null });
@@ -256,8 +256,8 @@ test("fixed model windows score every gap once, without forcing cuts at window e
     assert.deepEqual(inputs[0].concat(...inputs.slice(1).map((window) => window.slice(1))), tokens);
     assert.deepEqual(gaps, Array.from({ length: length - 1 }, (_, index) => index));
     assert.equal(chunks.join(""), tokens.join(""));
-    assert.equal(chunks.length, Math.ceil(length / 8));
-    assert.ok(chunks.slice(0, -1).every((chunk) => Array.from(chunk).length === 8));
+    assert.equal(chunks.length, Math.ceil(length / 12));
+    assert.ok(chunks.slice(0, -1).every((chunk) => Array.from(chunk).length === 12));
   }
 });
 
@@ -270,8 +270,8 @@ test("long clauses with strongly favored edge scores split without overflowing t
   });
   const chunks = chunker.chunkText(text, { segmenter: null });
   assert.equal(chunks.join(""), text);
-  assert.equal(chunks.length, text.length - 7);
-  assert.equal(chunks.at(-1), "甲".repeat(8));
+  assert.equal(chunks.length, text.length - 11);
+  assert.equal(chunks.at(-1), "甲".repeat(12));
   assert.equal(calls, Math.ceil((text.length - 1) / 255));
 });
 
@@ -332,12 +332,15 @@ test("keeps a reported numeric quantity phrase free of dividers", () => {
 
 test("counts numeric expressions toward the threshold without splitting a fraction from its unit", () => {
   const samples = [
-    "前端的宽度是9 1/4英寸，",
-    "后端则拉宽到10 1/2英寸，",
+    "现在测量前端的宽度是9 1/4英寸，",
+    "现在测量后端则拉宽到10 1/2英寸，",
   ];
 
-  assert.equal(visualLength(samples[0]), 9);
-  assert.equal(visualLength(samples[1]), 9);
+  assert.equal(visualLength(samples[0]), 13);
+  assert.equal(visualLength(samples[1]), 13);
+  const atThreshold = "正测量前端的宽度是9 1/4英寸，";
+  assert.equal(visualLength(atThreshold), 12);
+  assert.deepEqual(chunkText(atThreshold), [atThreshold]);
   samples.forEach((text) => {
     const chunks = buildVisualChunks(text);
     const rendered = chunks
@@ -347,21 +350,30 @@ test("counts numeric expressions toward the threshold without splitting a fracti
     assert.equal(chunks.map((chunk) => chunk.text).join(""), text);
     assert.equal(chunks.some((chunk) => chunk.separated), true);
     assert.doesNotMatch(rendered, /[\/／]｜?\p{Number}*｜英寸|[\/／]\p{Number}+｜英寸/u);
-    assert.ok(chunks.every((chunk) => visualLength(chunk.text) <= 8));
+    assert.ok(chunks.every((chunk) => visualLength(chunk.text) <= 12));
   });
 });
 
-test("only asks the model to split clauses longer than eight visual units", () => {
-  assert.deepEqual(chunkText("甲乙丙丁戊己庚辛"), [
-    "甲乙丙丁戊己庚辛",
-  ]);
-  assert.ok(chunkText("甲乙丙丁戊己庚辛壬").length > 1);
+test("only asks the model to split clauses longer than twelve visual units", () => {
+  const inputs = [];
+  const chunker = withModel((tokens) => {
+    inputs.push(tokens.join(""));
+    return Array(tokens.length - 1).fill(0);
+  });
+  const text = "甲乙丙丁戊己庚辛壬癸子丑寅";
+  for (const length of [8, 9, 11, 12]) {
+    const short = text.slice(0, length);
+    assert.deepEqual(Array.from(chunker.chunkText(short, { segmenter: null })), [short]);
+  }
+  assert.deepEqual(inputs, []);
+  assert.ok(chunker.chunkText(text, { segmenter: null }).length > 1);
+  assert.deepEqual(inputs, [text]);
 });
 
-test("punctuation-delimited clauses of eight characters or fewer stay intact", () => {
-  assert.deepEqual(chunkText("甲乙丙丁，戊己庚辛。"), [
-    "甲乙丙丁，",
-    "戊己庚辛。",
+test("punctuation-delimited clauses of twelve characters or fewer stay intact", () => {
+  assert.deepEqual(chunkText("甲乙丙丁戊己庚辛壬癸子丑，天地玄黄宇宙洪荒日月盈昃。"), [
+    "甲乙丙丁戊己庚辛壬癸子丑，",
+    "天地玄黄宇宙洪荒日月盈昃。",
   ]);
 });
 
@@ -369,33 +381,31 @@ test("recursively selects the highest allowed weighted score until the length th
   const chunks = chunkText("同一个无标点子句内的短语块用细竖线分隔；");
 
   assert.deepEqual(chunks, ["同一个无标点", "子句内的短语块", "用细竖线分隔；"]);
-  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 8));
+  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 12));
 });
 
 test("uses model scores and word protection for the reading example", () => {
   const chunks = chunkText("而是帮助大脑更快地识别信息结构。");
 
-  assert.deepEqual(chunks, ["而是帮助大脑", "更快地识别信息", "结构。"]);
-  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 8));
+  assert.deepEqual(chunks, ["而是帮助大脑", "更快地识别信息结构。"]);
+  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 12));
 });
 
-test("recursive splitting respects the eight-character threshold across clauses", () => {
-  const chunks = chunkText("在左侧输入一段中文，看看它如何被重新组织。");
+test("recursive splitting respects the twelve-unit threshold across clauses", () => {
+  const text = "在左侧输入一段需要重新组织的中文，看看它如何被重新组织成更清晰的短语。";
+  const chunker = withModel((tokens) => Array(tokens.length - 1).fill(0));
+  const clauses = chunker.chunkTextByClause(text, { segmenter: null });
 
-  assert.deepEqual(chunks, [
-    "在左侧",
-    "输入一段中文，",
-    "看看它",
-    "如何被重新组织。",
-  ]);
-  assert.ok(chunks.every((chunk) => visualLength(chunk) <= 8));
+  assert.equal(clauses.length, 2);
+  assert.ok(clauses.every((chunks) => chunks.length > 1));
+  assert.deepEqual(Array.from(clauses, (chunks) => chunks.join("")), splitClauses(text));
+  assert.ok(clauses.flat().every((chunk) => visualLength(chunk) <= 12));
 });
 
 test("uses model scores and word protection for a technical phrase", () => {
   assert.deepEqual(chunkText("因此它被称为一种数值积分方法"), [
     "因此",
-    "它被称为",
-    "一种数值积分方法",
+    "它被称为一种数值积分方法",
   ]);
   assert.deepEqual(chunkText('"无数个小矩形累加"'), ['"无数个小矩形累加"']);
 });
@@ -412,21 +422,20 @@ test("renders the reported Euler-method example with model scores", () => {
   assert.deepEqual(chunkText(text), [
     "欧拉法是在积分",
     "无法直接计算时，",
-    '用"无数个小矩形',
-    '累加"来近似积分，',
+    '用"无数个小矩形累加"',
+    '来近似积分，',
     "因此",
-    "它被称为",
-    "一种数值积分方法（",
+    "它被称为一种数值积分方法（",
     "numerical integration method）。",
   ]);
 });
 
 test("model scoring keeps 方向盘 together at the current length threshold", () => {
   assert.deepEqual(chunkText("驾驶员会出于本能进行向左打方向盘等避险动作，"), [
-    "驾驶员会出于本能",
+    "驾驶员会",
+    "出于本能",
     "进行",
-    "向左打",
-    "方向盘等避险动作，",
+    "向左打方向盘等避险动作，",
   ]);
 });
 
@@ -454,8 +463,7 @@ test("visual chunks preserve punctuation-delimited boundaries", () => {
 test("vertical separators appear only at model boundaries inside one clause", () => {
   assert.deepEqual(buildVisualChunks("而是帮助大脑更快地识别信息结构。"), [
     { text: "而是帮助大脑", processed: true, separated: false },
-    { text: "更快地识别信息", processed: true, separated: true },
-    { text: "结构。", processed: true, separated: true },
+    { text: "更快地识别信息结构。", processed: true, separated: true },
   ]);
   assert.deepEqual(buildVisualChunks("春天来了，我们出发。"), [
     { text: "春天来了，", processed: true, separated: false },

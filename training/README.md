@@ -1,5 +1,8 @@
 # Boundary model smoke test
 
+The extension currently bundles the 192-channel, 12-convolution epoch 1 model.
+See [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for its metrics, provenance and export command.
+
 ## Quality baseline before tuning
 
 Run the shipped JavaScript model against a fixed validation sample before changing
@@ -9,8 +12,9 @@ weights or segmentation rules:
 npm run model:baseline
 ```
 
-This uses the existing local `training/data/processed/validation.jsonl`; it does
-not download data or train a model. A seeded reservoir selects 500 examples from
+This uses the corrected local
+`training/data/processed/no-enumeration-aligned-eval-20260912/validation.jsonl`;
+it does not download data or train a model. A seeded reservoir selects 500 examples from
 each domain, preserving the within-domain length distribution. The report records
 model, implementation, input and sample fingerprints; top-1/top-3, rank, unknown
 characters, confidence buckets and warm Node inference timings; and outputs for
@@ -51,6 +55,17 @@ best validation accuracy.
 - one score for every adjacent Han-character gap;
 - masked softmax cross-entropy with exactly one target gap.
 
+The completed larger baseline uses 128 channels and four residual blocks.
+The all-local-corpus candidate uses 192 channels and six residual blocks
+(12 convolutions), increasing the parameter count from 985,349 to 2,265,991
+with the same 4,096-entry vocabulary.
+
+For kernel size 3, stride 1 and dilation 1, the receptive field of a character
+representation is `1 + 2 * convolution_layers`: 17 characters for eight
+layers and 25 for twelve. A raw boundary score combines two adjacent
+representations, so its receptive field is 18 or 26 characters respectively.
+Softmax and boundary selection compare scores across the entire input.
+
 ## Data
 
 The preparation script downloads four small public CLUE task archives plus the
@@ -78,6 +93,21 @@ are then deduplicated with test, validation, and training priority in that
 order, preventing a holdout boundary from appearing in training. Every
 remaining eligible pair is retained, so the five source domains keep their
 natural sample counts after Wikipedia's article-level sampling.
+
+Boundary proxies are commas, periods, exclamation marks, question marks,
+semicolons, colons, and ellipses, including their Chinese and ASCII forms.
+Enumeration commas (`、`) are excluded: list items remain in the same fragment,
+and the enumeration punctuation is removed during cleaning. For example,
+`我买了苹果、香蕉，准备做果汁。` produces the target
+`我买了苹果香蕉 | 准备做果汁`. This rule applies to both the JavaScript
+preparation path (including full Wikipedia) and Python synthetic preparation.
+It is a supervision choice to evaluate, not a measured quality improvement.
+
+Existing processed data and exported weights retain their previous behavior.
+To train with the revised proxies, regenerate the base data and then any full
+Wikipedia and synthetic shards that depend on it, using fresh output directories
+instead of resuming old preparation states. Retrain and export a candidate model;
+compare both models on the same evaluation data, keeping its definition explicit.
 
 There is no minimum or maximum length for either side: even a one-character
 side remains valid, and long sides are never cropped. Punctuation and
@@ -240,3 +270,114 @@ remain active and are multiplied by the domain weights. The sharded trainer
 uses a fixed example-count denominator so domain multipliers still apply to a
 single-domain shard instead of being canceled by per-batch renormalization.
 Validation and test remain the original real-data holdouts.
+
+## Retraining after a proxy change
+
+For a controlled full-data experiment, `prepare_retraining_base.mjs` rebuilds
+CLUE training pairs and all validation/test pairs from checksum-verified cached
+sources. It preserves the original document-to-split assignments while applying
+the current proxy rules in every split. An enumeration-only document can produce
+zero revised examples; its holdout ownership is still recorded in
+`holdout-documents.json`. The full-Wikipedia preparer honors that registry and
+deduplicates against the revised holdout boundaries.
+
+Do not merely filter old evaluation rows labeled `、`: removing the enumeration
+delimiter also changes the adjacent fragments. `A、B，C` must yield `AB | C`,
+whereas filtering old rows would leave `B | C`.
+
+For a fresh run, use new output directories throughout, for example:
+
+```bash
+node training/prepare_retraining_base.mjs \
+  --output-dir training/data/processed/no-enumeration-v2-base
+node --max-old-space-size=4096 training/prepare_full_wikipedia_data.mjs \
+  --source-dir training/data/processed/no-enumeration-v2-base \
+  --output-dir training/data/processed/no-enumeration-v2-wiki
+python3 training/run_prepare_synthetic.py \
+  --base-manifest training/data/processed/no-enumeration-v2-wiki/manifest.json \
+  --output-dir training/data/processed/no-enumeration-v2-combined \
+  --source-manifest training/data/processed/wiki-full-plus-ultra-5m/manifest.json
+python3 training/filter_retraining_holdouts.py \
+  --data-dir training/data/processed/no-enumeration-v2-base \
+  --output-dir training/data/processed/no-enumeration-v2-eval \
+  --training-manifest training/data/processed/no-enumeration-v2-combined/manifest.json \
+  --training-manifest training/data/processed/wiki-full-plus-ultra-5m/manifest.json \
+  --training-jsonl training/data/processed/train.jsonl
+python3 training/run_sharded.py \
+  --manifest training/data/processed/no-enumeration-v2-combined/manifest.json \
+  --data-dir training/data/processed/no-enumeration-v2-eval \
+  --artifact-dir training/artifacts/no-enumeration-v2 \
+  --initialize-from training/artifacts/wiki-ultra-domain-weighted-128ch-2ep/training-state.pt \
+  --epochs 2 --channels 128 --residual-blocks 4 --learning-rate 0.0003 \
+  --domain-weight-power 0.65 --selection-macro-weight 0.5 --gradient-clip 1.0
+```
+
+`--source-manifest` verifies and reuses the synthetic source files recorded in
+the previous combined manifest. The cached files must contain enough examples
+to reach the requested sample count. For training recovery, append `--resume`
+to the training command with the same configuration.
+
+The overlap filter excludes revised evaluation pairs already seen in any of the
+listed training sources. Include every known supervised training source used by
+the baseline and candidate checkpoints. Both models must then be scored on this
+same corrected evaluation set. Training, checkpoint selection, primary
+validation, and final test must all use the same proxy definition.
+
+The initial 2026-09-12 run incorrectly retained legacy evaluation labels. Its
+weight updates used the revised training labels, but its validation scores and
+checkpoint selection are superseded. The saved epoch 1 and epoch 2 weights were
+reselected using the regenerated, decontaminated holdouts in
+`training/data/processed/no-enumeration-aligned-eval-20260912/`. Results and the
+separate candidate export are recorded under
+`training/artifacts/no-enumeration-20260912/candidate-aligned/` and
+`training/artifacts/no-enumeration-20260912/ALIGNED-COMPARISON.md`.
+Runtime inspection comparisons should retain the same 12-unit chunk threshold.
+
+New dataset summaries and shard manifests record `excluded_proxy_punctuation`.
+Training commands reject legacy data that lacks the current proxy definition;
+readers also reject explicit enumeration labels. Existing cached datasets must
+be regenerated in fresh directories before they can be used for a new run.
+
+## All locally cached corpora
+
+The preparation tools also support exhausting the downloaded text sources:
+
+- `prepare_retraining_base.mjs --all-local-clue 1` reads all text-bearing
+  training, development, test and trial entries in the four CLUE archives.
+  Original model holdout ownership is preserved. Additional documents are
+  eligible for training, with duplicates of holdout documents excluded by a
+  SHA-256 hash of normalized Han text. Archive label metadata is not prose.
+- `prepare_full_wikipedia_data.mjs --max-samples-per-document 0
+  --max-sequence-length 0` retains all eligible adjacent pairs from every
+  downloaded Wikipedia article, without per-document or sequence-length caps.
+- `prepare_synthetic_data.py --target-samples 0 --max-samples-per-document 0
+  --max-sequence-length 0 --source-manifest <previous-manifest>` reads every
+  row of the cached Parquet files recorded in that manifest. An unlimited
+  target requires a source manifest and does not discover further remote files.
+
+Zero disables the specified cap. Defaults remain bounded. Deduplication,
+holdout exclusions, Wikipedia article extraction and the synthetic Chinese-text
+quality rule (at least 80 Han characters and at least 70% Han among Han/Latin
+letters) still apply. Enumeration commas remain excluded as boundary proxies.
+The base preparation writes holdout document hashes for both full preparers.
+
+Audit the expanded training manifest against the established corrected
+holdouts before training. When the task definition is unchanged, their hashes
+must remain unchanged; resolve newly introduced training overlap rather than
+silently changing the evaluation population.
+
+The `all-local-192ch-12conv-20260912` experiment safely stopped the unfinished
+third epoch of the smaller run. It transfers compatible weights from the best
+completed no-enumeration epoch 2 into the larger model and starts a new optimizer
+for the changed architecture. It runs two full epochs initially, using learning
+rate 0.0003, domain-weight power 0.65, gradient clipping at 1.0 and equal weights
+for overall and mean-domain validation accuracy when selecting a checkpoint.
+
+The ignored directory
+`training/artifacts/all-local-192ch-12conv-20260912/` contains `run.json`,
+`run_pipeline.py`, `status.json` and individual preparation/training logs.
+After preparation, `corpus-coverage.json` records actual counts and filters,
+and `training-estimate.json` records the duration estimate. The pipeline audits
+the established holdouts, trains, exports a separate candidate and compares it
+with the smaller model using the same frozen JavaScript evaluation code.
+It does not replace the extension's bundled model.

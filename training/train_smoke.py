@@ -84,7 +84,10 @@ def configure_cpu(threads: int, interop_threads: int) -> None:
 
 def read_json_lines(path: Path) -> list[dict[str, Any]]:
     with path.open("r", encoding="utf-8") as handle:
-        return [json.loads(line) for line in handle if line.strip()]
+        records = [json.loads(line) for line in handle if line.strip()]
+    if any("、" in record.get("punctuation", "") for record in records):
+        raise ValueError(f"Enumeration proxy labels remain in {path}; regenerate this split")
+    return records
 
 
 def build_vocabulary(
@@ -563,16 +566,18 @@ def main() -> None:
         raise ValueError("--channels and --residual-blocks must be positive")
     configure_cpu(args.threads, args.interop_threads)
     seed_everything(args.seed)
-    raw_records = {
-        split: read_json_lines(args.data_dir / f"{split}.jsonl")
-        for split in ("train", "validation", "test")
-    }
     summary_path = args.data_dir / "summary.json"
     data_summary = (
         json.loads(summary_path.read_text(encoding="utf-8"))
         if summary_path.exists()
         else {}
     )
+    if "、" not in data_summary.get("excluded_proxy_punctuation", []):
+        raise ValueError("Data uses an outdated proxy definition; regenerate all splits in a fresh directory")
+    raw_records = {
+        split: read_json_lines(args.data_dir / f"{split}.jsonl")
+        for split in ("train", "validation", "test")
+    }
     args.artifact_dir.mkdir(parents=True, exist_ok=True)
     checkpoint_path = args.artifact_dir / "boundary-smoke.safetensors"
     vocabulary_path = args.artifact_dir / "boundary-smoke-vocabulary.json"
