@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { arch, cpus, platform } from "node:os";
@@ -13,6 +13,55 @@ import modelData from "../src/boundary-model-data.js";
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+const EVALUATION_STANDARD = "no-enumeration-v1";
+
+/** Require regenerated no-enumeration data, not merely filtered legacy rows. */
+export async function loadEvaluationSamples(input, perDomain = 500, seed = "20260911") {
+  const inputPath = resolve(project, input);
+  const summaryPath = resolve(dirname(inputPath), "summary.json");
+  let summaryBytes;
+  try {
+    summaryBytes = readFileSync(summaryPath);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    throw new Error(`Missing evaluation metadata: ${summaryPath}. Restore the corrected no-enumeration evaluation split together with its summary.json; see training/README.md for the benchmark files.`);
+  }
+  const summary = JSON.parse(summaryBytes);
+  if (summary.tokenization !== "character" ||
+      !Array.isArray(summary.excluded_proxy_punctuation) ||
+      !summary.excluded_proxy_punctuation.includes("、")) {
+    throw new Error(`Evaluation requires ${EVALUATION_STANDARD}: ${summaryPath} must declare character tokenization and exclude 、. Regenerate the original documents in a fresh directory; filtering legacy rows is insufficient.`);
+  }
+
+  const sampler = createDomainSampler(perDomain, seed);
+  const stream = createReadStream(inputPath);
+  const inputHash = createHash("sha256");
+  stream.on("data", (data) => inputHash.update(data));
+  for await (const line of createInterface({ input: stream, crlfDelay: Infinity })) {
+    if (!line.trim()) continue;
+    const record = JSON.parse(line);
+    if (typeof record.punctuation !== "string" || !record.punctuation.length) {
+      throw new Error(`Missing punctuation proxy label: ${record.id}; regenerate the evaluation split`);
+    }
+    if (record.punctuation.includes("、")) {
+      throw new Error(`Enumeration proxy label remains: ${record.id}; regenerate the evaluation split`);
+    }
+    sampler.add(record);
+  }
+  const inputSha256 = inputHash.digest("hex");
+  const expectedSha256 = summary.splits?.[basename(inputPath, ".jsonl")]?.sha256;
+  if (expectedSha256 !== undefined && expectedSha256 !== inputSha256) {
+    throw new Error(`Evaluation split checksum mismatch: ${inputPath} does not match ${summaryPath}`);
+  }
+  const { counts, records } = sampler.result();
+  if (!records.length) throw new Error("No evaluation records found");
+  return {
+    counts, records, inputSha256,
+    standard: EVALUATION_STANDARD,
+    excludedProxyPunctuation: summary.excluded_proxy_punctuation,
+    summaryPath, summarySha256: sha256(summaryBytes),
+  };
+}
 
 /** Separate seeded reservoirs preserve each domain's natural length distribution. */
 export function createDomainSampler(limit, seed) {
@@ -121,20 +170,8 @@ function optionsFrom(args) {
 
 async function main() {
   const options = optionsFrom(process.argv.slice(2));
-  const sampler = createDomainSampler(Number(options["per-domain"]), options.seed);
-  const stream = createReadStream(resolve(project, options.input));
-  const inputHash = createHash("sha256");
-  stream.on("data", (data) => inputHash.update(data));
-  for await (const line of createInterface({ input: stream, crlfDelay: Infinity })) {
-    if (!line.trim()) continue;
-    const record = JSON.parse(line);
-    if (record.punctuation?.includes("、")) {
-      throw new Error(`Enumeration proxy label remains: ${record.id}; regenerate the evaluation split`);
-    }
-    sampler.add(record);
-  }
-  const { counts, records } = sampler.result();
-  if (!records.length) throw new Error("No evaluation records found");
+  const evaluation = await loadEvaluationSamples(options.input, Number(options["per-domain"]), options.seed);
+  const { counts, records } = evaluation;
   console.log(`Selected ${records.length} samples: ${JSON.stringify(counts)} available by domain`);
 
   const overall = emptyMetrics();
@@ -192,7 +229,9 @@ async function main() {
       sourceSha256: sha256(readFileSync(resolve(project, "src/boundary-model-data.js"))),
     },
     evaluation: {
-      input: options.input, inputSha256: inputHash.digest("hex"), availableCounts: counts,
+      standard: evaluation.standard, excludedProxyPunctuation: evaluation.excludedProxyPunctuation,
+      summaryPath: evaluation.summaryPath, summarySha256: evaluation.summarySha256,
+      input: options.input, inputSha256: evaluation.inputSha256, availableCounts: counts,
       seed: options.seed, perDomainLimit: Number(options["per-domain"]),
       sampledIdsSha256: sha256(predictions.map(({ id }) => id).join("\n")),
       target: "Recover the single removed punctuation boundary; not human-labeled reading chunks.",

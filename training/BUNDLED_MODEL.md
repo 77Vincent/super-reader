@@ -42,7 +42,7 @@ logit difference of 0.00001526. On the fixed 2,500-example validation sample
 previous 128-channel no-enumeration model. This sample has a different domain
 mix from the full validation set above.
 
-The full test suite passes all 169 tests, including a run from a fresh source
+The full test suite passes all 174 tests, including a run from a fresh source
 snapshot without local dependencies, datasets or training artifacts. The corpus
 test installs its pinned PyArrow dependency when missing and generates tiny
 Parquet fixtures; no tests are skipped. Chunker tests cover the finalized

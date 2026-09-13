@@ -5,33 +5,56 @@ See [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for its metrics, provenance and export 
 
 ## Quality baseline before tuning
 
-Run the shipped JavaScript model against a fixed validation sample before changing
-weights or segmentation rules:
+`no-enumeration-v1` is the permanent evaluation standard: enumeration commas
+(`、`) never define target boundaries. Regenerate fragments from the original
+documents under this rule; simply deleting old rows labeled `、` is insufficient.
+For example, `苹果、香蕉，准备做果汁。` must produce
+`苹果香蕉 | 准备做果汁`, preserving the complete list on the left.
+
+Evaluate the shipped JavaScript model against the established corrected holdout:
 
 ```bash
 npm run model:baseline
 ```
 
-This uses the corrected local
-`training/data/processed/no-enumeration-aligned-eval-20260912/validation.jsonl`;
-it does not download data or train a model. A seeded reservoir selects 500 examples from
-each domain, preserving the within-domain length distribution. The report records
-model, implementation, input and sample fingerprints; top-1/top-3, rank, unknown
-characters, confidence buckets and warm Node inference timings; and outputs for
-the unlabeled cases in `evaluation-cases.json`. Demo inline text nodes remain
+The evaluator defaults directly to
+`training/data/processed/no-enumeration-aligned-eval-20260912/validation.jsonl`.
+Routine evaluation and model comparisons require no input override. It requires
+an adjacent `summary.json` declaring
+character tokenization and `excluded_proxy_punctuation: ["、"]`. It rejects
+missing or legacy metadata and missing or enumeration proxy labels in every
+row, including rows outside the eventual sample. If the summary records a
+split checksum, the input must match it. These checks also apply to `--input`;
+there is no legacy-policy fallback. The evaluator itself does not download data
+or train a model.
+
+A seeded reservoir selects 500 examples from each domain, preserving the
+within-domain length distribution. The report records the evaluation standard,
+metadata, input and sample fingerprints; model and implementation fingerprints;
+top-1/top-3, rank, unknown characters, confidence buckets and warm Node inference
+timings; and outputs for the unlabeled cases in `evaluation-cases.json`. Demo inline text nodes remain
 separate inputs. The generated JSON includes every sampled prediction.
 
 The default output is the ignored `training/artifacts/model-baseline.json`.
-Preserve separate files when comparing experiments:
+Keep the default holdout fixed and preserve separate reports when comparing models:
 
 ```bash
 npm run model:baseline -- --output training/artifacts/before-tuning.json
 npm run model:baseline -- --output training/artifacts/candidate.json
 ```
 
-Keep the input, seed and per-domain limit unchanged for paired comparisons.
-Other options are `--input`, `--seed`, `--per-domain` and `--cases`.
+Keep the input hash, seed and per-domain limit unchanged for paired comparisons.
+The shared label policy alone does not make different holdout populations
+comparable. `--input` remains available for explicit experiments, subject to the
+same no-enumeration checks. Other options are `--seed`, `--per-domain` and `--cases`.
 Use validation for tuning; reserve test data for the final comparison.
+
+The benchmark files are ignored data artifacts. On a fresh checkout, restore
+`validation.jsonl` and `summary.json` into the default directory before running
+the real benchmark. The established validation file has 731,290 records and
+SHA-256 `5969ca4562647fd4cc57bf870df2ed12292626324ecb6eddfcf931bd807aa250`.
+`npm run smoke:data` produces a separate dataset; it does not restore this fixed
+benchmark. `npm test` creates its own tiny fixtures and needs no benchmark files.
 
 See [MODEL_BASELINE.md](MODEL_BASELINE.md) for the initial measurements and
 limitations. Single-gap accuracy measures recovery of removed punctuation;
@@ -101,7 +124,8 @@ and the enumeration punctuation is removed during cleaning. For example,
 `我买了苹果、香蕉，准备做果汁。` produces the target
 `我买了苹果香蕉 | 准备做果汁`. This rule applies to both the JavaScript
 preparation path (including full Wikipedia) and Python synthetic preparation.
-It is a supervision choice to evaluate, not a measured quality improvement.
+This is the required supervision policy for all new training, checkpoint
+selection, validation and final test evaluation.
 
 Existing processed data and exported weights retain their previous behavior.
 To train with the revised proxies, regenerate the base data and then any full

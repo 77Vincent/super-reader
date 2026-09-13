@@ -1,19 +1,28 @@
 # Model quality baseline — 2026-09-11
 
-The deployed model scores **78.56% top-1 and 94.44% top-3** on a fixed,
+These are historical results from the legacy proxy definition, which included
+enumeration commas. They are superseded by the `no-enumeration-v1` evaluation
+standard described in [README.md](README.md); see [BUNDLED_MODEL.md](BUNDLED_MODEL.md)
+for the currently bundled model's results.
+
+The model deployed at that time scored **78.56% top-1 and 94.44% top-3** on a fixed,
 domain-balanced validation sample. News is the weakest domain at **66.60%**.
 These numbers measure recovery of a removed punctuation boundary. They do not
 measure the quality of complete reading chunks.
 
 No model weights or runtime segmentation rules were changed for this baseline.
 
-## Reproduce
+## Historical provenance
+
+The original report was generated with the then-current evaluator and local
+corpus using the command below. The current evaluator deliberately rejects
+that legacy dataset; this command no longer reproduces the historical results.
 
 ```bash
 npm run model:baseline -- --output training/artifacts/baseline-2026-09-11.json
 ```
 
-Requires the existing local validation corpus. The evaluator uses the actual
+The evaluation required the existing local validation corpus and used the actual
 `src/backend/inference.js` and exported weights, with no training dependency.
 The JSON includes all 2,500 predictions, their IDs, targets, confidence, ranks,
 and the segmentation examples below. Generated reports are ignored by Git;
@@ -33,7 +42,7 @@ validation to tune; do not choose parameters by repeatedly inspecting test
 scores. Multiple sampled pairs can come from one document, so small differences
 should not be treated as conclusive independent-sample improvements.
 
-## Current model measurements
+## Historical model measurements
 
 | Domain | Available validation pairs | Evaluated | Raw top-1 | Raw top-3 | Balance-only top-1 |
 | --- | ---: | ---: | ---: | ---: | ---: |
