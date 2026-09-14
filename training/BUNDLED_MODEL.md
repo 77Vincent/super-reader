@@ -48,12 +48,14 @@ and selected gaps.
 1. Classify proxy punctuation after NFKC normalization, preserving original text
    and UTF-16 offsets.
 2. Pre-split on the proxy punctuation in `text-policy.json`: commas, periods,
-   exclamation/question marks, semicolons and ellipses. Periods and commas between
-   digits remain inside numbers. Other punctuation and whitespace stay in the clause.
-3. Leave clauses containing enumeration commas (`、`, including NFKC-equivalent
-   forms) intact and skip model inference, regardless of length. This protects
-   every list item, including the first and last. Protection ends at the existing
-   proxy punctuation boundaries.
+   exclamation/question marks, semicolons and ellipses. Also pre-split on enumeration
+   commas (`、`, including NFKC-equivalent forms) as a backend rule. Periods and
+   commas between digits remain inside numbers. Other punctuation and whitespace
+   stay in the clause; enumeration commas remain excluded from training proxy labels.
+3. Preserve every enumeration item internally, including the first and last,
+   regardless of length. Identify lists within the original proxy-delimited clause
+   before splitting on enumeration commas, then skip model inference for all their
+   items. Thus `A、B、C` becomes `A、`, `B、`, `C`, with no internal model cuts.
 4. Leave other clauses of at most 12 visual units intact. A Han character, numeric
    expression or Latin word contributes one unit; this is not a 12-token cap.
 5. Send the remaining longer clauses to the model with their context characters.

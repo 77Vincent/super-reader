@@ -92,7 +92,7 @@
     return null;
   }
 
-  function splitClauses(text) {
+  function splitClauses(text, includeEnumeration = true) {
     if (!text) return [];
 
     const characters = Array.from(text);
@@ -101,8 +101,8 @@
     let isInsideStraightDoubleQuote = false;
     const normalized = USES_CONTEXT ? normalizeContextTokens(text) : [];
     const normalizedCharacters = normalized.map((token) => token.segment);
-    const proxyOffsets = new Set(normalized.filter((_, index) => (
-      isContextProxy(normalizedCharacters, index)
+    const boundaryOffsets = new Set(normalized.filter((token, index) => (
+      isContextProxy(normalizedCharacters, index) || (includeEnumeration && token.segment === "、")
     )).map((token) => token.index));
     let sourceOffset = 0;
     const sourceOffsets = characters.map((character) => {
@@ -111,7 +111,7 @@
       return start;
     });
     const isEnd = (index) => USES_CONTEXT
-      ? proxyOffsets.has(sourceOffsets[index])
+      ? boundaryOffsets.has(sourceOffsets[index])
       : CLAUSE_END_CHARACTER.test(characters[index]);
 
     const flush = () => {
@@ -289,9 +289,6 @@
   function chunkByModel(text, segmenter) {
     const tokens = USES_CONTEXT ? tokenizeContext(text) : tokenizeHanCharacters(text);
     if (tokens.length < 2 || visualLength(text) <= SPLIT_LENGTH_THRESHOLD) return [text];
-    // Protect the entire enumeration clause, including its first and last items.
-    // Proxy punctuation has already separated it from neighboring clauses.
-    if (USES_CONTEXT && tokens.some((token) => token.segment === "、")) return [text];
     if (!modelBackend || typeof modelBackend.scoreTokens !== "function") {
       throw new Error("Super Reader model backend must load before the chunker");
     }
@@ -393,7 +390,13 @@
     const segmenter = options.segmenter === undefined
       ? createSegmenter(options.locale)
       : options.segmenter;
-    return splitClauses(text).map((clause) => chunkByModel(clause, segmenter));
+    // Identify complete lists before splitting on their enumeration commas, so
+    // both the first and the last item retain protection from model cuts.
+    return splitClauses(text, false).flatMap((clause) => (
+      USES_CONTEXT && clause.normalize("NFKC").includes("、")
+        ? splitClauses(clause).map((item) => [item])
+        : [chunkByModel(clause, segmenter)]
+    ));
   }
 
   function chunkText(text, options = {}) {

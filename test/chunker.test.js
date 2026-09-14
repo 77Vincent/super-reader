@@ -99,7 +99,7 @@ test("context punctuation tokens cannot strand opening or closing marks at a mod
   }
 });
 
-test("enumeration clauses protect first, middle and last items and skip inference", () => {
+test("enumeration pre-splitting keeps first, middle and last items protected from model cuts", () => {
   const first = "前".repeat(24);
   const middle = "甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥天地";
   const last = "后".repeat(24);
@@ -108,19 +108,29 @@ test("enumeration clauses protect first, middle and last items and skip inferenc
     inputs.push(tokens.join(""));
     return tokens.slice(1).map((token) => middle.includes(token) ? 1000 : 0);
   }, "unicode-context-v1");
-  for (const text of [`${first}、${middle}、${last}`, `${first}、${last}`, `、${first}`, `${last}、`]) {
-    assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter: null })), [text]);
+  for (const [text, expected] of [
+    [`${first}、${middle}、${last}`, [`${first}、`, `${middle}、`, last]],
+    [`${first}、${last}`, [`${first}、`, last]],
+    [`、${first}`, ["、", first]],
+    [`${last}、`, [`${last}、`]],
+  ]) {
+    assert.deepEqual(Array.from(chunker.splitClauses(text)), expected);
+    assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter: null })), expected);
   }
   assert.deepEqual(inputs, [], "protected enumeration clauses need no model scores");
 });
 
-test("enumeration clauses preserve Unicode and empty items even beyond the model window length", () => {
-  for (const comma of ["、", "､", "﹑"]) {
+test("enumeration pre-splitting preserves Unicode, consecutive marks and long list items", () => {
+  for (const comma of ["、", "､", "﹑", "︑"]) {
     const middleItems = ["𠮷🌈ﬃ甲乙丙丁戊己庚辛壬癸子丑", "甲".repeat(600), "", "乙".repeat(24)];
     const text = ["首项", ...middleItems, "尾项"].join(comma);
     const chunker = withModel(() => assert.fail("enumeration must skip inference"), "unicode-context-v1");
     const chunks = Array.from(chunker.chunkText(text, { segmenter: null }));
-    assert.deepEqual(chunks, [text]);
+    assert.deepEqual(chunks, [
+      `首项${comma}`, `${middleItems[0]}${comma}`, `${middleItems[1]}${comma}${comma}`,
+      `${middleItems[3]}${comma}`, "尾项",
+    ]);
+    assert.equal(chunks.join(""), text);
   }
 });
 
@@ -137,9 +147,9 @@ test("enumeration protection ends at proxy boundaries and other clauses still sp
     const text = `${item}${punctuation}${list}${punctuation}${item}`;
     const clauses = Array.from(chunker.chunkTextByClause(text, { segmenter: null }), (chunks) => Array.from(chunks));
     assert.equal(clauses.flat().join(""), text);
-    assert.deepEqual(clauses[1], [`${list}${punctuation}`]);
-    assert.ok(clauses[0].length > 1 && clauses[2].length > 1);
-    assert.ok([...clauses[0], ...clauses[2]].every((chunk) => chunker.visualLength(chunk) <= 12));
+    assert.deepEqual(clauses.slice(1, 3), [[`${item}、`], [`${item}${punctuation}`]]);
+    assert.ok(clauses[0].length > 1 && clauses[3].length > 1);
+    assert.ok([...clauses[0], ...clauses[3]].every((chunk) => chunker.visualLength(chunk) <= 12));
     assert.deepEqual(inputs, [item, item]);
   }
 });
@@ -154,6 +164,14 @@ test("backend process returns no dividers in enumeration clauses and preserves l
   assert.ok(followingCuts.length > 0);
   const prefix = `${text}，`;
   assert.deepEqual(process([prefix + following]), [followingCuts.map((cut) => prefix.length + cut)]);
+});
+
+test("enumeration pre-splitting is a backend rule and leaves the model input policy intact", () => {
+  const chunker = withModel(() => [], "unicode-context-v1");
+  const { proxy_punctuation } = require("../training/text-policy.json");
+  assert.equal(proxy_punctuation.includes("、"), false);
+  assert.equal(chunker.tokenizeContext("苹果、香蕉").map((token) => token.segment).join(""), "苹果、香蕉");
+  assert.deepEqual(Array.from(chunker.splitClauses("“苹果、”香蕉、梨。")), ["“苹果、”", "香蕉、", "梨。"]);
 });
 
 test("model chunks preserve the complete source text", () => {
@@ -210,9 +228,10 @@ test("keeps straight double quotes inside the surrounding punctuation clause", (
   assert.deepEqual(splitClauses(text), [text]);
 });
 
-test("only proxy punctuation creates hard boundaries for the bundled context model", () => {
+test("proxy punctuation and enumeration commas create backend clause boundaries", () => {
   assert.deepEqual(splitClauses("清晰、效率，稳定；自然：继续\n结束。"), [
-    "清晰、效率，",
+    "清晰、",
+    "效率，",
     "稳定；",
     "自然：继续\n结束。",
   ]);

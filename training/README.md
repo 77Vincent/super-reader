@@ -96,8 +96,9 @@ Keep input and sample hashes fixed for within-version comparisons.
 
 The bundled model is the completed epoch-1 best checkpoint from this full run;
 see [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for its provenance and validation results.
-The backend first splits clauses using normalized proxy punctuation, leaves
-clauses of at most 12 visual units intact, and sends longer clauses with their
+The backend first splits clauses using normalized proxy punctuation and enumeration
+commas. Every enumeration item stays internally intact, including the first and last.
+For other clauses, it leaves at most 12 visual units intact and sends longer clauses with their
 remaining Unicode context to the model. Numeric separators remain within numbers;
 original text and UTF-16 offsets are preserved. Opening/closing marks stay attached
 to adjacent content when the model subdivides a clause.
