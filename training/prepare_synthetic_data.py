@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable, TypeVar
 
 import pyarrow.parquet as pq
+from text_policy import DATA_POLICY, PROXY_PUNCTUATION, require_data_policy
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -33,8 +34,6 @@ SPLIT = "train"
 SYNTHETIC_DOMAIN = "synthetic_multistyle"
 BASE_DOMAINS = ["news", "academic", "encyclopedia", "dialogue", "wikipedia"]
 LENGTH_BUCKET_MAXIMUMS = [8, 16, 32]
-# List items stay together; enumeration commas are removed during cleaning.
-PROXY_PUNCTUATION = frozenset("，,。.！!？?；;：:…")
 URL_PATTERN = re.compile(r"https?://\S+", re.IGNORECASE)
 SPACE_PATTERN = re.compile(r"\s+")
 MARKDOWN_FENCE_PATTERN = re.compile(r"```.*?```", re.DOTALL)
@@ -103,25 +102,17 @@ def normalize_document(text: str) -> str:
 
 
 def clean_fragment(text: str) -> str:
-    characters = []
-    last_was_space = False
-    for character in unicodedata.normalize("NFKC", text):
-        category = unicodedata.category(character)
-        if category.startswith(("P", "S")) or character.isspace():
-            if characters and not last_was_space:
-                characters.append(" ")
-            last_was_space = True
-            continue
-        characters.append(character)
-        last_was_space = False
-    return "".join(characters).strip()
+    return SPACE_PATTERN.sub(" ", unicodedata.normalize("NFKC", text)).strip()
 
 
 def split_into_fragments(text: str) -> list[str]:
     fragments: list[str] = []
     buffer: list[str] = []
-    for character in normalize_document(text):
-        if character not in PROXY_PUNCTUATION:
+    normalized = normalize_document(text)
+    for index, character in enumerate(normalized):
+        numeric_separator = (character in ".," and index > 0 and index + 1 < len(normalized)
+                             and normalized[index - 1].isdecimal() and normalized[index + 1].isdecimal())
+        if character not in PROXY_PUNCTUATION or numeric_separator:
             buffer.append(character)
             continue
         cleaned = clean_fragment("".join(buffer))
@@ -138,9 +129,8 @@ def adjacent_samples(text: str) -> list[tuple[str, int]]:
     fragments = split_into_fragments(text)
     result: list[tuple[str, int]] = []
     for left_fragment, right_fragment in zip(fragments, fragments[1:]):
-        left = "".join(character for character in left_fragment if is_han(character))
-        right = "".join(character for character in right_fragment if is_han(character))
-        if not left or not right:
+        left, right = left_fragment, right_fragment
+        if not any(c.isalnum() for c in left) or not any(c.isalnum() for c in right):
             continue
         result.append((left + right, len(left) - 1))
     return result
@@ -492,12 +482,12 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = output_dir / "manifest.json"
     if manifest_path.exists():
+        require_data_policy(load_json(manifest_path))
         print(manifest_path.read_text(encoding="utf-8"), flush=True)
         return
 
     base_manifest = load_json(base_manifest_path)
-    if "、" not in base_manifest.get("excluded_proxy_punctuation", []):
-        raise ValueError("Base shards use an outdated proxy definition; regenerate them in a fresh directory")
+    require_data_policy(base_manifest)
     base_sha256 = hashlib.sha256(base_manifest_path.read_bytes()).hexdigest()
     domains = list(base_manifest.get("domains", BASE_DOMAINS))
     if SYNTHETIC_DOMAIN in domains:
@@ -637,7 +627,7 @@ def main() -> None:
 
     combined = {
         "format": "super-reader-sharded-training-v1",
-        "excluded_proxy_punctuation": ["、"],
+        **DATA_POLICY,
         "source": "full Chinese Wikipedia plus CLUE and Ultra-FineWeb-L3 Chinese multi-style synthetic data",
         "base_manifest": project_relative(base_manifest_path),
         "base_manifest_sha256": base_sha256,

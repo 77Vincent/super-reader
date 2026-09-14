@@ -21,6 +21,45 @@
   const WHITESPACE = /^\s+$/u;
   const SPLIT_LENGTH_THRESHOLD = 12;
   const MAX_MODEL_WINDOW_TOKENS = 256;
+  const USES_CONTEXT = modelBackend?.getModelInfo?.().inputRepresentation === "unicode-context-v1";
+  // Keep in sync with training/text-policy.json; whitespace is context, not a proxy.
+  const CONTEXT_PROXY = /[，,。.！？!?；;…]/u;
+
+  function isContextProxy(characters, index) {
+    const c = characters[index];
+    return CONTEXT_PROXY.test(c || "") && !(
+      /[.,，．]/u.test(c) && /^\p{Nd}$/u.test(characters[index - 1] || "") &&
+      /^\p{Nd}$/u.test(characters[index + 1] || "")
+    );
+  }
+
+  // Keep source UTF-16 offsets even when NFKC expands a grapheme (e.g. ﬃ).
+  function normalizeContextTokens(text) {
+    const graphemes = typeof Intl?.Segmenter === "function"
+      ? Array.from(new Intl.Segmenter("und", { granularity: "grapheme" }).segment(text))
+      : Array.from(text).reduce((items, segment) => {
+        const previous = items[items.length - 1];
+        items.push({ segment, index: previous ? previous.index + previous.segment.length : 0 });
+        return items;
+      }, []);
+    return graphemes.flatMap(({ segment, index }) => (
+      Array.from(segment.normalize("NFKC"), (c) => ({ segment: /\s/u.test(c) ? " " : c, index }))
+    ));
+  }
+
+  function tokenizeContext(text) {
+    const expanded = normalizeContextTokens(text);
+    const characters = expanded.map((token) => token.segment);
+    const tokens = [];
+    for (let i = 0; i < expanded.length; i += 1) {
+      const token = expanded[i];
+      if (isContextProxy(characters, i)) continue;
+      if (token.segment === " " && (!tokens.length || tokens[tokens.length - 1].segment === " ")) continue;
+      tokens.push(token);
+    }
+    if (tokens[tokens.length - 1]?.segment === " ") tokens.pop();
+    return tokens;
+  }
 
   function visualLength(text) {
     const hanLength = Array.from(text).reduce(
@@ -28,7 +67,8 @@
       0,
     );
     const numericExpressionLength = Array.from(text.matchAll(NUMERIC_EXPRESSION)).length;
-    return hanLength + numericExpressionLength;
+    const latinWords = USES_CONTEXT ? Array.from(text.matchAll(/[A-Za-zＡ-Ｚａ-ｚ]+/gu)).length : 0;
+    return hanLength + numericExpressionLength + latinWords;
   }
 
   function tokenizeHanCharacters(text) {
@@ -59,6 +99,20 @@
     const clauses = [];
     let buffer = "";
     let isInsideStraightDoubleQuote = false;
+    const normalized = USES_CONTEXT ? normalizeContextTokens(text) : [];
+    const normalizedCharacters = normalized.map((token) => token.segment);
+    const proxyOffsets = new Set(normalized.filter((_, index) => (
+      isContextProxy(normalizedCharacters, index)
+    )).map((token) => token.index));
+    let sourceOffset = 0;
+    const sourceOffsets = characters.map((character) => {
+      const start = sourceOffset;
+      sourceOffset += character.length;
+      return start;
+    });
+    const isEnd = (index) => USES_CONTEXT
+      ? proxyOffsets.has(sourceOffsets[index])
+      : CLAUSE_END_CHARACTER.test(characters[index]);
 
     const flush = () => {
       if (!buffer) return;
@@ -73,11 +127,11 @@
         isInsideStraightDoubleQuote = !isInsideStraightDoubleQuote;
       }
 
-      if (!CLAUSE_END_CHARACTER.test(character)) continue;
+      if (!isEnd(index)) continue;
 
       while (index + 1 < characters.length) {
         const nextCharacter = characters[index + 1];
-        const isTrailingPunctuation = CLAUSE_END_CHARACTER.test(nextCharacter);
+        const isTrailingPunctuation = isEnd(index + 1);
         const isTrailingCloser =
           TRAILING_CLOSER.test(nextCharacter) &&
           (nextCharacter !== '"' || isInsideStraightDoubleQuote);
@@ -176,6 +230,26 @@
 
   // Cumulative visual lengths at token boundaries, including numeric expressions.
   function visualOffsetsForTokens(text, tokens) {
+    if (USES_CONTEXT) {
+      const ends = [];
+      let index = 0;
+      for (const c of text) {
+        if (HAN_CHARACTER.test(c)) ends.push(index + c.length);
+        index += c.length;
+      }
+      for (const pattern of [NUMERIC_EXPRESSION, /[A-Za-zＡ-Ｚａ-ｚ]+/gu]) {
+        for (const match of text.matchAll(pattern)) ends.push(match.index + match[0].length);
+      }
+      ends.sort((a, b) => a - b);
+      let units = 0;
+      const result = tokens.map((token) => {
+        while (units < ends.length && ends[units] <= token.index) units += 1;
+        return units;
+      });
+      result[0] = 0;
+      result.push(ends.length);
+      return result;
+    }
     const numbers = Array.from(text.matchAll(NUMERIC_EXPRESSION), (match) => match.index);
     let numberCount = 0;
     const offsets = tokens.map((token, index) => {
@@ -213,8 +287,11 @@
   }
 
   function chunkByModel(text, segmenter) {
-    const tokens = tokenizeHanCharacters(text);
+    const tokens = USES_CONTEXT ? tokenizeContext(text) : tokenizeHanCharacters(text);
     if (tokens.length < 2 || visualLength(text) <= SPLIT_LENGTH_THRESHOLD) return [text];
+    // Protect the entire enumeration clause, including its first and last items.
+    // Proxy punctuation has already separated it from neighboring clauses.
+    if (USES_CONTEXT && tokens.some((token) => token.segment === "、")) return [text];
     if (!modelBackend || typeof modelBackend.scoreTokens !== "function") {
       throw new Error("Super Reader model backend must load before the chunker");
     }
@@ -226,6 +303,11 @@
       .map((item) => ({ start: item.start, end: item.end }));
     protectedBoundaryRanges.push(...quantityPhraseRangesFromSegments(segments));
     protectedBoundaryRanges.push(...numericAttachmentRanges(text, segments));
+    if (USES_CONTEXT) {
+      for (const match of text.matchAll(/\p{Nd}+(?:[:：.,，．/／]\p{Nd}+)+/gu)) {
+        protectedBoundaryRanges.push({ start: match.index, end: match.index + match[0].length });
+      }
+    }
     const protectedBoundaryOffsets = new Set(
       tokens.slice(1)
         .map((token) => token.index)
@@ -233,6 +315,30 @@
           (range) => boundary > range.start && boundary < range.end,
         )),
     );
+    if (USES_CONTEXT) {
+      // Context punctuation has its own tokens. Keep opening marks with what
+      // follows and closing marks with what precedes, including straight quotes.
+      const opening = new Set(Array.from("“‘「『（(《〈【〔〖〘〚[{"));
+      const closing = new Set(Array.from("”’」』）)》〉】〕〗〙〛]}"));
+      const insideQuote = new Set();
+      tokens.forEach((token, index) => {
+        const mark = token.segment;
+        const straight = mark === '"' || mark === "'";
+        const isClosing = closing.has(mark) || (straight && insideQuote.has(mark));
+        const isOpening = opening.has(mark) || (straight && !insideQuote.has(mark));
+        if (isClosing) protectedBoundaryOffsets.add(token.index);
+        if (isOpening) {
+          for (let next = index + 1; next < tokens.length; next += 1) {
+            protectedBoundaryOffsets.add(tokens[next].index);
+            if (tokens[next].segment !== " ") break;
+          }
+        }
+        if (straight) {
+          if (insideQuote.has(mark)) insideQuote.delete(mark);
+          else insideQuote.add(mark);
+        }
+      });
+    }
 
     // Score each gap once, before choosing any cuts. Adjacent windows share one
     // token so the gap between windows is scored too; window edges do not force cuts.
@@ -257,7 +363,9 @@
 
       const boundaryAfter = selectBestBoundary(
         scores,
-        (index) => !protectedBoundaryOffsets.has(tokens[index + 1].index),
+        (index) => !protectedBoundaryOffsets.has(tokens[index + 1].index) && (!USES_CONTEXT || (
+          tokens[index + 1].index > tokens[index].index && tokens[index + 1].segment !== " "
+        )),
         start,
         end - 1,
         visualOffsets,
@@ -336,6 +444,7 @@
     selectBestBoundary,
     splitClauses,
     tokenizeHanCharacters,
+    tokenizeContext,
     visualLength,
   });
 });

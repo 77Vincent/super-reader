@@ -1,3 +1,7 @@
+> Historical measurements: the current data contract is `unicode-context-v1`.
+> See [README.md](README.md) for current defaults. Scores below use older input
+> representations and are not directly comparable with the new corpus.
+
 # Model quality baseline — 2026-09-11
 
 These are historical results from the legacy proxy definition, which included

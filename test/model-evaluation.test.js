@@ -17,26 +17,26 @@ function evaluationFixture(t, records, summary) {
   return { input, sha256: createHash("sha256").update(bytes).digest("hex"), directory };
 }
 
-const noEnumerationSummary = { tokenization: "character", excluded_proxy_punctuation: ["、"] };
+const contextSummary = require("../training/text-policy.json");
 
-test("evaluation uses regenerated list fragments and records the no-enumeration standard", async (t) => {
+test("evaluation uses regenerated list fragments and records the Unicode context standard", async (t) => {
   const { loadEvaluationSamples } = await evaluator;
   const { buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
   const records = buildAdjacentSamples({
     id: "news:gold", domain: "news", text: "苹果、香蕉，准备做果汁。",
   });
-  const fixture = evaluationFixture(t, records, noEnumerationSummary);
+  const fixture = evaluationFixture(t, records, contextSummary);
   writeFileSync(join(fixture.directory, "summary.json"), JSON.stringify({
-    ...noEnumerationSummary, splits: { validation: { sha256: fixture.sha256 } },
+    ...contextSummary, splits: { validation: { sha256: fixture.sha256 } },
   }));
   const result = await loadEvaluationSamples(fixture.input, 1);
-  assert.equal(result.standard, "no-enumeration-v1");
-  assert.deepEqual(result.excludedProxyPunctuation, ["、"]);
+  assert.equal(result.standard, "unicode-context-v1");
+  assert.deepEqual(result.excludedProxyPunctuation, ["、", "：", ":"]);
   assert.equal(result.inputSha256, fixture.sha256);
   assert.match(result.summarySha256, /^[a-f0-9]{64}$/u);
   assert.equal(result.records.length, 1);
-  assert.equal(result.records[0].tokens.join(""), "苹果香蕉准备做果汁");
-  assert.equal(result.records[0].target_index, 3);
+  assert.equal(result.records[0].tokens.join(""), "苹果、香蕉准备做果汁");
+  assert.equal(result.records[0].target_index, 4);
 });
 
 test("evaluation rejects missing or legacy metadata even when rows have no enumeration labels", async (t) => {
@@ -47,7 +47,7 @@ test("evaluation rejects missing or legacy metadata even when rows have no enume
     { tokenization: "word", excluded_proxy_punctuation: ["、"] }]) {
     const fixture = evaluationFixture(t, records, summary);
     await assert.rejects(loadEvaluationSamples(fixture.input),
-      summary === undefined ? /Missing evaluation metadata/u : /Evaluation requires no-enumeration-v1/u);
+      summary === undefined ? /Missing evaluation metadata/u : /Data requires unicode-context-v1/u);
   }
 });
 
@@ -60,18 +60,18 @@ test("evaluation validates proxy labels on rows outside the sampled reservoir", 
   records.forEach((record) => sampler.add(record));
   const selectedId = sampler.result().records[0].id;
   const excludedIndex = records.findIndex(({ id }) => id !== selectedId);
-  for (const punctuation of ["、", "，、", undefined, ""]) {
+  for (const punctuation of ["、", "，、", ":", "：", "，:", undefined, ""]) {
     const modified = records.map((record, index) => index === excludedIndex ? { ...record, punctuation } : record);
-    const fixture = evaluationFixture(t, modified, noEnumerationSummary);
+    const fixture = evaluationFixture(t, modified, contextSummary);
     await assert.rejects(loadEvaluationSamples(fixture.input, 1, "standard"),
-      punctuation ? /Enumeration proxy label remains/u : /Missing punctuation proxy label/u);
+      punctuation ? /Invalid proxy label remains/u : /Missing punctuation proxy label/u);
   }
 });
 
 test("evaluation rejects a split that no longer matches its recorded checksum", async (t) => {
   const { loadEvaluationSamples } = await evaluator;
   const fixture = evaluationFixture(t, [{ id: "changed", domain: "news", punctuation: "，" }], {
-    ...noEnumerationSummary, splits: { validation: { sha256: "0".repeat(64) } },
+    ...contextSummary, splits: { validation: { sha256: "0".repeat(64) } },
   });
   await assert.rejects(loadEvaluationSamples(fixture.input), /Evaluation split checksum mismatch/u);
 });
@@ -81,8 +81,8 @@ test("default evaluation selects the corrected holdout even when a legacy generi
     id: "news:tiny", domain: "news", document_id: "news:tiny", tokenization: "character",
     tokens: ["甲", "乙"], target_index: 0, punctuation: "，",
   }];
-  const { directory } = evaluationFixture(t, records, noEnumerationSummary);
-  const dataDirectory = join(directory, "training/data/processed/no-enumeration-aligned-eval-20260912");
+  const { directory } = evaluationFixture(t, records, contextSummary);
+  const dataDirectory = join(directory, "training/data/processed/unicode-context-192ch-12conv-20260913-eval");
   mkdirSync(dataDirectory, { recursive: true });
   for (const name of ["validation.jsonl", "summary.json"]) {
     copyFileSync(join(directory, name), join(dataDirectory, name));
@@ -91,20 +91,24 @@ test("default evaluation selects the corrected holdout even when a legacy generi
     ...records[0], id: "news:legacy", punctuation: "、",
   }) + "\n");
   writeFileSync(join(dirname(dataDirectory), "summary.json"), JSON.stringify({ tokenization: "character" }));
-  for (const name of ["training/evaluate_model.mjs", "src/backend/inference.js",
+  for (const name of ["training/evaluate_model.mjs", "training/text_policy.mjs", "training/text-policy.json", "src/backend/inference.js",
     "src/backend/chunker.js", "src/boundary-model-data.js"]) {
     const destination = join(directory, name);
     mkdirSync(dirname(destination), { recursive: true });
     copyFileSync(join(__dirname, "..", name), destination);
   }
+  const candidate = join(directory, "training/artifacts/unicode-context-192ch-12conv-20260913/candidate/boundary-model-data.js");
+  mkdirSync(dirname(candidate), { recursive: true });
+  writeFileSync(candidate, readFileSync(join(directory, "src/boundary-model-data.js"), "utf8")
+    .replace('"tokenization":"character"', '"inputRepresentation":"unicode-context-v1","tokenization":"character"'));
   writeFileSync(join(directory, "training/evaluation-cases.json"), "[]");
   execFileSync(process.execPath, [join(directory, "training/evaluate_model.mjs")], {
     cwd: directory, stdio: "pipe", timeout: 30000,
   });
   const report = JSON.parse(readFileSync(join(directory, "training/artifacts/model-baseline.json"), "utf8"));
-  assert.equal(report.evaluation.standard, "no-enumeration-v1");
-  assert.deepEqual(report.evaluation.excludedProxyPunctuation, ["、"]);
-  assert.equal(report.evaluation.input, "training/data/processed/no-enumeration-aligned-eval-20260912/validation.jsonl");
+  assert.equal(report.evaluation.standard, "unicode-context-v1");
+  assert.deepEqual(report.evaluation.excludedProxyPunctuation, ["、", "：", ":"]);
+  assert.equal(report.evaluation.input, "training/data/processed/unicode-context-192ch-12conv-20260913-eval/validation.jsonl");
   assert.equal(report.overall.count, 1);
   assert.equal(report.predictions[0].id, "news:tiny");
   assert.equal(report.predictions[0].goldGap, 0);

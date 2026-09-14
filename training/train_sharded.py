@@ -18,6 +18,7 @@ from typing import Any
 
 import torch
 from torch.nn import functional as F
+from text_policy import DATA_POLICY, require_data_policy, valid_proxy_label
 
 from train_smoke import (
     BoundaryChooser,
@@ -193,8 +194,8 @@ def read_evaluation_records(
             if not line.strip():
                 continue
             record = json.loads(line)
-            if "、" in record.get("punctuation", ""):
-                raise ValueError(f"Enumeration proxy label remains in {path}: {record.get('id')}")
+            if not valid_proxy_label(record.get("punctuation")):
+                raise ValueError(f"Invalid proxy label remains in {path}: {record.get('id')}")
             record["training_weight"] = 1.0
             record["token_ids"] = [
                 vocabulary.get(token, unknown)
@@ -207,6 +208,7 @@ def read_evaluation_records(
 def expanded_initialization(
     model: BoundaryChooser,
     checkpoint_path: Path,
+    vocabulary: dict[str, int],
 ) -> dict[str, Any]:
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
     source = checkpoint["best_state"] or checkpoint["model_state"]
@@ -214,12 +216,14 @@ def expanded_initialization(
     source_channels = source["embedding.weight"].shape[1]
     target_channels = target["embedding.weight"].shape[1]
     channels = min(source_channels, target_channels)
-    vocab = min(source["embedding.weight"].shape[0], target["embedding.weight"].shape[0])
+    source_vocabulary = checkpoint["vocabulary"]
+    shared_tokens = sorted(set(source_vocabulary) & set(vocabulary))
 
     with torch.no_grad():
-        target["embedding.weight"][:vocab, :channels].copy_(
-            source["embedding.weight"][:vocab, :channels]
-        )
+        for token in shared_tokens:
+            target["embedding.weight"][vocabulary[token], :channels].copy_(
+                source["embedding.weight"][source_vocabulary[token], :channels]
+            )
         block = 0
         while f"blocks.{block}.first.weight" in source and f"blocks.{block}.first.weight" in target:
             prefix = f"blocks.{block}"
@@ -259,6 +263,11 @@ def expanded_initialization(
         "source_channels": source_channels,
         "copied_channels": channels,
         "copied_blocks": block,
+        "source_best_epoch": checkpoint["best_epoch"],
+        "copied_token_embeddings": len(shared_tokens),
+        "new_token_embeddings": len(vocabulary) - len(shared_tokens),
+        "embedding_mapping": "token identity, not row position",
+        "optimizer": "new AdamW",
     }
 
 
@@ -296,14 +305,16 @@ def main() -> None:
     if manifest.get("format") != "super-reader-sharded-training-v1":
         raise ValueError(f"Unsupported shard manifest: {manifest_path}")
     data_summary = load_json(data_dir / "summary.json")
-    if any("、" not in source.get("excluded_proxy_punctuation", []) for source in (manifest, data_summary)):
-        raise ValueError("Training/evaluation data uses an outdated proxy definition; regenerate it in fresh directories")
+    for source in (manifest, data_summary):
+        require_data_policy(source)
     vocabulary_path = (
         args.vocabulary.resolve()
         if args.vocabulary
         else resolve_project_path(manifest["vocabulary_path"])
     )
     vocabulary = load_json(vocabulary_path)
+    if any(c not in vocabulary for c in '0123456789:、ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz '):
+        raise ValueError("Vocabulary lacks context characters; run build_context_vocabulary.py first")
     weights = weight_table(manifest)
     domains = manifest.get("domains", DOMAINS[:len(manifest["statistics"]["domain_samples"])])
     domain_weights = domain_weight_table(
@@ -369,7 +380,7 @@ def main() -> None:
     model = BoundaryChooser(len(vocabulary), args.channels, args.residual_blocks)
     initialization = None
     if resume_state is None and args.initialize_from:
-        initialization = expanded_initialization(model, args.initialize_from.resolve())
+        initialization = expanded_initialization(model, args.initialize_from.resolve(), vocabulary)
         print(f"expanded initialization: {json.dumps(initialization)}", flush=True)
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -455,6 +466,15 @@ def main() -> None:
                 "training_seconds": training_seconds,
             },
         })
+
+    if resume_state is None and initialization is not None:
+        initial_validation = evaluate(model, validation_records, args.batch_size, args.max_tokens_per_batch)
+        best_validation, macro = selection_score(initial_validation, args.selection_macro_weight)
+        best_state = clone_state(model)
+        initialization["validation_before_training"] = initial_validation
+        initialization["selection_score_before_training"] = best_validation
+        print(f"initialized validation accuracy={initial_validation['accuracy']:.6f} macro={macro:.6f}", flush=True)
+        persist(1, 0, 0, 0.0, 0.0, 0, 0.0)
 
     for epoch in range(start_epoch, args.epochs + 1):
         order = list(range(len(shards)))
@@ -669,9 +689,10 @@ def main() -> None:
         for domain_weight in domain_weights
     ]
     metrics = {
+        **DATA_POLICY,
         "seed": args.seed,
         "tokenization": "character",
-        "candidate_positions": "between every adjacent Han character",
+        "candidate_positions": "between every adjacent Unicode code point",
         "best_epoch": best_epoch,
         "parameter_count": parameter_count,
         "vocabulary_size": len(vocabulary),

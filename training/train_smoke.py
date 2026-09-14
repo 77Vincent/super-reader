@@ -20,6 +20,7 @@ import numpy as np
 import torch
 from torch import nn
 from torch.nn import functional as F
+from text_policy import DATA_POLICY, require_data_policy, valid_proxy_label
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -85,8 +86,8 @@ def configure_cpu(threads: int, interop_threads: int) -> None:
 def read_json_lines(path: Path) -> list[dict[str, Any]]:
     with path.open("r", encoding="utf-8") as handle:
         records = [json.loads(line) for line in handle if line.strip()]
-    if any("、" in record.get("punctuation", "") for record in records):
-        raise ValueError(f"Enumeration proxy labels remain in {path}; regenerate this split")
+    if any(not valid_proxy_label(record.get("punctuation")) for record in records):
+        raise ValueError(f"Invalid proxy labels remain in {path}; regenerate this split")
     return records
 
 
@@ -572,8 +573,7 @@ def main() -> None:
         if summary_path.exists()
         else {}
     )
-    if "、" not in data_summary.get("excluded_proxy_punctuation", []):
-        raise ValueError("Data uses an outdated proxy definition; regenerate all splits in a fresh directory")
+    require_data_policy({**data_summary, "tokenization": "character"})
     raw_records = {
         split: read_json_lines(args.data_dir / f"{split}.jsonl")
         for split in ("train", "validation", "test")
@@ -872,6 +872,7 @@ def main() -> None:
     }
     parameter_count = sum(parameter.numel() for parameter in model.parameters())
     metrics = {
+        **DATA_POLICY,
         "seed": args.seed,
         "tokenization": data_summary.get("tokenization", "unspecified"),
         "candidate_positions": data_summary.get("candidate_positions", "unspecified"),

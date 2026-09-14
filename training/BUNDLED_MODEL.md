@@ -1,53 +1,72 @@
 # Bundled boundary model
 
-`src/boundary-model-data.js` contains the completed epoch 1 checkpoint from
-`all-local-192ch-12conv-20260912`. It was selected from the training checkpoint's
-`best_state` while epoch 2 was still running, and exported on 2026-09-13.
+`src/boundary-model-data.js` contains the completed **epoch 1 best_state** from
+`unicode-context-192ch-12conv-20260913`, exported on 2026-09-14 while epoch 2
+continued training. This is the full-corpus model, separate from the architecture smoke.
 
 | Property | Value |
-|---|---:|
+| --- | ---: |
+| Input representation | unicode-context-v1 |
 | Channels | 192 |
 | Residual blocks / convolution layers | 6 / 12 |
-| Parameters | 2,265,991 |
-| Vocabulary entries | 4,096 |
-| Training examples per epoch | 74,218,072 |
-| Validation accuracy | 83.60% |
-| Mean domain validation accuracy | 80.78% |
-| Validation selection score | 82.19% |
+| Parameters | 3,052,423 |
+| Vocabulary entries | 8,192 |
+| Training examples per epoch | 74,121,940 |
+| Full validation examples | 727,578 |
+| Validation accuracy | 88.1812% |
+| Mean domain validation accuracy | 85.0983% |
+| Validation selection score | 86.6397% |
 | Test accuracy | Not evaluated for this interim export |
 
-The validation set contains 731,290 examples with enumeration commas excluded
-as boundary proxies. Its records are identical to the corrected holdout used
-for the previous model. The training overlap audit found no overlapping pairs.
+Accuracy measures recovery of hidden punctuation boundaries. Historical Han-only
+scores used different inputs and holdouts and are not directly comparable.
 
 Checkpoint SHA-256:
-`626c7aa7599c9a556bfefd04b8ddd054cf019282c056caad197bebac56fc784c`
+`3ac72e4bd965e833273e916f9ee97dd7520340661a7c73e8d95eee3be46a69d4`
 
-The frozen export artifacts are under
-`training/artifacts/all-local-192ch-12conv-20260912/epoch-1-backend/`.
-`smoke-metrics.json` records the source checkpoint hash, selection metric and
-extracted state. `selected-state.pt` contains the completed epoch 1 weights;
-it is not a resumable optimizer checkpoint.
+The frozen release artifacts are in
+`training/artifacts/unicode-context-192ch-12conv-20260913/epoch-1-backend/`.
+`source-training-state.pt` captures the live checkpoint by reading one open file;
+`selected-state.pt` contains its completed best weights. `smoke-metrics.json`
+records the selection and source SHA-256
+`f31a02f2258e2e3bdfde3c0c8e3d05d5b7204c6caf26b186b26f29a5b8ecab88`.
+The release uses `best_state`, never the partially trained epoch-2 `model_state`.
 
-Run `npm run model:export` to reproduce the bundled file from those local
-artifacts. The generated script is approximately 12.13 MB and is loaded by the
-existing inference worker and backend. Model architecture is read from its
-metadata. `test/model-backend-reference.json` contains independent PyTorch
-reference logits, including a two-character input and a supplementary Han
-character, for checking the JavaScript implementation.
+`npm run model:export` reproduces the bundle from these local release artifacts.
+The script is 16,372,300 bytes. A clean checkout includes the exported model and
+test references; runtime and ordinary model tests require no training artifacts or PyTorch.
 
-JavaScript and PyTorch agree on all five reference boundaries, with a maximum
-logit difference of 0.00001526. On the fixed 2,500-example validation sample
-(500 per domain), JavaScript accuracy is 80.88%, compared with 79.48% for the
-previous 128-channel no-enumeration model. This sample has a different domain
-mix from the full validation set above.
+`test/model-backend-reference.json` contains 11 independent PyTorch float32 cases,
+including times, numbers, Latin text, quotes, supplementary Han, emoji and a
+two-character input. JavaScript selects the same best gap in all cases.
+Maximum logit difference is 0.00007630; maximum softmax probability difference is
+0.00000243. Tests check absolute-plus-relative float32 tolerances, probabilities
+and selected gaps.
 
-The full test suite passes all 174 tests, including a run from a fresh source
-snapshot without local dependencies, datasets or training artifacts. The corpus
-test installs its pinned PyArrow dependency when missing and generates tiny
-Parquet fixtures; no tests are skipped. Chunker tests cover the finalized
-12-visual-unit threshold and the bundled model's expected outputs. The backend
-model-loading and PyTorch parity tests also pass.
+## Backend preprocessing
 
-Epoch 2 continues in the separate `candidate/` directory. Its completion does
-not automatically replace this bundled epoch 1 model.
+1. Classify proxy punctuation after NFKC normalization, preserving original text
+   and UTF-16 offsets.
+2. Pre-split on the proxy punctuation in `text-policy.json`: commas, periods,
+   exclamation/question marks, semicolons and ellipses. Periods and commas between
+   digits remain inside numbers. Other punctuation and whitespace stay in the clause.
+3. Leave clauses containing enumeration commas (`、`, including NFKC-equivalent
+   forms) intact and skip model inference, regardless of length. This protects
+   every list item, including the first and last. Protection ends at the existing
+   proxy punctuation boundaries.
+4. Leave other clauses of at most 12 visual units intact. A Han character, numeric
+   expression or Latin word contributes one unit; this is not a 12-token cap.
+5. Send the remaining longer clauses to the model with their context characters.
+   Normalize input and whitespace, hide pre-split proxy punctuation, and preserve
+   numeric separators. The existing balance and word/quantity protections apply.
+   Opening and closing marks stay attached to adjacent content at model cuts.
+
+Rendered text retains its original punctuation, spacing and character widths.
+Only model-selected cuts inside a clause receive visual dividers.
+
+The completed [architecture smoke](CNN_TRANSFORMER_EXPERIMENT.md) was a separate
+experiment; its scripts and generated artifacts have been removed. The full run's
+source guard includes backend files, so a finalizer uses the original
+`source-snapshot-before-backend-release-20260914/` for export and evaluation after
+the old coordinator reaches that guard. `finalization-handoff.json` tracks this
+continuation. Completing epoch 2 does not automatically replace this bundle.

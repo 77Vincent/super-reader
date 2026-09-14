@@ -1,407 +1,132 @@
-# Boundary model smoke test
+# Boundary model training
 
-The extension currently bundles the 192-channel, 12-convolution epoch 1 model.
-See [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for its metrics, provenance and export command.
+The current data contract is **unicode-context-v1**, defined in
+[text-policy.json](text-policy.json). Training, validation, test data and exported
+models identify their input representation explicitly. Older corpora are retained
+for provenance and cannot be silently mixed into a new run.
 
-## Quality baseline before tuning
+## Input and labels
 
-`no-enumeration-v1` is the permanent evaluation standard: enumeration commas
-(`、`) never define target boundaries. Regenerate fragments from the original
-documents under this rule; simply deleting old rows labeled `、` is insufficient.
-For example, `苹果、香蕉，准备做果汁。` must produce
-`苹果香蕉 | 准备做果汁`, preserving the complete list on the left.
+Adjacent fragments A and B become the input AB. Only their separating proxy
+punctuation is hidden; the target is the code-point gap between A and B.
+The proxy set contains Chinese/ASCII commas, periods, exclamation marks, question
+marks, semicolons and ellipses. Colons are context rather than targets.
 
-Evaluate the shipped JavaScript model against the established corrected holdout:
+Other punctuation, digits, letters, quotes and symbols remain in the input.
+NFKC normalization standardizes compatible forms; whitespace becomes a single
+ASCII space and fragment edges are trimmed. Numeric periods and commas between
+digits stay intact. Both sides must contain a letter or number. Corpus-specific
+Wikipedia markup and synthetic fenced-code/URL cleanup still happen during text
+extraction, before sample generation.
+
+```text
+Source: 女：那可挺麻烦的，吃点儿治疗过敏的药吧。
+Input:  女:那可挺麻烦的吃点儿治疗过敏的药吧
+Target: 女:那可挺麻烦的 | 吃点儿治疗过敏的药吧
+
+Source: 上午8:30至下午4:30；假日关门。
+Input:  上午8:30至下午4:30假日关门
+Target: 上午8:30至下午4:30 | 假日关门
+```
+
+The labels are punctuation-derived weak supervision. Accuracy measures recovery
+of the hidden proxy; it does not establish human-rated reading chunk quality.
+
+## Full local-corpus candidate
+
+```bash
+npm run model:retrain-context
+# After an interruption:
+npm run model:retrain-context -- --resume
+```
+
+The pipeline in [run_context_pipeline.py](run_context_pipeline.py) uses all cached
+CLUE text entries, all extracted Chinese Wikipedia articles, and every row of the
+cached Ultra-FineWeb Chinese multi-style Parquet. It does not cap documents,
+pairs per document, sequence length, or the total synthetic sample count.
+Deduplication, document holdouts, article extraction and the existing synthetic
+Chinese-text quality checks still apply. It does not fetch additional corpora.
+
+The default run is `training/artifacts/unicode-context-192ch-12conv-20260913/`.
+Its stages are preflight, base regeneration, inherited-checkpoint overlap audit,
+Wikipedia preparation, synthetic preparation, new-training overlap audit,
+vocabulary construction, training, export and browser evaluation.
+
+The initial checkpoint is the completed best epoch 2 of
+`all-local-192ch-12conv-20260912`. A separate copy is recorded with its SHA-256.
+The new candidate retains 192 channels and six residual blocks (12 kernel-3
+convolutions). It starts two new epochs with learning rate 0.0003, domain-weight
+power 0.65, equal overall/macro validation selection weights, gradient clipping
+at 1.0, batches of at most 512 examples/8192 padded tokens, and five CPU threads.
+
+The vocabulary preserves all existing IDs and extends to at most 8192 tokens
+using training data only, with dedicated ASCII and common punctuation entries.
+Embedding weights are copied by token identity; convolution and scoring weights
+are inherited. New tokens are initialized separately and AdamW starts fresh.
+The initialized model is evaluated on the new validation set before updates, so
+checkpoint selection can also retain initialization (new-run epoch 0).
+
+Original document-to-split assignments are preserved. Before establishing the
+new holdout version, a conservative Han-projection comparison removes pairs seen
+by inherited checkpoints. The new training shards must have zero exact input/gap
+overlap with that evaluation set. Historical holdouts and reports are preserved;
+old and new input-policy scores are not directly comparable.
+
+`status.json`, `completed-stages.json`, stage logs and `corpus-coverage.json`
+record progress. Preparation and training support restart; incomplete base/audit
+outputs are archived before retry. A source hash change stops the next stage.
+The trainer saves atomic checkpoints every four shards and at safe interrupt
+boundaries. Completing the pipeline exports a separate candidate and does not
+replace the extension's bundled weights.
+
+## Evaluation
 
 ```bash
 npm run model:baseline
 ```
 
-The evaluator defaults directly to
-`training/data/processed/no-enumeration-aligned-eval-20260912/validation.jsonl`.
-Routine evaluation and model comparisons require no input override. It requires
-an adjacent `summary.json` declaring
-character tokenization and `excluded_proxy_punctuation: ["、"]`. It rejects
-missing or legacy metadata and missing or enumeration proxy labels in every
-row, including rows outside the eventual sample. If the summary records a
-split checksum, the input must match it. These checks also apply to `--input`;
-there is no legacy-policy fallback. The evaluator itself does not download data
-or train a model.
+The real defaults are the new run's candidate model and
+`training/data/processed/unicode-context-192ch-12conv-20260913-eval/validation.jsonl`.
+Both must have been prepared/exported before this command can run. `--model`,
+`--input` and `--output` are optional explicit experiment paths; they cannot bypass
+input-policy checks. The evaluator rejects mismatched model/data representations,
+invalid proxy labels anywhere in the input, and recorded checksum mismatches.
+It uses the same deterministic sample of 500 examples per domain (seed 20260911).
+Keep input and sample hashes fixed for within-version comparisons.
 
-A seeded reservoir selects 500 examples from each domain, preserving the
-within-domain length distribution. The report records the evaluation standard,
-metadata, input and sample fingerprints; model and implementation fingerprints;
-top-1/top-3, rank, unknown characters, confidence buckets and warm Node inference
-timings; and outputs for the unlabeled cases in `evaluation-cases.json`. Demo inline text nodes remain
-separate inputs. The generated JSON includes every sampled prediction.
+The bundled model is the completed epoch-1 best checkpoint from this full run;
+see [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for its provenance and validation results.
+The backend first splits clauses using normalized proxy punctuation, leaves
+clauses of at most 12 visual units intact, and sends longer clauses with their
+remaining Unicode context to the model. Numeric separators remain within numbers;
+original text and UTF-16 offsets are preserved. Opening/closing marks stay attached
+to adjacent content when the model subdivides a clause.
 
-The default output is the ignored `training/artifacts/model-baseline.json`.
-Keep the default holdout fixed and preserve separate reports when comparing models:
+## Verification and small experiments
 
-```bash
-npm run model:baseline -- --output training/artifacts/before-tuning.json
-npm run model:baseline -- --output training/artifacts/candidate.json
-```
-
-Keep the input hash, seed and per-domain limit unchanged for paired comparisons.
-The shared label policy alone does not make different holdout populations
-comparable. `--input` remains available for explicit experiments, subject to the
-same no-enumeration checks. Other options are `--seed`, `--per-domain` and `--cases`.
-Use validation for tuning; reserve test data for the final comparison.
-
-The benchmark files are ignored data artifacts. On a fresh checkout, restore
-`validation.jsonl` and `summary.json` into the default directory before running
-the real benchmark. The established validation file has 731,290 records and
-SHA-256 `5969ca4562647fd4cc57bf870df2ed12292626324ecb6eddfcf931bd807aa250`.
-`npm run smoke:data` produces a separate dataset; it does not restore this fixed
-benchmark. `npm test` creates its own tiny fixtures and needs no benchmark files.
-
-See [MODEL_BASELINE.md](MODEL_BASELINE.md) for the initial measurements and
-limitations. Single-gap accuracy measures recovery of removed punctuation;
-the project still needs human-reviewed labels for complete reading chunks.
-
-## Training experiment
-
-This experiment checks the complete weak-supervision pipeline without claiming
-production model quality. Its default dataset uses every eligible pair in each
-split without equalizing or downsampling source domains. All retained source
-documents participate in the document-level split; `0` for
-`--docs-per-domain` means that no additional document-count cap is applied.
-Training runs for two epochs by default and retains the checkpoint with the
-best validation accuracy.
-
-## Architecture
-
-- Han-character embedding with 64 channels;
-- four residual blocks (eight convolution layers total);
-- two `Conv1d(kernel_size=3, dilation=1)` layers per block;
-- one score for every adjacent Han-character gap;
-- masked softmax cross-entropy with exactly one target gap.
-
-The completed larger baseline uses 128 channels and four residual blocks.
-The all-local-corpus candidate uses 192 channels and six residual blocks
-(12 convolutions), increasing the parameter count from 985,349 to 2,265,991
-with the same 4,096-entry vocabulary.
-
-For kernel size 3, stride 1 and dilation 1, the receptive field of a character
-representation is `1 + 2 * convolution_layers`: 17 characters for eight
-layers and 25 for twelve. A raw boundary score combines two adjacent
-representations, so its receptive field is 18 or 26 characters respectively.
-Softmax and boundary selection compare scores across the entire input.
-
-## Data
-
-The preparation script downloads four small public CLUE task archives plus the
-latest Chinese Wikipedia current-article dump:
-
-- TNEWS for news text;
-- CSL for academic abstracts;
-- CMRC2018 for encyclopedia passages;
-- C3 for dialogue;
-- Chinese Wikipedia for broader encyclopedia prose.
-
-Wikipedia uses Wikimedia's rolling `latest` multistream dump and companion
-index. It contains current article content rather than revision history. The
-compressed files currently require about 3.6 GB, are streamed to disk, and are
-verified against Wikimedia's current MD5 manifest. The index provides a
-deterministic sample across the whole dump instead of taking only its first
-pages. By default, 250,000 main-namespace, non-redirect articles are retained;
-change the count with `--wikipedia-docs`, or pass `0` to disable this source.
-Wikipedia text remains subject to its CC BY-SA license and attribution terms.
-
-Documents are normalized and globally deduplicated before being split. Each
-document belongs to exactly one of train, validation, or test. Adjacent `A+B`
-pairs are generated only after that split. Identical text-and-boundary pairs
-are then deduplicated with test, validation, and training priority in that
-order, preventing a holdout boundary from appearing in training. Every
-remaining eligible pair is retained, so the five source domains keep their
-natural sample counts after Wikipedia's article-level sampling.
-
-Boundary proxies are commas, periods, exclamation marks, question marks,
-semicolons, colons, and ellipses, including their Chinese and ASCII forms.
-Enumeration commas (`、`) are excluded: list items remain in the same fragment,
-and the enumeration punctuation is removed during cleaning. For example,
-`我买了苹果、香蕉，准备做果汁。` produces the target
-`我买了苹果香蕉 | 准备做果汁`. This rule applies to both the JavaScript
-preparation path (including full Wikipedia) and Python synthetic preparation.
-This is the required supervision policy for all new training, checkpoint
-selection, validation and final test evaluation.
-
-Existing processed data and exported weights retain their previous behavior.
-To train with the revised proxies, regenerate the base data and then any full
-Wikipedia and synthetic shards that depend on it, using fresh output directories
-instead of resuming old preparation states. Retrain and export a candidate model;
-compare both models on the same evaluation data, keeping its definition explicit.
-
-There is no minimum or maximum length for either side: even a one-character
-side remains valid, and long sides are never cropped. Punctuation and
-whitespace are excluded from the recorded side lengths.
-
-Training samples are grouped by total Han-character length (`2–8`, `9–16`,
-`17–32`, and `33+`) and then by ten equal-width buckets of
-`A_length / (A_length + B_length)`. No samples are discarded: inverse-cell loss
-weights make the occupied position buckets contribute equally within each
-length bucket. Domains are not part of the weighting calculation. Validation
-and test retain their natural distributions and use ordinary unit weights.
-
-Training batches use power-of-two token-length buckets. Every batch is padded
-only to its own longest sequence, with at most 512 examples and a target budget
-of 8,192 padded tokens. That produces 512-example batches for the common
-16-character bucket, 256 for the 32-character bucket, and 128 for the
-64-character bucket. Longer buckets automatically use fewer examples; a single
-sequence longer than the budget is still retained in a one-example batch.
-Side-length and relative-position metadata are kept for auditing but are not
-copied into the model input.
-
-Training uses PyTorch's multithreaded CPU backend. The default is five intra-op
-threads and one inter-op thread: a local backward-pass benchmark on the M5 Pro
-showed that this is faster for these short convolutions than scheduling work
-across all 18 logical CPUs. Each kernel-3 convolution is evaluated as three
-mathematically equivalent left/center/right matrix products, avoiding the high
-overhead of the generic macOS `Conv1d` kernel on short sequences. Thread counts
-remain explicitly configurable with `--threads` and `--interop-threads`. Each
-epoch reports wall-clock training throughput, and the selected CPU settings
-are saved in the metrics artifact.
-
-Downloaded and generated files are ignored by Git. Source URLs and SHA-256
-checksums are saved in `training/data/processed/summary.json`.
-
-## Run
+The completed [CNN / Transformer experiment](CNN_TRANSFORMER_EXPERIMENT.md)
+used identical training data and full validation/test splits. CNN reached 68.60%
+test accuracy versus 60.85% for Transformer and led in all five test domains.
+The experiment is closed; its dedicated scripts and generated artifacts were
+removed after preserving the setup, results, limitations and audit fingerprints.
 
 ```bash
-npm run smoke:model
+npm test
+npm run smoke:data
+python3 training/run_smoke.py --epochs 2
+# Extend an otherwise unchanged small run:
+python3 training/run_smoke.py --epochs 6 --resume
 ```
 
-The default production run uses character tokenization, every available pair,
-and two epochs. Passing `0` for any `--train-per-domain`,
-`--validation-per-domain`, or `--test-per-domain` keeps every eligible sample
-from each domain. Positive values remain available for explicitly capped
-comparison experiments. Every adjacent Han-character gap is a candidate;
-non-Han content is excluded from model input.
+`npm test` uses small temporary fixtures, not downloaded corpora or ignored model
+artifacts. The real Parquet fixture installs pinned PyArrow on first use if it is
+missing; Python 3.9+, pip and first-install network access are required. Full
+training installs pinned PyTorch/tinygrad through the existing local bootstrap.
 
-The command installs pinned PyTorch and tinygrad wheels under the ignored
-`training/.deps/` directory. PyTorch performs multithreaded CPU training;
-tinygrad is retained only for writing the existing browser-compatible
-safetensors checkpoint. To prepare and train separately:
+[preflight_context.py](preflight_context.py) verifies all inherited embeddings
+with deliberately permuted IDs, checks unchanged non-embedding weights, runs an
+actual optimization step involving a colon, exports it and compares browser and
+PyTorch logits. Its tiny metrics are implementation checks, not performance claims.
 
-```bash
-node training/prepare_smoke_data.mjs
-python3 training/run_smoke.py
-```
-
-For example, to prepare 500,000 Wikipedia articles:
-
-```bash
-node --max-old-space-size=20480 training/prepare_smoke_data.mjs \
-  --wikipedia-docs 500000
-```
-
-Data preparation requires the `unzip` and `bzip2` command-line tools.
-
-For example, an explicit CPU configuration can be tested with:
-
-```bash
-python3 training/run_smoke.py --threads 5 --interop-threads 1 \
-  --batch-size 512 --max-tokens-per-batch 8192
-```
-
-The checkpoint and metrics are written under `training/artifacts/`.
-The checked-in summary of the latest completed run is in
-[`SMOKE_RESULTS.md`](SMOKE_RESULTS.md).
-
-Training also writes an atomic resumable checkpoint to
-`training-state.pt` after every completed epoch. Pressing Ctrl+C once requests
-a safe stop: the current batch finishes, then the model, optimizer, best model,
-history, epoch, and next batch position are saved. Resume from the same
-artifact directory with the same data and model arguments; `--epochs` is the
-desired total epoch count:
-
-```bash
-python3 training/run_smoke.py \
-  --artifact-dir training/artifacts/data-scale-wiki-250k-6ep \
-  --epochs 6 --resume
-```
-
-The resume command rejects changed data or incompatible training arguments.
-A second Ctrl+C forces immediate exit and may skip the safe-stop save.
-
-Export a completed run directly from its artifact directory:
-
-```bash
-python3 training/export_browser_model.py \
-  --artifact-dir training/artifacts/data-scale-wiki-250k-8conv-64ch-6ep
-```
-
-## Full-Wikipedia, memory-bounded run
-
-The full-data path scans every block of the downloaded Chinese Wikipedia dump
-without retaining the corpus in memory. It writes 128 compact shards, seeds a
-256 MB Bloom filter with validation and test boundaries before admitting any
-training pair, checkpoints preparation every 100 dump blocks, and caps each
-article at 128 evenly distributed boundaries. Samples longer than 2,048 Han
-characters are excluded to bound the largest possible batch. The existing
-validation and test documents remain holdouts.
-
-```bash
-npm run full:data
-npm run full:model
-```
-
-The full model uses 128 channels and four residual blocks (eight kernel-3
-convolution layers). It initializes the overlapping 64 channels and all four
-blocks from the retained 75.50% checkpoint, then learns the added capacity.
-Training loads one shard at a time and writes a resumable checkpoint every four
-shards. An existing training state is never overwritten implicitly. Resume a
-stopped or completed run with:
-
-```bash
-npm run full:model -- --resume
-```
-
-## Candidate-tokenization comparison
-
-To compare `Intl.Segmenter` word gaps with every adjacent Han-character gap on
-the same medium-size sample set, run:
-
-```bash
-npm run smoke:compare
-```
-
-Both modes exclude non-Han content. The controlled comparison uses 16,000
-training pairs, 4,000 validation pairs, 4,000 test pairs, and three epochs per
-mode. Its latest result and methodological caveats are documented in
-[`TOKENIZATION_COMPARISON.md`](TOKENIZATION_COMPARISON.md).
-
-## Synthetic multi-style expansion and domain weighting
-
-The synthetic-data path streams the Chinese multi-style subset of
-`openbmb/Ultra-FineWeb-L3` from upstream Parquet files. It keeps five million
-deduplicated boundary samples, writes 32 compact shards without loading the
-corpus into memory, and combines those shard references with the existing full
-Wikipedia manifest without copying its data. Preparation state is saved every
-10,000 documents and source files are checksummed.
-
-```bash
-npm run synthetic:data
-npm run synthetic:model
-```
-
-The model run initializes from the retained full-Wikipedia checkpoint, uses a
-smoothed inverse-domain-frequency exponent of `0.65`, clips gradient norm at
-`1.0`, and uses equal parts overall validation accuracy and macro-domain
-validation accuracy to select the best epoch. Existing length/position weights
-remain active and are multiplied by the domain weights. The sharded trainer
-uses a fixed example-count denominator so domain multipliers still apply to a
-single-domain shard instead of being canceled by per-batch renormalization.
-Validation and test remain the original real-data holdouts.
-
-## Retraining after a proxy change
-
-For a controlled full-data experiment, `prepare_retraining_base.mjs` rebuilds
-CLUE training pairs and all validation/test pairs from checksum-verified cached
-sources. It preserves the original document-to-split assignments while applying
-the current proxy rules in every split. An enumeration-only document can produce
-zero revised examples; its holdout ownership is still recorded in
-`holdout-documents.json`. The full-Wikipedia preparer honors that registry and
-deduplicates against the revised holdout boundaries.
-
-Do not merely filter old evaluation rows labeled `、`: removing the enumeration
-delimiter also changes the adjacent fragments. `A、B，C` must yield `AB | C`,
-whereas filtering old rows would leave `B | C`.
-
-For a fresh run, use new output directories throughout, for example:
-
-```bash
-node training/prepare_retraining_base.mjs \
-  --output-dir training/data/processed/no-enumeration-v2-base
-node --max-old-space-size=4096 training/prepare_full_wikipedia_data.mjs \
-  --source-dir training/data/processed/no-enumeration-v2-base \
-  --output-dir training/data/processed/no-enumeration-v2-wiki
-python3 training/run_prepare_synthetic.py \
-  --base-manifest training/data/processed/no-enumeration-v2-wiki/manifest.json \
-  --output-dir training/data/processed/no-enumeration-v2-combined \
-  --source-manifest training/data/processed/wiki-full-plus-ultra-5m/manifest.json
-python3 training/filter_retraining_holdouts.py \
-  --data-dir training/data/processed/no-enumeration-v2-base \
-  --output-dir training/data/processed/no-enumeration-v2-eval \
-  --training-manifest training/data/processed/no-enumeration-v2-combined/manifest.json \
-  --training-manifest training/data/processed/wiki-full-plus-ultra-5m/manifest.json \
-  --training-jsonl training/data/processed/train.jsonl
-python3 training/run_sharded.py \
-  --manifest training/data/processed/no-enumeration-v2-combined/manifest.json \
-  --data-dir training/data/processed/no-enumeration-v2-eval \
-  --artifact-dir training/artifacts/no-enumeration-v2 \
-  --initialize-from training/artifacts/wiki-ultra-domain-weighted-128ch-2ep/training-state.pt \
-  --epochs 2 --channels 128 --residual-blocks 4 --learning-rate 0.0003 \
-  --domain-weight-power 0.65 --selection-macro-weight 0.5 --gradient-clip 1.0
-```
-
-`--source-manifest` verifies and reuses the synthetic source files recorded in
-the previous combined manifest. The cached files must contain enough examples
-to reach the requested sample count. For training recovery, append `--resume`
-to the training command with the same configuration.
-
-The overlap filter excludes revised evaluation pairs already seen in any of the
-listed training sources. Include every known supervised training source used by
-the baseline and candidate checkpoints. Both models must then be scored on this
-same corrected evaluation set. Training, checkpoint selection, primary
-validation, and final test must all use the same proxy definition.
-
-The initial 2026-09-12 run incorrectly retained legacy evaluation labels. Its
-weight updates used the revised training labels, but its validation scores and
-checkpoint selection are superseded. The saved epoch 1 and epoch 2 weights were
-reselected using the regenerated, decontaminated holdouts in
-`training/data/processed/no-enumeration-aligned-eval-20260912/`. Results and the
-separate candidate export are recorded under
-`training/artifacts/no-enumeration-20260912/candidate-aligned/` and
-`training/artifacts/no-enumeration-20260912/ALIGNED-COMPARISON.md`.
-Runtime inspection comparisons should retain the same 12-unit chunk threshold.
-
-New dataset summaries and shard manifests record `excluded_proxy_punctuation`.
-Training commands reject legacy data that lacks the current proxy definition;
-readers also reject explicit enumeration labels. Existing cached datasets must
-be regenerated in fresh directories before they can be used for a new run.
-
-## All locally cached corpora
-
-The preparation tools also support exhausting the downloaded text sources:
-
-- `prepare_retraining_base.mjs --all-local-clue 1` reads all text-bearing
-  training, development, test and trial entries in the four CLUE archives.
-  Original model holdout ownership is preserved. Additional documents are
-  eligible for training, with duplicates of holdout documents excluded by a
-  SHA-256 hash of normalized Han text. Archive label metadata is not prose.
-- `prepare_full_wikipedia_data.mjs --max-samples-per-document 0
-  --max-sequence-length 0` retains all eligible adjacent pairs from every
-  downloaded Wikipedia article, without per-document or sequence-length caps.
-- `prepare_synthetic_data.py --target-samples 0 --max-samples-per-document 0
-  --max-sequence-length 0 --source-manifest <previous-manifest>` reads every
-  row of the cached Parquet files recorded in that manifest. An unlimited
-  target requires a source manifest and does not discover further remote files.
-
-Zero disables the specified cap. Defaults remain bounded. Deduplication,
-holdout exclusions, Wikipedia article extraction and the synthetic Chinese-text
-quality rule (at least 80 Han characters and at least 70% Han among Han/Latin
-letters) still apply. Enumeration commas remain excluded as boundary proxies.
-The base preparation writes holdout document hashes for both full preparers.
-
-Audit the expanded training manifest against the established corrected
-holdouts before training. When the task definition is unchanged, their hashes
-must remain unchanged; resolve newly introduced training overlap rather than
-silently changing the evaluation population.
-
-The `all-local-192ch-12conv-20260912` experiment safely stopped the unfinished
-third epoch of the smaller run. It transfers compatible weights from the best
-completed no-enumeration epoch 2 into the larger model and starts a new optimizer
-for the changed architecture. It runs two full epochs initially, using learning
-rate 0.0003, domain-weight power 0.65, gradient clipping at 1.0 and equal weights
-for overall and mean-domain validation accuracy when selecting a checkpoint.
-
-The ignored directory
-`training/artifacts/all-local-192ch-12conv-20260912/` contains `run.json`,
-`run_pipeline.py`, `status.json` and individual preparation/training logs.
-After preparation, `corpus-coverage.json` records actual counts and filters,
-and `training-estimate.json` records the duration estimate. The pipeline audits
-the established holdouts, trains, exports a separate candidate and compares it
-with the smaller model using the same frozen JavaScript evaluation code.
-It does not replace the extension's bundled model.
+See [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for the currently shipped model and
+[HISTORICAL_TRAINING.md](HISTORICAL_TRAINING.md) for previous experiment records.

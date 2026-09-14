@@ -15,11 +15,146 @@ const {
   visualLength,
 } = require("../src/backend/chunker.js");
 
-function withModel(scoreTokens) {
-  const context = vm.createContext({ SuperReaderModelBackend: { scoreTokens }, Intl });
+function withModel(scoreTokens, inputRepresentation) {
+  const context = vm.createContext({ SuperReaderModelBackend: {
+    scoreTokens, getModelInfo: () => ({ inputRepresentation }),
+  }, Intl });
   vm.runInContext(readFileSync(join(__dirname, "../src/backend/chunker.js"), "utf8"), context);
   return context.SuperReaderChunker;
 }
+
+test("context model receives punctuation and numbers without cutting inside times", () => {
+  const calls = [];
+  const chunker = withModel((tokens) => {
+    calls.push(Array.from(tokens));
+    return tokens.slice(1).map(() => 0);
+  }, "unicode-context-v1");
+  const text = "女：我们计划明天上午8:30出发前往目的地，请记住。";
+  assert.deepEqual(Array.from(chunker.splitClauses(text)), ["女：我们计划明天上午8:30出发前往目的地，", "请记住。"]);
+  const chunks = Array.from(chunker.chunkText(text, { segmenter: null }));
+  assert.equal(chunks.join(""), text);
+  assert.ok(calls.some((tokens) => tokens.join("").includes("女:")));
+  assert.ok(calls.some((tokens) => tokens.join("").includes("8:30")));
+  assert.ok(chunks.some((part) => part.includes("8:30")));
+  assert.deepEqual(Array.from(chunker.splitClauses("价格1,000.50元，稍后结算。")), ["价格1,000.50元，", "稍后结算。"]);
+});
+
+test("context tokenization normalizes input while retaining original UTF-16 offsets", () => {
+  const chunker = withModel(() => [], "unicode-context-v1");
+  const text = "  女：８:３０  café ﬃ𠮷🌈 ";
+  const tokens = Array.from(chunker.tokenizeContext(text));
+  assert.equal(tokens.map((t) => t.segment).join(""), "女:8:30 café ffi𠮷🌈");
+  assert.equal(tokens.find((t) => t.segment === "𠮷").index, text.indexOf("𠮷"));
+  assert.equal(tokens.find((t) => t.segment === "🌈").index, text.indexOf("🌈"));
+  assert.equal(tokens.filter((t) => t.index === text.indexOf("ﬃ")).length, 3);
+});
+
+test("every training proxy pre-splits clauses and only over-threshold clauses reach the model", () => {
+  const { proxy_punctuation } = require("../training/text-policy.json");
+  const twelve = "甲乙丙丁戊己庚辛壬癸子丑";
+  const thirteen = twelve + "寅";
+  for (const punctuation of [...proxy_punctuation, "﹐", "．", "﹔", "‼", "⁇"]) {
+    const inputs = [];
+    const chunker = withModel((tokens) => {
+      inputs.push(tokens.join(""));
+      return tokens.slice(1).map(() => 0);
+    }, "unicode-context-v1");
+    const text = `${twelve}${punctuation}${thirteen}${punctuation}短句`;
+    assert.deepEqual(Array.from(chunker.splitClauses(text)),
+      [`${twelve}${punctuation}`, `${thirteen}${punctuation}`, "短句"], punctuation);
+    const chunks = Array.from(chunker.chunkText(text, { segmenter: null }));
+    assert.deepEqual(inputs, [thirteen], punctuation);
+    assert.equal(chunks.join(""), text);
+  }
+});
+
+test("context pre-splitting preserves non-proxies, whitespace, and normalized numeric punctuation", () => {
+  const inputs = [];
+  const chunker = withModel((tokens) => {
+    inputs.push(tokens.join(""));
+    return tokens.slice(1).map(() => 0);
+  }, "unicode-context-v1");
+  const text = '女：课程（A）和《阅读》在明天上午８：３０开始\n价格１，０００．５０元﹐请提前准备。';
+  const clauses = Array.from(chunker.splitClauses(text));
+  assert.deepEqual(clauses, [text.slice(0, text.indexOf("﹐") + 1), "请提前准备。"]);
+  assert.equal(chunker.chunkText(text, { segmenter: null }).join(""), text);
+  assert.deepEqual(inputs, ['女:课程(A)和《阅读》在明天上午8:30开始 价格1,000.50元']);
+  assert.equal(chunker.visualLength("甲乙丙丁戊己庚辛壬癸子丑 English"), 13);
+});
+
+test("context punctuation tokens cannot strand opening or closing marks at a model cut", () => {
+  for (const [opening, closing] of [['"', '"'], ['“', '”'], ['（', '）'], ['《', '》']]) {
+    const text = `前面的文字${opening} 甲乙丙丁戊己庚辛壬癸子丑${closing}后面继续阅读`;
+    const forbidden = [text.indexOf(opening) + opening.length + 1, text.lastIndexOf(closing)];
+    const chunker = withModel((tokens) => tokens.slice(1).map((token) => (
+      token === closing.normalize("NFKC") || token === "甲" ? 100 : 0
+    )), "unicode-context-v1");
+    const chunks = Array.from(chunker.chunkText(text, { segmenter: null }));
+    let offset = 0;
+    for (const chunk of chunks.slice(0, -1)) {
+      offset += chunk.length;
+      assert.ok(!forbidden.includes(offset), `${text}: ${chunks.join("|")}`);
+    }
+    assert.equal(chunks.join(""), text);
+  }
+});
+
+test("enumeration clauses protect first, middle and last items and skip inference", () => {
+  const first = "前".repeat(24);
+  const middle = "甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥天地";
+  const last = "后".repeat(24);
+  const inputs = [];
+  const chunker = withModel((tokens) => {
+    inputs.push(tokens.join(""));
+    return tokens.slice(1).map((token) => middle.includes(token) ? 1000 : 0);
+  }, "unicode-context-v1");
+  for (const text of [`${first}、${middle}、${last}`, `${first}、${last}`, `、${first}`, `${last}、`]) {
+    assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter: null })), [text]);
+  }
+  assert.deepEqual(inputs, [], "protected enumeration clauses need no model scores");
+});
+
+test("enumeration clauses preserve Unicode and empty items even beyond the model window length", () => {
+  for (const comma of ["、", "､", "﹑"]) {
+    const middleItems = ["𠮷🌈ﬃ甲乙丙丁戊己庚辛壬癸子丑", "甲".repeat(600), "", "乙".repeat(24)];
+    const text = ["首项", ...middleItems, "尾项"].join(comma);
+    const chunker = withModel(() => assert.fail("enumeration must skip inference"), "unicode-context-v1");
+    const chunks = Array.from(chunker.chunkText(text, { segmenter: null }));
+    assert.deepEqual(chunks, [text]);
+  }
+});
+
+test("enumeration protection ends at proxy boundaries and other clauses still split", () => {
+  const { proxy_punctuation } = require("../training/text-policy.json");
+  const item = "甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥天地";
+  for (const punctuation of proxy_punctuation) {
+    const inputs = [];
+    const chunker = withModel((tokens) => {
+      inputs.push(tokens.join(""));
+      return tokens.slice(1).map(() => 0);
+    }, "unicode-context-v1");
+    const list = `${item}、${item}`;
+    const text = `${item}${punctuation}${list}${punctuation}${item}`;
+    const clauses = Array.from(chunker.chunkTextByClause(text, { segmenter: null }), (chunks) => Array.from(chunks));
+    assert.equal(clauses.flat().join(""), text);
+    assert.deepEqual(clauses[1], [`${list}${punctuation}`]);
+    assert.ok(clauses[0].length > 1 && clauses[2].length > 1);
+    assert.ok([...clauses[0], ...clauses[2]].every((chunk) => chunker.visualLength(chunk) <= 12));
+    assert.deepEqual(inputs, [item, item]);
+  }
+});
+
+test("backend process returns no dividers in enumeration clauses and preserves later UTF-16 offsets", () => {
+  const { process } = require("../src/backend/chunker.js");
+  const middle = "我们计划明天上午８：３０出发前往目的地";
+  const text = `𠮷🌈首项、${middle}、这是可以继续正常切分的最后一个列表项`;
+  assert.deepEqual(process([text]), [[]]);
+  const following = "而是帮助大脑更快地识别信息结构。";
+  const [followingCuts] = process([following]);
+  assert.ok(followingCuts.length > 0);
+  const prefix = `${text}，`;
+  assert.deepEqual(process([prefix + following]), [followingCuts.map((cut) => prefix.length + cut)]);
+});
 
 test("model chunks preserve the complete source text", () => {
   const text = "我一直在思考明天早上的早餐吃什么";
@@ -52,8 +187,7 @@ test("a model chunk never crosses a punctuation boundary", () => {
 
 test("keeps closing quotes with the punctuation-delimited clause", () => {
   assert.deepEqual(splitClauses("他说：“明天见。”然后离开。"), [
-    "他说：",
-    "“明天见。”",
+    "他说：“明天见。”",
     "然后离开。",
   ]);
 });
@@ -76,27 +210,19 @@ test("keeps straight double quotes inside the surrounding punctuation clause", (
   assert.deepEqual(splitClauses(text), [text]);
 });
 
-test("treats punctuation and newlines as hard boundaries", () => {
+test("only proxy punctuation creates hard boundaries for the bundled context model", () => {
   assert.deepEqual(splitClauses("清晰、效率，稳定；自然：继续\n结束。"), [
-    "清晰、",
-    "效率，",
+    "清晰、效率，",
     "稳定；",
-    "自然：",
-    "继续\n",
-    "结束。",
+    "自然：继续\n结束。",
   ]);
 });
 
-test("treats parentheses and title marks as hard clause boundaries", () => {
+test("parentheses and title marks remain within punctuation clauses", () => {
   const text = "语料库（或包含项目）用于训练/微调《家庭晚餐》。";
 
-  assert.deepEqual(splitClauses(text), [
-    "语料库（",
-    "或包含项目）",
-    "用于训练/微调《",
-    "家庭晚餐》。",
-  ]);
-  assert.equal(buildVisualChunks(text).some((chunk) => chunk.separated), false);
+  assert.deepEqual(splitClauses(text), [text]);
+  assert.equal(buildVisualChunks(text).map((chunk) => chunk.text).join(""), text);
 });
 
 test("ordinary and numeric slashes stay inside clauses in both widths", () => {
@@ -111,19 +237,11 @@ test("ordinary and numeric slashes stay inside clauses in both widths", () => {
   }
 });
 
-test("title marks pre-split a title without drawing a divider beside it", () => {
+test("title marks stay inside the clause and the model preserves the source", () => {
   const text = "美國重口食人族電影《家庭晚餐》，";
 
-  assert.deepEqual(splitClauses(text), [
-    "美國重口食人族電影《",
-    "家庭晚餐》，",
-  ]);
-  assert.doesNotMatch(
-    buildVisualChunks(text)
-      .map((chunk) => `${chunk.separated ? "｜" : ""}${chunk.text}`)
-      .join(""),
-    /《｜|｜《|》｜|｜》/u,
-  );
+  assert.deepEqual(splitClauses(text), [text]);
+  assert.equal(buildVisualChunks(text).map((chunk) => chunk.text).join(""), text);
 });
 
 test("balance favors the center for close scores but a stronger model choice can win", () => {
@@ -416,25 +534,22 @@ test("renders the reported Euler-method example with model scores", () => {
   assert.deepEqual(splitClauses(text), [
     "欧拉法是在积分无法直接计算时，",
     '用"无数个小矩形累加"来近似积分，',
-    "因此它被称为一种数值积分方法（",
-    "numerical integration method）。",
+    "因此它被称为一种数值积分方法（numerical integration method）。",
   ]);
   assert.deepEqual(chunkText(text), [
     "欧拉法是在积分",
     "无法直接计算时，",
-    '用"无数个小矩形累加"',
-    '来近似积分，',
+    '用"无数个小矩形',
+    '累加"来近似积分，',
     "因此",
-    "它被称为一种数值积分方法（",
-    "numerical integration method）。",
+    "它被称为",
+    "一种数值积分方法（numerical integration method）。",
   ]);
 });
 
 test("model scoring keeps 方向盘 together at the current length threshold", () => {
   assert.deepEqual(chunkText("驾驶员会出于本能进行向左打方向盘等避险动作，"), [
-    "驾驶员会",
-    "出于本能",
-    "进行",
+    "驾驶员会出于本能进行",
     "向左打方向盘等避险动作，",
   ]);
 });
@@ -483,8 +598,8 @@ test("never loses whitespace or mixed-language content", () => {
   assert.equal(chunkText(text).join(""), text);
 });
 
-test("visual length counts Chinese characters and numeric expressions", () => {
-  assert.equal(visualLength("你好，Reader 2.0！"), 3);
+test("visual length counts Chinese characters, numeric expressions and Latin words", () => {
+  assert.equal(visualLength("你好，Reader 2.0！"), 4);
 });
 
 test("non-Chinese chunks remain unprocessed", () => {

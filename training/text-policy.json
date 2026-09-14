@@ -1,0 +1,9 @@
+{
+  "standard": "unicode-context-v1",
+  "input_representation": "unicode-context-v1",
+  "tokenization": "character",
+  "excluded_proxy_punctuation": ["、", "：", ":"],
+  "proxy_punctuation": ["，", ",", "。", ".", "！", "!", "？", "?", "；", ";", "…"],
+  "normalization": "NFKC; collapse whitespace to ASCII space; trim fragment ends",
+  "numeric_punctuation": "Retain periods and commas between decimal digits"
+}

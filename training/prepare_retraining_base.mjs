@@ -8,6 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { SOURCES, buildAdjacentSamples, documentsFromSource } from "./prepare_smoke_data.mjs";
+import { DATA_POLICY, validProxyLabel } from "./text_policy.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const raw = join(root, "training/data/raw");
@@ -141,7 +142,7 @@ async function main() {
           trainingHashes.add(fingerprint);
         }
         const samples = buildAdjacentSamples(document, { tokenization: "character" });
-        if (samples.some(({ punctuation }) => punctuation.includes("、"))) throw new Error("Enumeration target generated");
+        if (samples.some(({ punctuation }) => !validProxyLabel(punctuation))) throw new Error("Invalid proxy target generated");
         if (samples.length) await handles[split].write(samples.map((sample) => JSON.stringify(sample)).join("\n") + "\n");
         counts[split][source.domain] += samples.length;
       }
@@ -187,7 +188,7 @@ async function main() {
     seed: previous.seed,
     tokenization: "character",
     purpose: "Revised proxies in every split, with original document ownership preserved; full preparation adds Wikipedia training pairs",
-    excluded_proxy_punctuation: ["、"],
+    ...DATA_POLICY,
     all_local_clue_entries: allLocalClue ? LOCAL_CLUE_ENTRIES : null,
     corpus_counts: corpusCounts,
     reference_directory: reference,

@@ -13,16 +13,13 @@ import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { DATA_POLICY, PROXY_PUNCTUATION } from "./text_policy.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const RAW_DIR = join(SCRIPT_DIR, "data", "raw");
 const DEFAULT_PROCESSED_DIR = join(SCRIPT_DIR, "data", "processed");
 const SEGMENTER = new Intl.Segmenter("zh-CN", { granularity: "word" });
 const HAN_CHARACTER = /\p{Script=Han}/u;
-// List items stay together; enumeration commas are removed during cleaning.
-const PROXY_PUNCTUATION = new Set([
-  "，", ",", "。", ".", "！", "!", "？", "?", "；", ";", "：", ":", "…",
-]);
 const LENGTH_BUCKET_MAXIMUMS = [8, 16, 32];
 
 export const SOURCES = [
@@ -83,36 +80,32 @@ function normalizeDocument(text) {
 }
 
 function cleanFragment(text) {
-  return normalizeDocument(text)
-    .replace(/[\p{P}\p{S}]+/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim();
+  return normalizeDocument(text);
 }
 
 function tokenize(text, tokenization) {
   if (tokenization === "character") {
-    return Array.from(text).filter((character) => HAN_CHARACTER.test(character));
+    return Array.from(text);
   }
 
   return Array.from(SEGMENTER.segment(text))
-    .filter((item) => item.isWordLike && HAN_CHARACTER.test(item.segment))
-    .map((item) => Array.from(item.segment)
-      .filter((character) => HAN_CHARACTER.test(character))
-      .join(""))
-    .filter(Boolean);
+    .map((item) => item.segment);
 }
 
 function contentCharacterLength(text) {
-  return Array.from(text)
-    .filter((character) => HAN_CHARACTER.test(character)).length;
+  return Array.from(text).length;
 }
 
 export function splitIntoFragments(text) {
   const fragments = [];
   let buffer = "";
 
-  for (const character of Array.from(normalizeDocument(text))) {
-    if (!PROXY_PUNCTUATION.has(character)) {
+  const characters = Array.from(normalizeDocument(text));
+  for (let position = 0; position < characters.length; position += 1) {
+    const character = characters[position];
+    const numericSeparator = /[.,]/u.test(character) &&
+      /^\p{Nd}$/u.test(characters[position - 1] || "") && /^\p{Nd}$/u.test(characters[position + 1] || "");
+    if (!PROXY_PUNCTUATION.has(character) || numericSeparator) {
       buffer += character;
       continue;
     }
@@ -139,6 +132,7 @@ export function buildAdjacentSamples(document, options = {}) {
   for (let index = 0; index < fragments.length - 1; index += 1) {
     const leftText = fragments[index].text;
     const rightText = fragments[index + 1].text;
+    if (!/[\p{L}\p{N}]/u.test(leftText) || !/[\p{L}\p{N}]/u.test(rightText)) continue;
     const leftCharacterLength = contentCharacterLength(leftText);
     const rightCharacterLength = contentCharacterLength(rightText);
 
@@ -162,6 +156,7 @@ export function buildAdjacentSamples(document, options = {}) {
         leftCharacterLength / (leftCharacterLength + rightCharacterLength)
       ),
       tokenization,
+      input_representation: DATA_POLICY.input_representation,
     });
   }
 
@@ -841,12 +836,12 @@ async function main() {
 
   const summary = {
     seed: options.seed,
-    excluded_proxy_punctuation: ["、"],
+    ...DATA_POLICY,
     tokenization: options.tokenization,
     candidate_positions: options.tokenization === "word"
       ? "between adjacent Intl.Segmenter word tokens"
-      : "between every adjacent Han character",
-    non_han_policy: "excluded before model input",
+      : "between every adjacent Unicode code point",
+    non_han_policy: "preserved as input context",
     max_side_characters: null,
     sample_selection: "all eligible samples unless an explicit per-domain cap is provided",
     domain_balancing: false,

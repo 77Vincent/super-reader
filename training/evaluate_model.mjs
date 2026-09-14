@@ -7,15 +7,16 @@ import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { arch, cpus, platform } from "node:os";
-import backend from "../src/backend/inference.js";
-import chunker from "../src/backend/chunker.js";
-import modelData from "../src/boundary-model-data.js";
+import { createContext, runInContext } from "node:vm";
+import { DATA_POLICY, requireDataPolicy, validProxyLabel } from "./text_policy.mjs";
+
+let backend, chunker, modelData;
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
-const EVALUATION_STANDARD = "no-enumeration-v1";
+const EVALUATION_STANDARD = DATA_POLICY.standard;
 
-/** Require regenerated no-enumeration data, not merely filtered legacy rows. */
+/** Require regenerated context-preserving data, not filtered legacy rows. */
 export async function loadEvaluationSamples(input, perDomain = 500, seed = "20260911") {
   const inputPath = resolve(project, input);
   const summaryPath = resolve(dirname(inputPath), "summary.json");
@@ -24,14 +25,10 @@ export async function loadEvaluationSamples(input, perDomain = 500, seed = "2026
     summaryBytes = readFileSync(summaryPath);
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
-    throw new Error(`Missing evaluation metadata: ${summaryPath}. Restore the corrected no-enumeration evaluation split together with its summary.json; see training/README.md for the benchmark files.`);
+    throw new Error(`Missing evaluation metadata: ${summaryPath}. Restore the current evaluation split together with its summary.json; see training/README.md.`);
   }
   const summary = JSON.parse(summaryBytes);
-  if (summary.tokenization !== "character" ||
-      !Array.isArray(summary.excluded_proxy_punctuation) ||
-      !summary.excluded_proxy_punctuation.includes("、")) {
-    throw new Error(`Evaluation requires ${EVALUATION_STANDARD}: ${summaryPath} must declare character tokenization and exclude 、. Regenerate the original documents in a fresh directory; filtering legacy rows is insufficient.`);
-  }
+  requireDataPolicy(summary);
 
   const sampler = createDomainSampler(perDomain, seed);
   const stream = createReadStream(inputPath);
@@ -43,8 +40,8 @@ export async function loadEvaluationSamples(input, perDomain = 500, seed = "2026
     if (typeof record.punctuation !== "string" || !record.punctuation.length) {
       throw new Error(`Missing punctuation proxy label: ${record.id}; regenerate the evaluation split`);
     }
-    if (record.punctuation.includes("、")) {
-      throw new Error(`Enumeration proxy label remains: ${record.id}; regenerate the evaluation split`);
+    if (!validProxyLabel(record.punctuation)) {
+      throw new Error(`Invalid proxy label remains: ${record.id}; regenerate the evaluation split`);
     }
     sampler.add(record);
   }
@@ -58,6 +55,7 @@ export async function loadEvaluationSamples(input, perDomain = 500, seed = "2026
   return {
     counts, records, inputSha256,
     standard: EVALUATION_STANDARD,
+    inputRepresentation: summary.input_representation,
     excludedProxyPunctuation: summary.excluded_proxy_punctuation,
     summaryPath, summarySha256: sha256(summaryBytes),
   };
@@ -155,7 +153,8 @@ const confidenceBucket = (p) => p < 0.5 ? "0-50%" : p < 0.9 ? "50-90%" : p < 0.9
 
 function optionsFrom(args) {
   const options = {
-    input: "training/data/processed/no-enumeration-aligned-eval-20260912/validation.jsonl", "per-domain": "500", seed: "20260911",
+    input: "training/data/processed/unicode-context-192ch-12conv-20260913-eval/validation.jsonl", "per-domain": "500", seed: "20260911",
+    model: "training/artifacts/unicode-context-192ch-12conv-20260913/candidate/boundary-model-data.js",
     cases: "training/evaluation-cases.json", output: "training/artifacts/model-baseline.json",
   };
   for (let i = 0; i < args.length; i += 2) {
@@ -172,6 +171,16 @@ async function main() {
   const options = optionsFrom(process.argv.slice(2));
   const evaluation = await loadEvaluationSamples(options.input, Number(options["per-domain"]), options.seed);
   const { counts, records } = evaluation;
+  const context = createContext({ atob, Intl, performance });
+  for (const path of [options.model, "src/backend/inference.js", "src/backend/chunker.js"]) {
+    runInContext(readFileSync(resolve(project, path), "utf8"), context, { filename: path });
+  }
+  backend = context.SuperReaderModelBackend;
+  chunker = context.SuperReaderChunker;
+  modelData = context.SuperReaderBoundaryModelData;
+  if (backend.getModelInfo().inputRepresentation !== evaluation.inputRepresentation) {
+    throw new Error("Model input representation differs from the evaluation data; use a matching exported candidate");
+  }
   console.log(`Selected ${records.length} samples: ${JSON.stringify(counts)} available by domain`);
 
   const overall = emptyMetrics();
@@ -181,8 +190,8 @@ async function main() {
   // Exclude lazy model decoding and initial JIT warm-up from per-example timings.
   for (let i = 0; i < 5; i++) backend.scoreTokens(Array.from("我一直在思考明天早上的早餐吃什么"));
   for (const record of records) {
-    if (record.tokenization !== "character" || record.tokens.some((token) => !/^\p{Script=Han}$/u.test(token))) {
-      throw new Error(`Expected individual Han-character tokens: ${record.id}`);
+    if (record.tokenization !== "character" || record.tokens.some((token) => Array.from(token).length !== 1)) {
+      throw new Error(`Expected individual Unicode code-point tokens: ${record.id}`);
     }
     const started = performance.now();
     const scores = backend.scoreTokens(record.tokens);
@@ -226,10 +235,11 @@ async function main() {
     createdAt: new Date().toISOString(),
     model: { ...backend.getModelInfo(),
       parameters: Object.values(modelData.tensors).reduce((sum, tensor) => sum + tensor.length, 0),
-      sourceSha256: sha256(readFileSync(resolve(project, "src/boundary-model-data.js"))),
+      source: options.model, sourceSha256: sha256(readFileSync(resolve(project, options.model))),
     },
     evaluation: {
       standard: evaluation.standard, excludedProxyPunctuation: evaluation.excludedProxyPunctuation,
+      inputRepresentation: evaluation.inputRepresentation,
       summaryPath: evaluation.summaryPath, summarySha256: evaluation.summarySha256,
       input: options.input, inputSha256: evaluation.inputSha256, availableCounts: counts,
       seed: options.seed, perDomainLimit: Number(options["per-domain"]),

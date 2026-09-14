@@ -17,15 +17,14 @@ test("training pairs use adjacent punctuation fragments with one target gap", as
   assert.equal(samples[1].document_id, samples[0].document_id);
 });
 
-test("colons and ellipses create training boundaries", async () => {
+test("colons remain context while ellipses create training boundaries", async () => {
   const { splitIntoFragments, buildAdjacentSamples } = await import(
     "../training/prepare_smoke_data.mjs"
   );
   const text = "先说明：这里需要停顿……然后继续...最后结束。";
 
   assert.deepEqual(splitIntoFragments(text), [
-    { text: "先说明", punctuation: ":" },
-    { text: "这里需要停顿", punctuation: "......" },
+    { text: "先说明:这里需要停顿", punctuation: "......" },
     { text: "然后继续", punctuation: "..." },
     { text: "最后结束", punctuation: "。" },
   ]);
@@ -37,7 +36,7 @@ test("colons and ellipses create training boundaries", async () => {
   });
   assert.deepEqual(
     samples.map((sample) => sample.punctuation),
-    [":", "......", "..."],
+    ["......", "..."],
   );
 });
 
@@ -58,8 +57,8 @@ test("enumeration commas keep list items together without creating training targ
     assert.equal(samples.length, 1);
     const [sample] = samples;
     assert.equal(sample.punctuation, ",");
-    assert.equal(sample.tokens.slice(0, sample.target_index + 1).join(""), "我买了苹果香蕉");
-    assert.equal(sample.tokens.slice(sample.target_index + 1).join(""), "准备制作果汁沙拉");
+    assert.equal(sample.tokens.slice(0, sample.target_index + 1).join(""), "我买了苹果、香蕉");
+    assert.equal(sample.tokens.slice(sample.target_index + 1).join(""), "准备制作果汁、沙拉");
   }
 });
 
@@ -72,7 +71,7 @@ test("regenerated validation and test use the revised proxies and retain documen
     assert.equal(result.samples.length, 1);
     const [sample] = result.samples;
     assert.equal(sample.punctuation, ",");
-    assert.equal(sample.tokens.slice(0, sample.target_index + 1).join(""), "我买了苹果香蕉");
+    assert.equal(sample.tokens.slice(0, sample.target_index + 1).join(""), "我买了苹果、香蕉");
     assert.equal(sample.tokens.slice(sample.target_index + 1).join(""), "准备做果汁");
   }
   const empty = samplesForReferenceDocument({ id: "test-doc", domain: "fixture", text: "苹果、香蕉。" }, owners);
@@ -112,7 +111,7 @@ test("corrected holdouts exclude known training pairs and reject enumeration lab
     args[4] = join(directory, "invalid-output");
     const rejected = spawnSync("python3", args, { encoding: "utf8" });
     assert.notEqual(rejected.status, 0);
-    assert.match(rejected.stderr, /Enumeration label remains/u);
+    assert.match(rejected.stderr, /Invalid proxy label remains/u);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
@@ -156,7 +155,7 @@ test("training uses the latest Chinese Wikipedia current-article dump", () => {
   assert.doesNotMatch(preparation, /zhwiki-latest-pages-meta-history/u);
 });
 
-test("training input removes all punctuation while keeping the source signal", async () => {
+test("training input hides the target proxy and retains quotation context", async () => {
   const { buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
   const [sample] = buildAdjacentSamples({
     id: "fixture:2",
@@ -165,7 +164,7 @@ test("training input removes all punctuation while keeping the source signal", a
   });
 
   assert.equal(sample.punctuation, ",");
-  assert.doesNotMatch(sample.tokens.join(""), /[，。“”]/u);
+  assert.equal(sample.tokens.join(""), "模型只看文字“标点”不会泄露");
 });
 
 test("training sides have no character-length ceiling", async () => {
@@ -398,7 +397,7 @@ test("comparison modes keep the same text and gold boundary but change candidate
   assert.ok(character.tokens.length > word.tokens.length);
 });
 
-test("both comparison modes exclude non-Chinese tokens", async () => {
+test("both comparison modes retain non-Chinese context", async () => {
   const { buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
   const document = {
     id: "fixture:han-only",
@@ -408,7 +407,6 @@ test("both comparison modes exclude non-Chinese tokens", async () => {
 
   for (const tokenization of ["word", "character"]) {
     const [sample] = buildAdjacentSamples(document, { tokenization });
-    assert.equal(sample.tokens.join(""), "中文模型");
-    assert.ok(sample.tokens.every((token) => /^\p{Script=Han}+$/u.test(token)));
+    assert.equal(sample.tokens.join(""), "Synthetic 中文 20AI 模型");
   }
 });

@@ -236,6 +236,7 @@
         checkpointSha256: modelData.checkpointSha256,
         testAccuracy: modelData.testAccuracy,
         tokenization: modelData.tokenization,
+        inputRepresentation: modelData.inputRepresentation || "han-only-v1",
         candidatePositions: modelData.candidatePositions,
         vocabularySize: Object.keys(modelData.vocabulary).length,
         channels: CHANNELS,

@@ -15,6 +15,7 @@ import {
 import { createInterface } from "node:readline";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { DATA_POLICY, requireDataPolicy } from "./text_policy.mjs";
 
 import {
   buildAdjacentSamples,
@@ -231,9 +232,11 @@ async function writeJsonAtomic(path, value) {
   await rename(temporaryPath, path);
 }
 
-function sourceIdentity(sourceDir, dump, index) {
+function sourceIdentity(sourceDir, dump, index, summary) {
   return {
     source_summary: join(sourceDir, "summary.json"),
+    source_summary_sha256: createHash("sha256").update(JSON.stringify(summary)).digest("hex"),
+    input_representation: DATA_POLICY.input_representation,
     dump_bytes: dump.size,
     dump_mtime_ms: dump.mtimeMs,
     index_bytes: index.size,
@@ -313,21 +316,21 @@ async function rebuildTrainingBloom(outputDir, shardCount, bloom) {
 async function main() {
   const options = parseArguments(process.argv.slice(2));
   const sourceSummary = JSON.parse(await readFile(join(options.sourceDir, "summary.json"), "utf8"));
-  if (!sourceSummary.excluded_proxy_punctuation?.includes("、")) {
-    throw new Error("Source data uses an outdated proxy definition; regenerate every split in a fresh directory");
-  }
+  requireDataPolicy(sourceSummary);
   await mkdir(options.outputDir, { recursive: true });
   const manifestPath = join(options.outputDir, "manifest.json");
   try {
     const existing = JSON.parse(await readFile(manifestPath, "utf8"));
+    requireDataPolicy(existing);
     console.log(JSON.stringify(existing, null, 2));
     return;
-  } catch {
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
     // Continue a partial build or start a new one.
   }
 
   const [dump, index] = await Promise.all([stat(DUMP_PATH), stat(INDEX_PATH)]);
-  const identity = sourceIdentity(options.sourceDir, dump, index);
+  const identity = sourceIdentity(options.sourceDir, dump, index, sourceSummary);
   const statePath = join(options.outputDir, "preparation-state.json");
   let state = null;
   try {
@@ -462,11 +465,11 @@ async function main() {
   }
   const manifest = {
     format: "super-reader-sharded-training-v1",
-    excluded_proxy_punctuation: ["、"],
+    ...DATA_POLICY,
     source: "full downloaded Chinese Wikipedia dump plus non-Wikipedia CLUE training data",
     source_identity: identity,
     evaluation_source_dir: relative(PROJECT_DIR, options.sourceDir),
-    vocabulary_path: "training/artifacts/data-scale-wiki-250k-8conv-64ch-6ep/boundary-smoke-vocabulary.json",
+    vocabulary_path: relative(PROJECT_DIR, join(options.outputDir, "vocabulary.json")),
     bloom_filter: {
       bytes: BLOOM_BYTES,
       hashes: BLOOM_HASHES,

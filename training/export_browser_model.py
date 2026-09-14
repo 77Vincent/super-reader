@@ -86,6 +86,7 @@ def main() -> None:
         "bestEpoch": metrics["best_epoch"],
         "testAccuracy": metrics["test"]["accuracy"],
         "tokenization": metrics.get("tokenization", "unspecified"),
+        "inputRepresentation": metrics.get("input_representation", "han-only-v1"),
         "candidatePositions": metrics.get("candidate_positions", "unspecified"),
         "architecture": {
             "channels": int(architecture["channels"]),

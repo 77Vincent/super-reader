@@ -69,7 +69,7 @@ with tempfile.TemporaryDirectory() as directory:
  source.write_text(json.dumps({'synthetic_source':{'dataset':p.DATASET,'config':p.CONFIG,'split':p.SPLIT,'downloads':downloads}}))
  base=root/'base.json'
  stats=p.empty_statistics(10); stats['domain_samples']={'news':0}
- base.write_text(json.dumps({'excluded_proxy_punctuation':['、'],'domains':['news'],'shards':[],
+ base.write_text(json.dumps({**p.DATA_POLICY,'domains':['news'],'shards':[],
                             'statistics':stats,'evaluation_source_dir':str(data),'vocabulary_path':'vocabulary.json'}))
  p.urllib.request.urlopen=lambda *args,**kwargs: (_ for _ in ()).throw(AssertionError('Unexpected network access'))
  for target,expected_count,expected_rows in [(0,3,4),(1,1,1)]:
