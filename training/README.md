@@ -110,6 +110,11 @@ test accuracy versus 60.85% for Transformer and led in all five test domains.
 The experiment is closed; its dedicated scripts and generated artifacts were
 removed after preserving the setup, results, limitations and audit fingerprints.
 
+Recursive fragment rescoring was evaluated and rejected: the example comparison
+showed higher inference cost without a clear quality benefit. The backend retains
+one-time clause scoring. Only the [conclusion](SCORING_COMPARISON.md) is retained;
+the experimental option, scripts, tests and generated reports have been removed.
+
 ```bash
 npm test
 npm run smoke:data

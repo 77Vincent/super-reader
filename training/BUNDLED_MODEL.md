@@ -64,6 +64,11 @@ and selected gaps.
 Rendered text retains its original punctuation, spacing and character widths.
 Only model-selected cuts inside a clause receive visual dividers.
 
+The chunker scores the clause once and reuses its logits while
+recursively choosing cuts with the current fragment's length balance.
+Recursive model rescoring was rejected and removed; see the
+[experiment conclusion](SCORING_COMPARISON.md).
+
 The completed [architecture smoke](CNN_TRANSFORMER_EXPERIMENT.md) was a separate
 experiment; its scripts and generated artifacts have been removed. The full run's
 source guard includes backend files, so a finalizer uses the original
