@@ -92,7 +92,7 @@
     return null;
   }
 
-  function splitClauses(text, includeEnumeration = true) {
+  function splitClauses(text) {
     if (!text) return [];
 
     const characters = Array.from(text);
@@ -102,7 +102,7 @@
     const normalized = USES_CONTEXT ? normalizeContextTokens(text) : [];
     const normalizedCharacters = normalized.map((token) => token.segment);
     const boundaryOffsets = new Set(normalized.filter((token, index) => (
-      isContextProxy(normalizedCharacters, index) || (includeEnumeration && token.segment === "、")
+      isContextProxy(normalizedCharacters, index) || token.segment === "、"
     )).map((token) => token.index));
     let sourceOffset = 0;
     const sourceOffsets = characters.map((character) => {
@@ -390,13 +390,7 @@
     const segmenter = options.segmenter === undefined
       ? createSegmenter(options.locale)
       : options.segmenter;
-    // Identify complete lists before splitting on their enumeration commas, so
-    // both the first and the last item retain protection from model cuts.
-    return splitClauses(text, false).flatMap((clause) => (
-      USES_CONTEXT && clause.normalize("NFKC").includes("、")
-        ? splitClauses(clause).map((item) => [item])
-        : [chunkByModel(clause, segmenter)]
-    ));
+    return splitClauses(text).map((clause) => chunkByModel(clause, segmenter));
   }
 
   function chunkText(text, options = {}) {

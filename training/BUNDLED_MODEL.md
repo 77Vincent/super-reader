@@ -52,13 +52,10 @@ and selected gaps.
    commas (`、`, including NFKC-equivalent forms) as a backend rule. Periods and
    commas between digits remain inside numbers. Other punctuation and whitespace
    stay in the clause; enumeration commas remain excluded from training proxy labels.
-3. Preserve every enumeration item internally, including the first and last,
-   regardless of length. Identify lists within the original proxy-delimited clause
-   before splitting on enumeration commas, then skip model inference for all their
-   items. Thus `A、B、C` becomes `A、`, `B、`, `C`, with no internal model cuts.
-4. Leave other clauses of at most 12 visual units intact. A Han character, numeric
+3. Leave clauses of at most 12 visual units intact. A Han character, numeric
    expression or Latin word contributes one unit; this is not a 12-token cap.
-5. Send the remaining longer clauses to the model with their context characters.
+   Enumeration items follow this same threshold, with no additional list protection.
+4. Send the remaining longer clauses to the model with their context characters.
    Normalize input and whitespace, hide pre-split proxy punctuation, and preserve
    numeric separators. The existing balance and word/quantity protections apply.
    Opening and closing marks stay attached to adjacent content at model cuts.
