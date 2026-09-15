@@ -142,7 +142,8 @@ invalid proxy labels anywhere in the input, and recorded checksum mismatches.
 It uses the same deterministic sample of 500 examples per domain (seed 20260911).
 Keep input and sample hashes fixed for within-version comparisons.
 
-The bundled model is the completed epoch-1 best checkpoint from this full run;
+The bundled model is the completed epoch-1 best checkpoint from the 16-layer
+continuation run (`unicode-context-192ch-16conv-20260914`);
 see [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for its provenance and validation results.
 The backend first splits clauses using normalized proxy punctuation and enumeration
 commas. All resulting clauses, including enumeration items, follow the same rule:

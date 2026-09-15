@@ -17,8 +17,8 @@ test("browser backend loads the exported best checkpoint", () => {
   assert.equal(info.candidatePositions, "between every adjacent Unicode code point");
   assert.equal(info.vocabularySize, 8192);
   assert.equal(info.channels, 192);
-  assert.equal(info.residualBlocks, 6);
-  assert.equal(info.convolutionLayers, 12);
+  assert.equal(info.residualBlocks, 8);
+  assert.equal(info.convolutionLayers, 16);
   assert.equal(info.checkpointSha256, reference.checkpointSha256);
 });
 
