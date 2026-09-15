@@ -560,6 +560,38 @@ test("the inference service sends a whole viewport once and validates the data i
   assert.deepEqual(urls, ["./inference-worker.js"]);
 });
 
+test("the actual worker defaults to recursive softmax at 75% on the demo text nodes", () => {
+  let response;
+  const inputs = [];
+  const context = vm.createContext({ atob, btoa, console, Intl });
+  context.importScripts = (...paths) => paths.forEach((path) => {
+    if (path === "backend/chunker.js") {
+      const model = context.SuperReaderModelBackend;
+      context.SuperReaderModelBackend = { ...model, scoreTokens(tokens) {
+        inputs.push(Array.from(tokens));
+        return model.scoreTokens(tokens);
+      } };
+    }
+    runScript(`src/${path}`, context);
+  });
+  context.postMessage = (message) => { response = message; };
+  context.self = context;
+  runScript("src/inference-worker.js", context);
+  const texts = [
+    "中文天然不使用空格切分语意块，而仅用标点断句。因此过长的的句子会破坏阅读体验。请感受本文里断句的出现是否让你的阅读更轻松。",
+    "切分阅读",
+    "使用神经网络，在长句中找到符合人类习惯的断句点，把长句切成更短的语意块提升阅读效率。",
+    "即便是完全符合语法的通顺的但没有任何标点断句的句子模型依然能够找到恰当的切分点。",
+  ];
+  context.onmessage({ data: { id: 75, texts } });
+  assert.equal(response.error, undefined);
+  assert.equal(response.id, 75);
+  assert.deepEqual(Array.from(response.offsetsByText, (cuts) => Array.from(cuts)),
+    [[25, 31, 50], [], [11, 35], [10, 13, 20]]);
+  assert.equal(inputs.length, 6, "eight cuts use only the six original clause model calls");
+  assert.equal(inputs.reduce((n, tokens) => n + tokens.length, 0), 122);
+});
+
 test("the actual worker returns ordered model results for a whole viewport including long strings", () => {
   let response;
   let replies = 0;
@@ -579,7 +611,9 @@ test("the actual worker returns ordered model results for a whole viewport inclu
   assert.deepEqual(Array.from(response.offsetsByText[0]), [8]);
   assert.deepEqual(Array.from(response.offsetsByText[2]), []);
   assert.deepEqual(Array.from(response.offsetsByText[3]), []);
-  assert.ok(response.offsetsByText[5].length > 1);
+  // The real confidence gate may abstain on a long repetitive input.
+  const expected = require("../src/backend/chunker.js").process(texts);
+  assert.deepEqual(Array.from(response.offsetsByText, (offsets) => Array.from(offsets)), expected);
   response.offsetsByText.forEach((offsets, index) => {
     let previous = 0;
     for (const offset of offsets) {

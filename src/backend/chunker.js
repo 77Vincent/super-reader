@@ -20,6 +20,7 @@
   const SINGLE_HAN_WORD = /^\p{Script=Han}$/u;
   const WHITESPACE = /^\s+$/u;
   const SPLIT_LENGTH_THRESHOLD = 12;
+  const MIN_SPLIT_CONFIDENCE = 0.75;
   const MAX_MODEL_WINDOW_TOKENS = 256;
   const USES_CONTEXT = modelBackend?.getModelInfo?.().inputRepresentation === "unicode-context-v1";
   // Keep in sync with training/text-policy.json; whitespace is context, not a proxy.
@@ -261,22 +262,16 @@
     return offsets;
   }
 
-  function selectBestBoundary(scores, isAllowed = () => true, start = 0, end, visualOffsets) {
+  function selectBestBoundary(scores, isAllowed = () => true, start = 0, end) {
     if (!Array.isArray(scores) || scores.length === 0) return null;
     end ??= scores.length;
-    const sourceStart = visualOffsets?.[start] ?? start;
-    const totalLength = (visualOffsets?.[end + 1] ?? end + 1) - sourceStart;
 
     let bestIndex = null;
     let bestScore = -Infinity;
     for (let index = start; index < end; index += 1) {
       if (!Number.isFinite(scores[index]) || !isAllowed(index)) continue;
-      const leftLength = (visualOffsets?.[index + 1] ?? index + 1) - sourceStart;
-      const rightLength = totalLength - leftLength;
-      const balance = (leftLength / totalLength) * (rightLength / totalLength); // p * (1 - p)
-      // Same ranking as softmax(scores)[index] * balance, without normalization.
-      // Equal weighted scores keep the first allowed gap.
-      const score = scores[index] + Math.log(balance);
+      // Rank by the model's raw logit; equal scores keep the first allowed gap.
+      const score = scores[index];
       if (score > bestScore) {
         bestIndex = index;
         bestScore = score;
@@ -286,7 +281,18 @@
     return bestIndex;
   }
 
-  function chunkByModel(text, segmenter) {
+  // A relative distribution over the supplied gaps, before word protection.
+  // Filtering candidates never renormalizes their confidence.
+  function gapProbabilities(scores) {
+    if (!scores.length) return [];
+    if (scores.some((score) => !Number.isFinite(score))) return scores.map(() => 0);
+    const maximum = scores.reduce((best, score) => Math.max(best, score), -Infinity);
+    const weights = scores.map((score) => Math.exp(score - maximum));
+    const total = weights.reduce((sum, weight) => sum + weight, 0);
+    return weights.map((weight) => weight / total);
+  }
+
+  function chunkByModel(text, segmenter, minConfidence, scoringStrategy) {
     const tokens = USES_CONTEXT ? tokenizeContext(text) : tokenizeHanCharacters(text);
     if (tokens.length < 2 || visualLength(text) <= SPLIT_LENGTH_THRESHOLD) return [text];
     if (!modelBackend || typeof modelBackend.scoreTokens !== "function") {
@@ -337,14 +343,18 @@
       });
     }
 
-    // Score each gap once, before choosing any cuts. Adjacent windows share one
-    // token so the gap between windows is scored too; window edges do not force cuts.
-    const scores = [];
-    for (let start = 0; start < tokens.length - 1; start += MAX_MODEL_WINDOW_TOKENS - 1) {
-      scores.push(...modelBackend.scoreTokens(
-        tokens.slice(start, start + MAX_MODEL_WINDOW_TOKENS).map((token) => token.segment),
-      ));
+    function scoreRange(start, end) {
+      const scores = [];
+      // Adjacent windows share one token, scoring every gap exactly once.
+      for (let cursor = start; cursor < end - 1; cursor += MAX_MODEL_WINDOW_TOKENS - 1) {
+        scores.push(...modelBackend.scoreTokens(
+          tokens.slice(cursor, Math.min(end, cursor + MAX_MODEL_WINDOW_TOKENS)).map((token) => token.segment),
+        ));
+      }
+      // Combine windows before normalization, including any short final window.
+      return { scores, confidence: gapProbabilities(scores) };
     }
+    const initial = scoreRange(0, tokens.length);
 
     // Use a stack so repeated choices near one end cannot overflow the call stack.
     const pendingRanges = [{ start: 0, end: tokens.length }];
@@ -358,15 +368,32 @@
         continue;
       }
 
-      const boundaryAfter = selectBestBoundary(
+      // Default: retain the original window logits and normalize only the
+      // current fragment's gaps. Tokens and protection ranges stay fixed.
+      const scoped = scoringStrategy !== "fixed" && (start !== 0 || end !== tokens.length);
+      const fresh = scoped && scoringStrategy === "recursive-model";
+      const indexOffset = scoped ? start : 0;
+      let { scores, confidence } = initial;
+      if (fresh) {
+        ({ scores, confidence } = scoreRange(start, end));
+      } else if (scoped) {
+        scores = initial.scores.slice(start, end - 1);
+        confidence = gapProbabilities(scores);
+      }
+      const selected = selectBestBoundary(
         scores,
-        (index) => !protectedBoundaryOffsets.has(tokens[index + 1].index) && (!USES_CONTEXT || (
-          tokens[index + 1].index > tokens[index].index && tokens[index + 1].segment !== " "
+        (index) => (minConfidence === 0 || confidence[index] > minConfidence) &&
+          // Keep content on both sides, previously enforced by log(0).
+          visualOffsets[indexOffset + index + 1] > visualOffsets[start] &&
+          visualOffsets[indexOffset + index + 1] < visualOffsets[end] &&
+          !protectedBoundaryOffsets.has(tokens[indexOffset + index + 1].index) && (!USES_CONTEXT || (
+          tokens[indexOffset + index + 1].index > tokens[indexOffset + index].index &&
+          tokens[indexOffset + index + 1].segment !== " "
         )),
-        start,
-        end - 1,
-        visualOffsets,
+        start - indexOffset,
+        end - 1 - indexOffset,
       );
+      const boundaryAfter = selected === null ? null : selected + indexOffset;
       if (boundaryAfter === null) {
         ranges.push({ start, end });
         continue;
@@ -386,11 +413,19 @@
   }
 
   function chunkTextByClause(text, options = {}) {
+    const minConfidence = options.minConfidence ?? MIN_SPLIT_CONFIDENCE;
+    const scoringStrategy = options.scoringStrategy ?? "recursive-softmax";
+    if (!Number.isFinite(minConfidence) || minConfidence < 0 || minConfidence > 1) {
+      throw new RangeError("Super Reader minConfidence must be between 0 and 1");
+    }
+    if (!["recursive-softmax", "fixed", "recursive-model"].includes(scoringStrategy)) {
+      throw new TypeError("Super Reader scoringStrategy must be recursive-softmax, fixed or recursive-model");
+    }
     if (!text) return [];
     const segmenter = options.segmenter === undefined
       ? createSegmenter(options.locale)
       : options.segmenter;
-    return splitClauses(text).map((clause) => chunkByModel(clause, segmenter));
+    return splitClauses(text).map((clause) => chunkByModel(clause, segmenter, minConfidence, scoringStrategy));
   }
 
   function chunkText(text, options = {}) {
@@ -415,14 +450,16 @@
    * Process all texts from one viewport in order. Offsets are ascending UTF-16
    * positions inside each corresponding input; no DOM or task scheduling here.
    * @param {string[]} texts
+   * @param {{minConfidence?: number, scoringStrategy?: "recursive-softmax" | "fixed" | "recursive-model"}} options
+   * Defaults to 75% and recursive softmax over cached logits. 0 disables abstention.
    * @returns {number[][]}
    */
-  function process(texts) {
+  function process(texts, options = {}) {
     const segmenter = createSegmenter("zh-CN");
     return texts.map((text) => {
       const offsets = [];
       let offset = 0;
-      for (const chunk of buildVisualChunks(text, { segmenter })) {
+      for (const chunk of buildVisualChunks(text, { ...options, segmenter })) {
         if (chunk.separated) offsets.push(offset);
         offset += chunk.text.length;
       }
@@ -431,6 +468,8 @@
   }
 
   return Object.freeze({
+    MIN_SPLIT_CONFIDENCE,
+    gapProbabilities,
     process,
     boundaryFallsInsideQuantityPhrase,
     boundaryFallsInsideWord,

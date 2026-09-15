@@ -57,7 +57,7 @@ running, within the service's 5-second timeout. This is a smoke measurement, not
 a general latency guarantee; details are in `chrome-worker-verification.json`
 in the frozen release directory.
 
-Three model-output snapshots change with this promotion: the divider example
+With confidence abstention disabled, three model-output snapshots changed with this promotion: the divider example
 now starts `同一个无标点子句｜内的短语块`; the Euler example keeps
 `用"无数个小矩形累加"｜来近似积分` together around the quoted phrase; the driving
 example becomes `驾驶员会出于本能｜进行｜向左打方向盘等避险动作`. The last example
@@ -79,16 +79,31 @@ establish that every full-sentence segmentation improves.
    Enumeration items follow this same threshold, with no additional list protection.
 4. Send the remaining longer clauses to the model with their context characters.
    Normalize input and whitespace, hide pre-split proxy punctuation, and preserve
-   numeric separators. The existing balance and word/quantity protections apply.
+   numeric separators. Word/quantity protections apply.
    Opening and closing marks stay attached to adjacent content at model cuts.
+5. Cache the original window logits. For each fragment above 12 visual units,
+   compute softmax over its internal gaps and allow probabilities strictly above 75%.
+   Rank eligible gaps by raw model logit, breaking ties by the earlier gap.
+   Recurse into both children using the same logits and a new child softmax;
+   removing protected gaps never renormalizes probabilities. An uncertain
+   fragment stays intact even above 12 visual units. The threshold measures relative model
+   confidence, not a calibrated probability that a cut is appropriate.
 
 Rendered text retains its original punctuation, spacing and character widths.
 Only model-selected cuts inside a clause receive visual dividers.
 
-The chunker scores the clause once and reuses its logits while
-recursively choosing cuts with the current fragment's length balance.
-Recursive model rescoring was rejected and removed; see the
-[experiment conclusion](SCORING_COMPARISON.md).
+By default the chunker scores the clause once and reuses its logits while
+recursively choosing the highest-scoring eligible gap in each fragment.
+The default [recursive softmax](RECURSIVE_SOFTMAX.md) requires no Worker options
+and never runs CNN inference on a child fragment.
+
+A separate [recursive >90% trial](RECURSIVE_CONFIDENCE_EXPERIMENT.md) is available
+with `{ minConfidence: 0.9, scoringStrategy: "recursive-model" }`. It reruns the
+model on longer child fragments while preserving tokenization and protection ranges.
+
+The subsequent [confidence audit](CONFIDENCE_THRESHOLD.md) measures the precision,
+recall and coverage tradeoff on full validation for original-input top-1 predictions;
+its precision figures do not establish the accuracy of recursive child decisions.
 
 The completed [architecture smoke](CNN_TRANSFORMER_EXPERIMENT.md) was a separate
 experiment; its scripts and generated artifacts have been removed. The 16-layer

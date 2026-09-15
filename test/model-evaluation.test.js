@@ -110,8 +110,13 @@ test("default evaluation selects the corrected holdout even when a legacy generi
   assert.deepEqual(report.evaluation.excludedProxyPunctuation, ["、", "：", ":"]);
   assert.equal(report.evaluation.input, "training/data/processed/unicode-context-192ch-12conv-20260913-eval/validation.jsonl");
   assert.equal(report.overall.count, 1);
+  assert.equal(report.overall.accuracy, 1);
+  assert.equal(Object.hasOwn(report.overall, "balanceOnlyAccuracy"), false);
+  assert.equal(Object.hasOwn(report.overall, "balanceChangedChoiceRate"), false);
   assert.equal(report.predictions[0].id, "news:tiny");
   assert.equal(report.predictions[0].goldGap, 0);
+  assert.equal(report.predictions[0].predictedGap, 0);
+  assert.equal(Object.hasOwn(report.predictions[0], "balancedGap"), false);
 });
 
 test("domain sampling is reproducible, bounded and independent of other domains", async () => {

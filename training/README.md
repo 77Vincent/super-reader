@@ -151,6 +151,11 @@ leave at most 12 visual units intact and send longer clauses with their
 remaining Unicode context to the model. Numeric separators remain within numbers;
 original text and UTF-16 offsets are preserved. Opening/closing marks stay attached
 to adjacent content when the model subdivides a clause.
+The default [recursive softmax](RECURSIVE_SOFTMAX.md) caches original window logits
+and recomputes softmax over each child's internal gaps. Only probabilities strictly
+above 75% are eligible, with raw-logit ranking. An uncertain longer clause stays intact.
+The [confidence audit](CONFIDENCE_THRESHOLD.md) measures original-input predictions;
+those precision figures do not establish the accuracy of recursive child decisions.
 
 ## Verification and small experiments
 
@@ -165,10 +170,16 @@ test accuracy versus 60.85% for Transformer and led in all five test domains.
 The experiment is closed; its dedicated scripts and generated artifacts were
 removed after preserving the setup, results, limitations and audit fingerprints.
 
-Recursive fragment rescoring was evaluated and rejected: the example comparison
+Recursive fragment rescoring without a confidence gate was evaluated and rejected: the example comparison
 showed higher inference cost without a clear quality benefit. The backend retains
 one-time clause scoring. Only the [conclusion](SCORING_COMPARISON.md) is retained;
 the experimental option, scripts, tests and generated reports have been removed.
+
+A separate [recursive >90% experiment](RECURSIVE_CONFIDENCE_EXPERIMENT.md)
+compares fresh child inference with fixed original probabilities. Its
+`scoringStrategy: "recursive-model"` option is opt-in; the default caches original
+logits and recursively recomputes softmax. Reproduce the historical strategy comparison with
+`node training/compare_recursive_confidence.mjs`.
 
 ```bash
 npm test

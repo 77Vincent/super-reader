@@ -31,7 +31,7 @@ test("context model receives punctuation and numbers without cutting inside time
   }, "unicode-context-v1");
   const text = "女：我们计划明天上午8:30出发前往目的地，请记住。";
   assert.deepEqual(Array.from(chunker.splitClauses(text)), ["女：我们计划明天上午8:30出发前往目的地，", "请记住。"]);
-  const chunks = Array.from(chunker.chunkText(text, { segmenter: null }));
+  const chunks = Array.from(chunker.chunkText(text, { segmenter: null, minConfidence: 0 }));
   assert.equal(chunks.join(""), text);
   assert.ok(calls.some((tokens) => tokens.join("").includes("女:")));
   assert.ok(calls.some((tokens) => tokens.join("").includes("8:30")));
@@ -62,7 +62,7 @@ test("every training proxy pre-splits clauses and only over-threshold clauses re
     const text = `${twelve}${punctuation}${thirteen}${punctuation}短句`;
     assert.deepEqual(Array.from(chunker.splitClauses(text)),
       [`${twelve}${punctuation}`, `${thirteen}${punctuation}`, "短句"], punctuation);
-    const chunks = Array.from(chunker.chunkText(text, { segmenter: null }));
+    const chunks = Array.from(chunker.chunkText(text, { segmenter: null, minConfidence: 0 }));
     assert.deepEqual(inputs, [thirteen], punctuation);
     assert.equal(chunks.join(""), text);
   }
@@ -77,7 +77,7 @@ test("context pre-splitting preserves non-proxies, whitespace, and normalized nu
   const text = '女：课程（A）和《阅读》在明天上午８：３０开始\n价格１，０００．５０元﹐请提前准备。';
   const clauses = Array.from(chunker.splitClauses(text));
   assert.deepEqual(clauses, [text.slice(0, text.indexOf("﹐") + 1), "请提前准备。"]);
-  assert.equal(chunker.chunkText(text, { segmenter: null }).join(""), text);
+  assert.equal(chunker.chunkText(text, { segmenter: null, minConfidence: 0 }).join(""), text);
   assert.deepEqual(inputs, ['女:课程(A)和《阅读》在明天上午8:30开始 价格1,000.50元']);
   assert.equal(chunker.visualLength("甲乙丙丁戊己庚辛壬癸子丑 English"), 13);
 });
@@ -89,7 +89,7 @@ test("context punctuation tokens cannot strand opening or closing marks at a mod
     const chunker = withModel((tokens) => tokens.slice(1).map((token) => (
       token === closing.normalize("NFKC") || token === "甲" ? 100 : 0
     )), "unicode-context-v1");
-    const chunks = Array.from(chunker.chunkText(text, { segmenter: null }));
+    const chunks = Array.from(chunker.chunkText(text, { segmenter: null, minConfidence: 0 }));
     let offset = 0;
     for (const chunk of chunks.slice(0, -1)) {
       offset += chunk.length;
@@ -116,7 +116,7 @@ test("enumeration pre-splitting allows long first, middle and last items to reac
   ]) {
     inputs.length = 0;
     assert.deepEqual(Array.from(chunker.splitClauses(text)), expected);
-    const clauses = Array.from(chunker.chunkTextByClause(text, { segmenter: null }), (chunks) => Array.from(chunks));
+    const clauses = Array.from(chunker.chunkTextByClause(text, { segmenter: null, minConfidence: 0 }), (chunks) => Array.from(chunks));
     assert.deepEqual(clauses.map((chunks) => chunks.join("")), expected);
     assert.ok(clauses.every((chunks, index) => expected[index] === "、" || chunks.length > 1));
     assert.ok(clauses.flat().every((chunk) => chunker.visualLength(chunk) <= 12));
@@ -137,7 +137,7 @@ test("enumeration item splitting preserves Unicode, consecutive marks and model 
       windows.push(Array.from(tokens));
       return tokens.slice(1).map(() => 0);
     }, "unicode-context-v1");
-    const clauses = Array.from(chunker.chunkTextByClause(text, { segmenter: null }), (chunks) => Array.from(chunks));
+    const clauses = Array.from(chunker.chunkTextByClause(text, { segmenter: null, minConfidence: 0 }), (chunks) => Array.from(chunks));
     assert.deepEqual(clauses.map((chunks) => chunks.join("")), [
       `首项${comma}`, `${middleItems[0]}${comma}`, `${middleItems[1]}${comma}${comma}`,
       `${middleItems[3]}${comma}`, "尾项",
@@ -161,7 +161,7 @@ test("enumeration and proxy boundaries both isolate independently scored clauses
     }, "unicode-context-v1");
     const list = `${item}、${item}`;
     const text = `${item}${punctuation}${list}${punctuation}${item}`;
-    const clauses = Array.from(chunker.chunkTextByClause(text, { segmenter: null }), (chunks) => Array.from(chunks));
+    const clauses = Array.from(chunker.chunkTextByClause(text, { segmenter: null, minConfidence: 0 }), (chunks) => Array.from(chunks));
     assert.equal(clauses.flat().join(""), text);
     assert.deepEqual(clauses.map((chunks) => chunks.join("")), [`${item}${punctuation}`, `${item}、`, `${item}${punctuation}`, item]);
     assert.ok(clauses.every((chunks) => chunks.length > 1));
@@ -184,7 +184,7 @@ test("backend process returns model cuts within long list items at original UTF-
   assert.ok(expected.length > 0);
   assert.deepEqual(process([text]), [expected]);
   assert.deepEqual(process(["甲、乙、丙"]), [[]]);
-  const following = "而是帮助大脑更快地识别信息结构。";
+  const following = "因此它被称为一种数值积分方法。";
   const [followingCuts] = process([following]);
   assert.ok(followingCuts.length > 0);
   const prefix = `${text}，`;
@@ -288,14 +288,14 @@ test("title marks stay inside the clause and the model preserves the source", ()
   assert.equal(buildVisualChunks(text).map((chunk) => chunk.text).join(""), text);
 });
 
-test("balance favors the center for close scores but a stronger model choice can win", () => {
+test("boundary ranking selects the highest model score without favoring the center", () => {
   assert.equal(selectBestBoundary([]), null);
   assert.equal(selectBestBoundary([0, 0]), 0);
   assert.equal(selectBestBoundary([0, 2, 0]), 1);
   assert.equal(selectBestBoundary([0.01, 0]), 0);
-  assert.equal(selectBestBoundary([0, 0, 0]), 1);
-  assert.equal(selectBestBoundary([0.01, 0, 0]), 1);
-  assert.equal(selectBestBoundary([0, 0, 0.01]), 1);
+  assert.equal(selectBestBoundary([0, 0, 0]), 0);
+  assert.equal(selectBestBoundary([0.01, 0, 0]), 0);
+  assert.equal(selectBestBoundary([0, 0, 0.01]), 2);
   assert.equal(selectBestBoundary([1.5, 0, 0]), 0);
   assert.equal(
     selectBestBoundary([-10, -10, -10, -10, -10, 0, -10, 0.311, -10, -10]),
@@ -303,36 +303,29 @@ test("balance favors the center for close scores but a stronger model choice can
   );
 });
 
-test("boundary ranking matches softmax share multiplied by p times one minus p", () => {
+test("boundary ranking preserves the model's choice across logit shifts", () => {
   const examples = [
-    [-41.05, -45.59, -39.40, -38.58, -37.75, -33.99, -35.99, -36.98, -40.03, -38.42, -36.51, -38.66, -32.85, -36.24, -40.46],
-    [0.2, -1, 0, 0.05, 0, -2, 0.5, -1, 0.2],
-    [2, 0, 0, 0, 0, 0, 0, 0, 0],
+    { logits: [-41.05, -45.59, -39.40, -38.58, -37.75, -33.99, -35.99, -36.98, -40.03, -38.42, -36.51, -38.66, -32.85, -36.24, -40.46], expected: 12 },
+    { logits: [0.2, -1, 0, 0.05, 0, -2, 0.5, -1, 0.2], expected: 6 },
+    { logits: [2, 0, 0, 0, 0, 0, 0, 0, 0], expected: 0 },
   ];
-  for (const logits of examples) {
-    const exponentials = logits.map((score) => Math.exp(score - Math.max(...logits)));
-    const sum = exponentials.reduce((total, value) => total + value, 0);
-    const weighted = exponentials.map((value, index) => {
-      const p = (index + 1) / (logits.length + 1);
-      return value / sum * p * (1 - p);
-    });
-    const expected = weighted.indexOf(Math.max(...weighted));
+  for (const { logits, expected } of examples) {
     for (const shift of [-1000, 0, 1000]) {
       assert.equal(selectBestBoundary(logits.map((score) => score + shift)), expected);
     }
   }
 });
 
-test("small center drift survives a small model advantage while extreme edges are penalized", () => {
+test("a model advantage at either edge wins even in a long clause", () => {
   const scores = Array(99).fill(-100);
   scores[49] = 0; // 50/50
-  scores[44] = 0.02; // 45/55: only a 1% reduction relative to the center.
+  scores[44] = 0.02;
   assert.equal(selectBestBoundary(scores), 44);
   scores[44] = -100;
-  scores[0] = 2; // 1/99: even this larger model score loses after weighting.
-  assert.equal(selectBestBoundary(scores), 49);
-  scores[0] = 4;
+  scores[0] = 0.01;
   assert.equal(selectBestBoundary(scores), 0);
+  scores[98] = 0.02;
+  assert.equal(selectBestBoundary(scores), 98);
 });
 
 test("boundary selection excludes protected gaps and invalid scores", () => {
@@ -348,18 +341,18 @@ test("boundary selection searches only inside the requested fragment and returns
   assert.equal(selectBestBoundary(scores, undefined, 1, 4), 2);
   assert.equal(selectBestBoundary(scores, (index) => index !== 2, 1, 4), 1);
   assert.equal(selectBestBoundary(scores, undefined, 2, 2), null);
-  assert.equal(selectBestBoundary(Array(19).fill(0), undefined, 10, 19), 14,
-    "balance must use the child fragment's center, not the original text's center");
+  assert.equal(selectBestBoundary(Array(19).fill(0), undefined, 10, 19), 10,
+    "ties select the first allowed gap inside the child fragment");
 });
 
-test("balance uses visual units including leading numbers, fractions and supplementary Han", () => {
+test("fragment length limits still count numbers and preserve supplementary Han", () => {
   const chunker = withModel((tokens) => Array(tokens.length - 1).fill(0));
   for (const [text, expected] of [
-    ["1甲乙丙丁戊己庚辛壬癸子丑", ["1甲乙丙丁戊", "己庚辛壬癸子丑"]],
-    ["甲乙丙丁戊己庚辛壬癸子丑 1 2", ["甲乙丙丁戊己庚", "辛壬癸子丑 1 2"]],
-    ["1/4 English 𠀀甲乙丙丁戊己庚辛壬癸子", ["1/4 English 𠀀甲乙丙丁", "戊己庚辛壬癸子"]],
+    ["1甲乙丙丁戊己庚辛壬癸子丑", ["1甲", "乙丙丁戊己庚辛壬癸子丑"]],
+    ["甲乙丙丁戊己庚辛壬癸子丑 1 2", ["甲", "乙", "丙丁戊己庚辛壬癸子丑 1 2"]],
+    ["1/4 English 𠀀甲乙丙丁戊己庚辛壬癸子", ["1/4 English 𠀀", "甲乙丙丁戊己庚辛壬癸子"]],
   ]) {
-    const chunks = Array.from(chunker.chunkText(text, { segmenter: null }));
+    const chunks = Array.from(chunker.chunkText(text, { segmenter: null, minConfidence: 0 }));
     assert.deepEqual(chunks, expected);
     assert.equal(chunks.join(""), text);
   }
@@ -376,11 +369,11 @@ test("one model evaluation supplies every split in a clause, with scores local t
     scores[15] = 10;
     return scores;
   });
-  const chunks = chunker.chunkText(text, { segmenter: null });
+  const chunks = chunker.chunkText(text, { segmenter: null, minConfidence: 0 });
   assert.deepEqual(Array.from(chunks), [text.slice(0, 8), text.slice(8, 16), text.slice(16)]);
   assert.equal(inputs.length, 1);
   // A new operation gets fresh scores; they are not retained across requests.
-  chunker.chunkText(text, { segmenter: null });
+  chunker.chunkText(text, { segmenter: null, minConfidence: 0 });
   assert.equal(inputs.length, 2);
 });
 
@@ -390,12 +383,12 @@ test("short clauses skip inference and separate long clauses receive separate sc
     inputs.push(tokens.join(""));
     return Array(tokens.length - 1).fill(0);
   });
-  chunker.chunkText("甲乙丙丁戊己庚辛壬癸子丑，中文。English", { segmenter: null });
+  chunker.chunkText("甲乙丙丁戊己庚辛壬癸子丑，中文。English", { segmenter: null, minConfidence: 0 });
   assert.deepEqual(inputs, []);
   const first = "甲乙丙丁戊己庚辛壬癸子丑寅";
   const second = "天地玄黄宇宙洪荒日月盈昃辰";
   const text = `${first}，中文。${second}`;
-  assert.equal(chunker.chunkText(text, { segmenter: null }).join(""), text);
+  assert.equal(chunker.chunkText(text, { segmenter: null, minConfidence: 0 }).join(""), text);
   assert.deepEqual(inputs, [first, second]);
 });
 
@@ -412,7 +405,7 @@ test("fixed model windows score every gap once, without forcing cuts at window e
         return (index + 1) % 12 === 0 ? 10 : -1;
       });
     });
-    const chunks = chunker.chunkText(tokens.join(""), { segmenter: null });
+    const chunks = chunker.chunkText(tokens.join(""), { segmenter: null, minConfidence: 0 });
     assert.equal(inputs.length, Math.ceil((length - 1) / 255));
     assert.ok(inputs.every((window) => window.length >= 2 && window.length <= 256));
     assert.deepEqual(inputs[0].concat(...inputs.slice(1).map((window) => window.slice(1))), tokens);
@@ -430,7 +423,7 @@ test("long clauses with strongly favored edge scores split without overflowing t
     const start = calls++ * 255;
     return tokens.slice(1).map((_, index) => -10 * (start + index));
   });
-  const chunks = chunker.chunkText(text, { segmenter: null });
+  const chunks = chunker.chunkText(text, { segmenter: null, minConfidence: 0 });
   assert.equal(chunks.join(""), text);
   assert.equal(chunks.length, text.length - 11);
   assert.equal(chunks.at(-1), "甲".repeat(12));
@@ -504,7 +497,7 @@ test("counts numeric expressions toward the threshold without splitting a fracti
   assert.equal(visualLength(atThreshold), 12);
   assert.deepEqual(chunkText(atThreshold), [atThreshold]);
   samples.forEach((text) => {
-    const chunks = buildVisualChunks(text);
+    const chunks = buildVisualChunks(text, { minConfidence: 0 });
     const rendered = chunks
       .map((chunk) => `${chunk.separated ? "｜" : ""}${chunk.text}`)
       .join("");
@@ -525,10 +518,10 @@ test("only asks the model to split clauses longer than twelve visual units", () 
   const text = "甲乙丙丁戊己庚辛壬癸子丑寅";
   for (const length of [8, 9, 11, 12]) {
     const short = text.slice(0, length);
-    assert.deepEqual(Array.from(chunker.chunkText(short, { segmenter: null })), [short]);
+    assert.deepEqual(Array.from(chunker.chunkText(short, { segmenter: null, minConfidence: 0 })), [short]);
   }
   assert.deepEqual(inputs, []);
-  assert.ok(chunker.chunkText(text, { segmenter: null }).length > 1);
+  assert.ok(chunker.chunkText(text, { segmenter: null, minConfidence: 0 }).length > 1);
   assert.deepEqual(inputs, [text]);
 });
 
@@ -539,17 +532,17 @@ test("punctuation-delimited clauses of twelve characters or fewer stay intact", 
   ]);
 });
 
-// These examples record the bundled checkpoint's output; model promotion can
+// With the confidence gate disabled, these record the bundled checkpoint; promotion can
 // change their cuts. They are not human-labeled segmentation quality targets.
-test("bundled model splits the divider example within the length threshold", () => {
-  const chunks = chunkText("同一个无标点子句内的短语块用细竖线分隔；");
+test("without abstention the bundled model splits the divider example within the length threshold", () => {
+  const chunks = chunkText("同一个无标点子句内的短语块用细竖线分隔；", { minConfidence: 0 });
 
   assert.deepEqual(chunks, ["同一个无标点子句", "内的短语块", "用细竖线分隔；"]);
   assert.ok(chunks.every((chunk) => visualLength(chunk) <= 12));
 });
 
 test("uses model scores and word protection for the reading example", () => {
-  const chunks = chunkText("而是帮助大脑更快地识别信息结构。");
+  const chunks = chunkText("而是帮助大脑更快地识别信息结构。", { minConfidence: 0 });
 
   assert.deepEqual(chunks, ["而是帮助大脑", "更快地识别信息结构。"]);
   assert.ok(chunks.every((chunk) => visualLength(chunk) <= 12));
@@ -558,7 +551,7 @@ test("uses model scores and word protection for the reading example", () => {
 test("recursive splitting respects the twelve-unit threshold across clauses", () => {
   const text = "在左侧输入一段需要重新组织的中文，看看它如何被重新组织成更清晰的短语。";
   const chunker = withModel((tokens) => Array(tokens.length - 1).fill(0));
-  const clauses = chunker.chunkTextByClause(text, { segmenter: null });
+  const clauses = chunker.chunkTextByClause(text, { segmenter: null, minConfidence: 0 });
 
   assert.equal(clauses.length, 2);
   assert.ok(clauses.every((chunks) => chunks.length > 1));
@@ -582,9 +575,9 @@ test("renders the reported Euler-method example with model scores", () => {
     '用"无数个小矩形累加"来近似积分，',
     "因此它被称为一种数值积分方法（numerical integration method）。",
   ]);
-  assert.deepEqual(chunkText(text), [
-    "欧拉法是在积分",
-    "无法直接计算时，",
+  assert.deepEqual(chunkText(text, { minConfidence: 0 }), [
+    "欧拉法",
+    "是在积分无法直接计算时，",
     '用"无数个小矩形累加"',
     '来近似积分，',
     "因此",
@@ -594,7 +587,7 @@ test("renders the reported Euler-method example with model scores", () => {
 });
 
 test("model scoring keeps 方向盘 together at the current length threshold", () => {
-  assert.deepEqual(chunkText("驾驶员会出于本能进行向左打方向盘等避险动作，"), [
+  assert.deepEqual(chunkText("驾驶员会出于本能进行向左打方向盘等避险动作，", { minConfidence: 0 }), [
     "驾驶员会出于本能",
     "进行",
     "向左打方向盘等避险动作，",
@@ -623,7 +616,7 @@ test("visual chunks preserve punctuation-delimited boundaries", () => {
 });
 
 test("vertical separators appear only at model boundaries inside one clause", () => {
-  assert.deepEqual(buildVisualChunks("而是帮助大脑更快地识别信息结构。"), [
+  assert.deepEqual(buildVisualChunks("而是帮助大脑更快地识别信息结构。", { minConfidence: 0 }), [
     { text: "而是帮助大脑", processed: true, separated: false },
     { text: "更快地识别信息结构。", processed: true, separated: true },
   ]);

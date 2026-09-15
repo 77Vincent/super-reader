@@ -120,18 +120,16 @@ export function scorePrediction(scores, target) {
 
 function emptyMetrics() {
   return { count: 0, correct: 0, top3: 0, reciprocalRank: 0, gapError: 0, loss: 0,
-    balancedCorrect: 0, balanceChanges: 0, confidence: 0, unknownTokens: 0, tokens: 0 };
+    confidence: 0, unknownTokens: 0, tokens: 0 };
 }
 
-function accumulate(metrics, prediction, balanced, target, tokens) {
+function accumulate(metrics, prediction, tokens) {
   metrics.count += 1;
   metrics.correct += prediction.correct;
   metrics.top3 += prediction.top3;
   metrics.reciprocalRank += 1 / prediction.rank;
   metrics.gapError += prediction.absoluteGapError;
   metrics.loss += prediction.negativeLogLikelihood;
-  metrics.balancedCorrect += balanced === target;
-  metrics.balanceChanges += balanced !== prediction.predicted;
   metrics.confidence += prediction.confidence;
   metrics.tokens += tokens.length;
   metrics.unknownTokens += tokens.filter((token) => !Object.hasOwn(modelData.vocabulary, token)).length;
@@ -142,8 +140,7 @@ function summarize(metrics) {
   return {
     count: n, accuracy: metrics.correct / n, top3Accuracy: metrics.top3 / n,
     meanReciprocalRank: metrics.reciprocalRank / n, meanAbsoluteGapError: metrics.gapError / n,
-    crossEntropy: metrics.loss / n, balanceOnlyAccuracy: metrics.balancedCorrect / n,
-    balanceChangedChoiceRate: metrics.balanceChanges / n, meanConfidence: metrics.confidence / n,
+    crossEntropy: metrics.loss / n, meanConfidence: metrics.confidence / n,
     unknownTokenRate: metrics.unknownTokens / metrics.tokens,
   };
 }
@@ -197,19 +194,18 @@ async function main() {
     const scores = backend.scoreTokens(record.tokens);
     timings.push(performance.now() - started);
     const prediction = scorePrediction(scores, record.target_index);
-    const balanced = chunker.selectBestBoundary(scores);
-    accumulate(overall, prediction, balanced, record.target_index, record.tokens);
+    accumulate(overall, prediction, record.tokens);
     for (const [kind, key] of [
       ["domain", record.domain], ["length", lengthBucket(record.tokens.length)],
       ["confidence", confidenceBucket(prediction.confidence)],
     ]) {
       groups[kind][key] ??= emptyMetrics();
-      accumulate(groups[kind][key], prediction, balanced, record.target_index, record.tokens);
+      accumulate(groups[kind][key], prediction, record.tokens);
     }
     predictions.push({
       id: record.id, documentId: record.document_id, domain: record.domain,
       text: record.tokens.join(""), tokenCount: record.tokens.length,
-      goldGap: record.target_index, predictedGap: prediction.predicted, balancedGap: balanced,
+      goldGap: record.target_index, predictedGap: prediction.predicted,
       goldRank: prediction.rank, confidence: prediction.confidence, punctuation: record.punctuation,
     });
     if (predictions.length % 500 === 0) console.log(`Scored ${predictions.length}/${records.length}`);
@@ -246,7 +242,6 @@ async function main() {
       sampledIdsSha256: sha256(predictions.map(({ id }) => id).join("\n")),
       target: "Recover the single removed punctuation boundary; not human-labeled reading chunks.",
       sampling: "Seeded reservoir per domain; aggregate is domain-balanced, not corpus-weighted.",
-      balanceOnly: "Same full-input logits plus p*(1-p); no length limit or word protection. Not full pipeline accuracy.",
       tiePolicy: "Descending score, then ascending gap index for both prediction and rank.",
     },
     environment: { node: process.version, icu: process.versions.icu, platform: platform(), arch: arch(), cpu: cpus()[0]?.model },
