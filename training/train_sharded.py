@@ -257,12 +257,20 @@ def expanded_initialization(
         )
         target["boundary_output.bias"].copy_(source["boundary_output.bias"])
 
+        # New residual blocks initially act as identity functions. Their random
+        # convolution branches remain trainable through the learned scale, while
+        # a depth-only expansion preserves the inherited model's initial logits.
+        added_blocks = len(model.blocks) - block
+        for index in range(block, len(model.blocks)):
+            target[f"blocks.{index}.residual_scale"].zero_()
+
     model.load_state_dict(target)
     return {
         "path": str(checkpoint_path),
         "source_channels": source_channels,
         "copied_channels": channels,
         "copied_blocks": block,
+        "added_identity_blocks": added_blocks,
         "source_best_epoch": checkpoint["best_epoch"],
         "copied_token_embeddings": len(shared_tokens),
         "new_token_embeddings": len(vocabulary) - len(shared_tokens),
@@ -545,6 +553,12 @@ def main() -> None:
                 running_loss += loss.item() * batch["sample_weight_sum"]
                 seen_weight += batch["sample_weight_sum"]
                 seen_examples += len(batch["records"])
+                if batch_index == first_batch or (batch_index + 1) % 500 == 0:
+                    print(
+                        f"epoch={epoch:02d} shard={shard_position + 1}/{len(shards)} "
+                        f"batch={batch_index + 1}/{len(batches)} samples={seen_examples}",
+                        flush=True,
+                    )
                 if stop["requested"]:
                     seconds = previous_seconds + time.perf_counter() - epoch_started
                     persist(

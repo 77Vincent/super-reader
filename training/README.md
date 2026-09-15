@@ -79,6 +79,54 @@ The trainer saves atomic checkpoints every four shards and at safe interrupt
 boundaries. Completing the pipeline exports a separate candidate and does not
 replace the extension's bundled weights.
 
+## 16-layer continuation and Chinese web download
+
+```bash
+npm run model:download-web
+npm run model:continue-depth
+# After an interruption, repeat the download command and resume training:
+npm run model:continue-depth -- --resume
+```
+
+These are independent jobs. The download fetches only the Chinese split of
+`openbmb/Ultra-FineWeb`, pinned to revision
+`02c85641e3d19a854be2e09139c25adaa9518063`: 256 Parquet files totaling
+324,321,485,291 bytes (302.05 GiB). It uses three concurrent transfers, resumes
+partial files, verifies every file against the upstream SHA-256, and reserves
+32 GiB of free disk space. Connection outages are retried with up to 60 seconds
+between attempts until connectivity returns or the job is stopped. Other errors
+retain bounded retries; size and checksum mismatches stop the download.
+Its manifest, verified-file list, progress and upstream
+documentation are stored in `training/data/raw/ultra-fineweb-zh/`.
+The upstream license also requires checking the original component datasets'
+terms. Downloaded text has not yet been converted into training samples or audited
+against existing holdouts and is not automatically added to a running epoch.
+
+The continuation run is
+`training/artifacts/unicode-context-192ch-16conv-20260914/`. It inherits the
+completed best epoch 2 from `unicode-context-192ch-12conv-20260913/candidate/`
+and trains two new epochs on the same 74,121,940 examples, with all 727,578
+validation and 766,489 test examples. Channels (192), vocabulary (8192), learning
+rate (0.0003), domain weighting, batch limits and selection criteria remain the
+same. AdamW starts fresh for the expanded architecture; new-run epoch 1 follows
+the inherited epoch 2.
+
+Eight residual blocks give 16 convolutions and 3,496,329 parameters. All inherited
+tensors are copied exactly. The two added blocks start with zero residual scales,
+so initialization preserves the old logits; the scales and convolution branches
+then learn during optimization. The structural gap context can grow to 34
+characters, up to 17 on each side. The preflight verifies weight/output equality,
+nonzero learning gradients and exported JavaScript inference. Its probe updates
+are discarded before formal training, which evaluates the complete validation
+split before making updates and includes initialization in checkpoint selection.
+
+The run snapshots its training/export code and initialization checkpoint so later
+workspace edits do not change a running experiment. It saves atomic checkpoints
+every four shards and at safe interrupt boundaries. `status.json`, `training.log`,
+`preflight/verification.json` and the candidate checkpoints record progress.
+Completion exports a separate candidate; the bundled backend stays on its
+currently released model until explicitly promoted.
+
 ## Evaluation
 
 ```bash
@@ -104,6 +152,11 @@ original text and UTF-16 offsets are preserved. Opening/closing marks stay attac
 to adjacent content when the model subdivides a clause.
 
 ## Verification and small experiments
+
+The [receptive-field analysis](RECEPTIVE_FIELD_ANALYSIS.md) scans all 74,121,940
+training examples and stratifies the complete epoch-2 validation results by
+context coverage. It records the coverage expected at larger CNN depths and the
+limits of using those statistics to choose a model size.
 
 The completed [CNN / Transformer experiment](CNN_TRANSFORMER_EXPERIMENT.md)
 used identical training data and full validation/test splits. CNN reached 68.60%
