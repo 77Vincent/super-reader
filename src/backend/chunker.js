@@ -186,7 +186,14 @@
       if (!number.isWordLike || !NUMERIC_TOKEN.test(number.segment)) continue;
 
       const classifier = nextWordLikeSegment(segments, index + 1);
-      if (!classifier || !SINGLE_HAN_WORD.test(classifier.item.segment)) continue;
+      if (!classifier) continue;
+      // Han numerals can still form Han-to-Han number/word gaps.
+      // Preserve that part of quantity protection; ordinary digit joins are
+      // already excluded by the source-character boundary rule.
+      if (/\p{Script=Han}$/u.test(number.segment) && HAN_CHARACTER.test(classifier.item.segment)) {
+        ranges.push({ start: number.start, end: classifier.item.end });
+      }
+      if (!SINGLE_HAN_WORD.test(classifier.item.segment)) continue;
 
       const noun = nextWordLikeSegment(segments, classifier.index + 1);
       if (!noun || !HAN_CHARACTER.test(noun.item.segment)) continue;
@@ -199,28 +206,6 @@
 
   function quantityPhraseRanges(text, segmenter) {
     return quantityPhraseRangesFromSegments(normalizedSegments(text, segmenter));
-  }
-
-  function numericAttachmentRanges(text, segments) {
-    const ranges = [];
-
-    for (const match of text.matchAll(NUMERIC_EXPRESSION)) {
-      const start = match.index;
-      const expressionEnd = start + match[0].length;
-      const attachment = segments.find((item) => (
-        item.start >= expressionEnd &&
-        item.isWordLike &&
-        HAN_CHARACTER.test(item.segment) &&
-        (
-          item.start === expressionEnd ||
-          WHITESPACE.test(text.slice(expressionEnd, item.start))
-        )
-      ));
-      if (!attachment) continue;
-      ranges.push({ start, end: attachment.end });
-    }
-
-    return ranges;
   }
 
   function boundaryFallsInsideQuantityPhrase(text, boundary, segmenter) {
@@ -300,17 +285,22 @@
     }
     const visualOffsets = visualOffsetsForTokens(text, tokens);
     const ranges = [];
+    // Check adjacent source code points, including spaces and characters that
+    // normalization changes or expands. Keep supplementary Han UTF-16 offsets.
+    const hanBoundaryOffsets = new Set();
+    let sourceOffset = 0;
+    let previousIsHan = false;
+    for (const character of text) {
+      const isHan = HAN_CHARACTER.test(character);
+      if (previousIsHan && isHan) hanBoundaryOffsets.add(sourceOffset);
+      previousIsHan = isHan;
+      sourceOffset += character.length;
+    }
     const segments = normalizedSegments(text, segmenter);
     const protectedBoundaryRanges = segments
       .filter((item) => item.isWordLike)
       .map((item) => ({ start: item.start, end: item.end }));
     protectedBoundaryRanges.push(...quantityPhraseRangesFromSegments(segments));
-    protectedBoundaryRanges.push(...numericAttachmentRanges(text, segments));
-    if (USES_CONTEXT) {
-      for (const match of text.matchAll(/\p{Nd}+(?:[:：.,，．/／]\p{Nd}+)+/gu)) {
-        protectedBoundaryRanges.push({ start: match.index, end: match.index + match[0].length });
-      }
-    }
     const protectedBoundaryOffsets = new Set(
       tokens.slice(1)
         .map((token) => token.index)
@@ -318,30 +308,6 @@
           (range) => boundary > range.start && boundary < range.end,
         )),
     );
-    if (USES_CONTEXT) {
-      // Context punctuation has its own tokens. Keep opening marks with what
-      // follows and closing marks with what precedes, including straight quotes.
-      const opening = new Set(Array.from("“‘「『（(《〈【〔〖〘〚[{"));
-      const closing = new Set(Array.from("”’」』）)》〉】〕〗〙〛]}"));
-      const insideQuote = new Set();
-      tokens.forEach((token, index) => {
-        const mark = token.segment;
-        const straight = mark === '"' || mark === "'";
-        const isClosing = closing.has(mark) || (straight && insideQuote.has(mark));
-        const isOpening = opening.has(mark) || (straight && !insideQuote.has(mark));
-        if (isClosing) protectedBoundaryOffsets.add(token.index);
-        if (isOpening) {
-          for (let next = index + 1; next < tokens.length; next += 1) {
-            protectedBoundaryOffsets.add(tokens[next].index);
-            if (tokens[next].segment !== " ") break;
-          }
-        }
-        if (straight) {
-          if (insideQuote.has(mark)) insideQuote.delete(mark);
-          else insideQuote.add(mark);
-        }
-      });
-    }
 
     function scoreRange(start, end) {
       const scores = [];
@@ -383,13 +349,9 @@
       const selected = selectBestBoundary(
         scores,
         (index) => (minConfidence === 0 || confidence[index] > minConfidence) &&
-          // Keep content on both sides, previously enforced by log(0).
-          visualOffsets[indexOffset + index + 1] > visualOffsets[start] &&
-          visualOffsets[indexOffset + index + 1] < visualOffsets[end] &&
-          !protectedBoundaryOffsets.has(tokens[indexOffset + index + 1].index) && (!USES_CONTEXT || (
           tokens[indexOffset + index + 1].index > tokens[indexOffset + index].index &&
-          tokens[indexOffset + index + 1].segment !== " "
-        )),
+          hanBoundaryOffsets.has(tokens[indexOffset + index + 1].index) &&
+          !protectedBoundaryOffsets.has(tokens[indexOffset + index + 1].index),
         start - indexOffset,
         end - 1 - indexOffset,
       );
@@ -436,11 +398,10 @@
     return chunkTextByClause(text, options).flatMap((clauseChunks) => (
       clauseChunks.map((chunk, index) => {
         const processed = HAN_CHARACTER.test(chunk);
-        const previousProcessed = index > 0 && HAN_CHARACTER.test(clauseChunks[index - 1]);
         return {
           text: chunk,
           processed,
-          separated: processed && previousProcessed,
+          separated: index > 0,
         };
       })
     ));

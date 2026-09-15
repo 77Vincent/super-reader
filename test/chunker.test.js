@@ -82,10 +82,11 @@ test("context pre-splitting preserves non-proxies, whitespace, and normalized nu
   assert.equal(chunker.visualLength("甲乙丙丁戊己庚辛壬癸子丑 English"), 13);
 });
 
-test("context punctuation tokens cannot strand opening or closing marks at a model cut", () => {
+test("model cuts cannot touch either side of opening or closing marks", () => {
   for (const [opening, closing] of [['"', '"'], ['“', '”'], ['（', '）'], ['《', '》']]) {
     const text = `前面的文字${opening} 甲乙丙丁戊己庚辛壬癸子丑${closing}后面继续阅读`;
-    const forbidden = [text.indexOf(opening) + opening.length + 1, text.lastIndexOf(closing)];
+    const forbidden = [text.indexOf(opening), text.indexOf(opening) + opening.length,
+      text.indexOf(opening) + opening.length + 1, text.lastIndexOf(closing), text.lastIndexOf(closing) + closing.length];
     const chunker = withModel((tokens) => tokens.slice(1).map((token) => (
       token === closing.normalize("NFKC") || token === "甲" ? 100 : 0
     )), "unicode-context-v1");
@@ -578,8 +579,8 @@ test("renders the reported Euler-method example with model scores", () => {
   assert.deepEqual(chunkText(text, { minConfidence: 0 }), [
     "欧拉法",
     "是在积分无法直接计算时，",
-    '用"无数个小矩形累加"',
-    '来近似积分，',
+    '用"无数个小矩形',
+    '累加"来近似积分，',
     "因此",
     "它被称为",
     "一种数值积分方法（numerical integration method）。",

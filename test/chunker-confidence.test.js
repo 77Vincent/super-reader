@@ -108,6 +108,56 @@ test("confidence cannot create a fragment with no visual content", () => {
   }
 });
 
+test("model cuts require adjacent Han in the source, before normalization or whitespace cleanup", () => {
+  const snippets = [
+    "｜8:30", "8｜:30", "8:｜30", "8:30｜", "3｜.14", "3.｜14", "1/｜4",
+    "｜AI", "AI｜", "｜（切勿模仿）", "（｜切勿模仿）", "（切勿模仿｜）", "（切勿模仿）｜",
+    "｜ 切勿模仿", " ｜切勿模仿", "｜㍿", "㍿｜", "｜ﬃ", "ﬃ｜", "🌈｜", "𠮷\u{E0100}｜",
+  ];
+  for (const snippet of snippets) {
+    const marked = text.slice(0, 8) + snippet + text.slice(8);
+    const offset = marked.indexOf("｜");
+    const input = marked.replace("｜", "");
+    const target = realChunker.tokenizeContext(input).findIndex((token) => token.index === offset) - 1;
+    assert.ok(target >= 0, snippet);
+    const chunker = withScores((tokens) => tokens.slice(1).map((_, i) => i === target ? 10 : i === 2 ? 5 : -1000));
+    // The forbidden top probability is retained; the weaker Han gap is not promoted.
+    assert.deepEqual(Array.from(chunker.chunkText(input, { segmenter: null })), [input], snippet);
+    const chunks = Array.from(chunker.chunkText(input, { segmenter: null, minConfidence: 0 }));
+    assert.equal(chunks.join(""), input);
+    let end = 0;
+    for (const part of chunks.slice(0, -1)) {
+      end += part.length;
+      assert.notEqual(end, offset, snippet);
+    }
+  }
+});
+
+test("supplementary Han on both sides remains a valid model cut", () => {
+  const left = text.slice(0, 8) + "𠮷";
+  const right = "𠀀" + text.slice(8);
+  const chunker = withScores((tokens) => tokens.slice(1).map((_, i) => i === 8 ? 100 : 0));
+  assert.deepEqual(Array.from(chunker.chunkText(left + right, { segmenter: null })), [left, right]);
+});
+
+test("quantity protection retains Han-to-Han boundaries not covered by character eligibility", () => {
+  for (const quantity of ["5个｜等级", "〇｜等级", "〡｜等级"]) {
+    const marked = text.slice(0, 8) + quantity + text.slice(8);
+    const input = marked.replace("｜", "");
+    const target = realChunker.tokenizeContext(input).findIndex((token) => token.index === marked.indexOf("｜")) - 1;
+    const chunker = withScores((tokens) => tokens.slice(1).map((_, i) => i === target ? 100 : 0));
+    assert.deepEqual(Array.from(chunker.chunkText(input)), [input], quantity);
+  }
+});
+
+test("reported warning parentheses no longer receive an adjacent model divider", () => {
+  for (const aside of ["（切勿模仿）", "(切勿模仿)"]) {
+    const input = "在没有人被人特别留意的情况下，偷偷少去公司一天，几乎不会被他人发觉" + aside + "。";
+    assert.deepEqual(realChunker.process([input]), [[]]);
+    assert.equal(realChunker.chunkText(input).join(""), input);
+  }
+});
+
 test("long inputs normalize across all windows and never force the one-gap tail", () => {
   for (const length of [256, 257, 511, 512, 1000]) {
     const input = "甲".repeat(length);

@@ -603,6 +603,7 @@ test("the actual worker returns ordered model results for a whole viewport inclu
   const texts = [
     sampleText(), `${sampleText()}。`.repeat(12), "", "English only", "𠀀甲乙丙丁戊己庚辛壬癸子丑",
     "我一直在思考明天早上的早餐吃什么".repeat(33),
+    "在没有人被人特别留意的情况下，偷偷少去公司一天，几乎不会被他人发觉（切勿模仿）。",
   ];
   context.onmessage({ data: { id: 1, texts } });
   assert.equal(response.error, undefined);
@@ -611,6 +612,7 @@ test("the actual worker returns ordered model results for a whole viewport inclu
   assert.deepEqual(Array.from(response.offsetsByText[0]), [8]);
   assert.deepEqual(Array.from(response.offsetsByText[2]), []);
   assert.deepEqual(Array.from(response.offsetsByText[3]), []);
+  assert.deepEqual(Array.from(response.offsetsByText.at(-1)), []);
   // The real confidence gate may abstain on a long repetitive input.
   const expected = require("../src/backend/chunker.js").process(texts);
   assert.deepEqual(Array.from(response.offsetsByText, (offsets) => Array.from(offsets)), expected);
