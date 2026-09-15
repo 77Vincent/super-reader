@@ -140,13 +140,18 @@ test("supplementary Han on both sides remains a valid model cut", () => {
   assert.deepEqual(Array.from(chunker.chunkText(left + right, { segmenter: null })), [left, right]);
 });
 
-test("quantity protection retains Han-to-Han boundaries not covered by character eligibility", () => {
-  for (const quantity of ["5个｜等级", "〇｜等级", "〡｜等级"]) {
+test("quantity boundaries follow model scores while Han adjacency and word protection still apply", () => {
+  for (const [quantity, allowed] of [
+    ["5个｜等级", true], ["〇｜等级", true], ["〡｜等级", true],
+    ["5｜个等级", false], ["5个等｜级", false],
+  ]) {
     const marked = text.slice(0, 8) + quantity + text.slice(8);
     const input = marked.replace("｜", "");
-    const target = realChunker.tokenizeContext(input).findIndex((token) => token.index === marked.indexOf("｜")) - 1;
+    const offset = marked.indexOf("｜");
+    const target = realChunker.tokenizeContext(input).findIndex((token) => token.index === offset) - 1;
     const chunker = withScores((tokens) => tokens.slice(1).map((_, i) => i === target ? 100 : 0));
-    assert.deepEqual(Array.from(chunker.chunkText(input)), [input], quantity);
+    const expected = allowed ? [input.slice(0, offset), input.slice(offset)] : [input];
+    assert.deepEqual(Array.from(chunker.chunkText(input)), expected, quantity);
   }
 });
 

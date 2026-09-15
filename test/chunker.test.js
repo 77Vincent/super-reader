@@ -4,7 +4,6 @@ const { readFileSync } = require("node:fs");
 const { join } = require("node:path");
 const vm = require("node:vm");
 const {
-  boundaryFallsInsideQuantityPhrase,
   boundaryFallsInsideWord,
   buildVisualChunks,
   chunkText,
@@ -456,34 +455,6 @@ test("segments each punctuation-delimited clause only once during recursive plan
   chunkText("同一个无标点子句内的短语块用细竖线分隔", { segmenter });
 
   assert.equal(calls, 1);
-});
-
-test("protects a numeric classifier and its following noun as one phrase", () => {
-  const text = "分为5个等级";
-  const segmenter = {
-    segment() {
-      return [
-        { segment: "分为", index: 0, isWordLike: true },
-        { segment: "5", index: 2, isWordLike: true },
-        { segment: "个", index: 3, isWordLike: true },
-        { segment: "等级", index: 4, isWordLike: true },
-      ];
-    },
-  };
-
-  assert.equal(boundaryFallsInsideQuantityPhrase(text, 2, segmenter), false);
-  assert.equal(boundaryFallsInsideQuantityPhrase(text, 3, segmenter), true);
-  assert.equal(boundaryFallsInsideQuantityPhrase(text, 4, segmenter), true);
-  assert.equal(boundaryFallsInsideQuantityPhrase(text, 6, segmenter), false);
-});
-
-test("keeps a reported numeric quantity phrase free of dividers", () => {
-  const rendered = buildVisualChunks(
-    "网站里的海量视频被划分为了5个等级，",
-  ).map((chunk) => `${chunk.separated ? "｜" : ""}${chunk.text}`).join("");
-
-  assert.match(rendered, /5个等级/u);
-  assert.doesNotMatch(rendered, /5｜个|个｜等级/u);
 });
 
 test("counts numeric expressions toward the threshold without splitting a fraction from its unit", () => {

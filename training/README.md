@@ -150,7 +150,7 @@ commas. All resulting clauses, including enumeration items, follow the same rule
 leave at most 12 visual units intact and send longer clauses with their
 remaining Unicode context to the model. Numeric separators remain within numbers;
 original text and UTF-16 offsets are preserved. Model cuts require immediately adjacent
-Han characters on both sides in the original text, plus word/quantity phrase protection.
+Han characters on both sides in the original text, plus browser word protection.
 The default [recursive softmax](RECURSIVE_SOFTMAX.md) caches original window logits
 and recomputes softmax over each child's internal gaps. Only probabilities strictly
 above 75% are eligible, with raw-logit ranking. An uncertain longer clause stays intact.

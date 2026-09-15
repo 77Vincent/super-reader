@@ -15,10 +15,7 @@
   const HAN_CHARACTER = /\p{Script=Han}/u;
   const CLAUSE_END_CHARACTER = /[，,、。.！？!?；;：:\n…（）()《》〈〉]/u;
   const TRAILING_CLOSER = /[”’」』）》】〉〕〗〙〛"'）)\]]/u;
-  const NUMERIC_TOKEN = /^\p{Number}+(?:[.,]\p{Number}+)*$/u;
   const NUMERIC_EXPRESSION = /\p{Number}+(?:[.,]\p{Number}+)?(?:\s+\p{Number}+[\/／]\p{Number}+|[\/／]\p{Number}+)?/gu;
-  const SINGLE_HAN_WORD = /^\p{Script=Han}$/u;
-  const WHITESPACE = /^\s+$/u;
   const SPLIT_LENGTH_THRESHOLD = 12;
   const MIN_SPLIT_CONFIDENCE = 0.75;
   const MAX_MODEL_WINDOW_TOKENS = 256;
@@ -169,51 +166,6 @@
     });
   }
 
-  function nextWordLikeSegment(segments, startIndex) {
-    for (let index = startIndex; index < segments.length; index += 1) {
-      const item = segments[index];
-      if (item.isWordLike) return { item, index };
-      if (!WHITESPACE.test(item.segment)) return null;
-    }
-    return null;
-  }
-
-  function quantityPhraseRangesFromSegments(segments) {
-    const ranges = [];
-
-    for (let index = 0; index < segments.length; index += 1) {
-      const number = segments[index];
-      if (!number.isWordLike || !NUMERIC_TOKEN.test(number.segment)) continue;
-
-      const classifier = nextWordLikeSegment(segments, index + 1);
-      if (!classifier) continue;
-      // Han numerals can still form Han-to-Han number/word gaps.
-      // Preserve that part of quantity protection; ordinary digit joins are
-      // already excluded by the source-character boundary rule.
-      if (/\p{Script=Han}$/u.test(number.segment) && HAN_CHARACTER.test(classifier.item.segment)) {
-        ranges.push({ start: number.start, end: classifier.item.end });
-      }
-      if (!SINGLE_HAN_WORD.test(classifier.item.segment)) continue;
-
-      const noun = nextWordLikeSegment(segments, classifier.index + 1);
-      if (!noun || !HAN_CHARACTER.test(noun.item.segment)) continue;
-
-      ranges.push({ start: number.start, end: noun.item.end });
-    }
-
-    return ranges;
-  }
-
-  function quantityPhraseRanges(text, segmenter) {
-    return quantityPhraseRangesFromSegments(normalizedSegments(text, segmenter));
-  }
-
-  function boundaryFallsInsideQuantityPhrase(text, boundary, segmenter) {
-    return quantityPhraseRanges(text, segmenter).some(
-      (range) => boundary > range.start && boundary < range.end,
-    );
-  }
-
   // Cumulative visual lengths at token boundaries, including numeric expressions.
   function visualOffsetsForTokens(text, tokens) {
     if (USES_CONTEXT) {
@@ -300,7 +252,6 @@
     const protectedBoundaryRanges = segments
       .filter((item) => item.isWordLike)
       .map((item) => ({ start: item.start, end: item.end }));
-    protectedBoundaryRanges.push(...quantityPhraseRangesFromSegments(segments));
     const protectedBoundaryOffsets = new Set(
       tokens.slice(1)
         .map((token) => token.index)
@@ -432,7 +383,6 @@
     MIN_SPLIT_CONFIDENCE,
     gapProbabilities,
     process,
-    boundaryFallsInsideQuantityPhrase,
     boundaryFallsInsideWord,
     buildVisualChunks,
     chunkText,

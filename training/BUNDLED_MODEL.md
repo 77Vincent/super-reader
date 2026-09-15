@@ -80,9 +80,9 @@ establish that every full-sentence segmentation improves.
 4. Send the remaining longer clauses to the model with their context characters.
    Normalize input and whitespace, hide pre-split proxy punctuation, and preserve
    numeric separators. Model cuts require immediately adjacent Han characters
-   in the original text, as well as word/quantity phrase protection. This includes
+   in the original text, as well as browser word protection. This includes
    supplementary Han and treats spaces as non-Han. Dedicated number-interior,
-   numeric-attachment and quote/bracket attachment rules have been removed.
+   numeric-attachment, quantity-phrase and quote/bracket attachment rules have been removed.
 5. Cache the original window logits. For each fragment above 12 visual units,
    compute softmax over its internal gaps and allow probabilities strictly above 75%.
    Rank eligible gaps by raw model logit, breaking ties by the earlier gap.
