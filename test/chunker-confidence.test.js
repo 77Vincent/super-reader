@@ -158,7 +158,9 @@ test("quantity boundaries follow model scores while Han adjacency and word prote
 test("reported warning parentheses no longer receive an adjacent model divider", () => {
   for (const aside of ["（切勿模仿）", "(切勿模仿)"]) {
     const input = "在没有人被人特别留意的情况下，偷偷少去公司一天，几乎不会被他人发觉" + aside + "。";
-    assert.deepEqual(realChunker.process([input]), [[]]);
+    const bracketEdges = [input.indexOf(aside), input.indexOf(aside) + 1,
+      input.indexOf(aside) + aside.length - 1, input.indexOf(aside) + aside.length];
+    assert.ok(realChunker.process([input])[0].every((offset) => !bracketEdges.includes(offset)));
     assert.equal(realChunker.chunkText(input).join(""), input);
   }
 });
@@ -187,14 +189,15 @@ test("punctuation separates independent confidence distributions and preserves U
 });
 
 test("bundled model uses the 75% default and honors a stricter explicit threshold", () => {
-  const high = "我一直在思考明天早上的早餐吃什么";
-  const low = "而是帮助大脑更快地识别信息结构。";
-  assert.deepEqual(realChunker.process([high, low]), [[6], [6]]);
-  assert.deepEqual(realChunker.process([low], { minConfidence: .9 }), [[]]);
-  assert.deepEqual(realChunker.process([low], { minConfidence: 0 }), [[6]]);
-  const tokens = realChunker.tokenizeContext(high);
+  const uncertain = "我一直在思考明天早上的早餐吃什么";
+  const moderate = "而是帮助大脑更快地识别信息结构。";
+  assert.deepEqual(realChunker.process([uncertain, moderate]), [[], [6]]);
+  assert.deepEqual(realChunker.process([moderate], { minConfidence: .9 }), [[]]);
+  assert.deepEqual(realChunker.process([uncertain, moderate], { minConfidence: 0 }), [[6], [6]]);
+  const tokens = realChunker.tokenizeContext(uncertain);
   const probabilities = realChunker.gapProbabilities(backend.scoreTokens(tokens.map((t) => t.segment)));
-  assert.ok(probabilities[5] > .9);
+  assert.equal(probabilities.indexOf(Math.max(...probabilities)), 5);
+  assert.ok(probabilities[5] > .5 && probabilities[5] < .75);
 });
 
 test("recursive option runs fresh inference and can accept a different second boundary", () => {

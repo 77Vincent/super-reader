@@ -1,10 +1,10 @@
 # Bundled boundary model
 
 `src/boundary-model-data.js` contains the completed **epoch 1 best_state** from
-`unicode-context-192ch-16conv-20260914`, exported on 2026-09-15 while epoch 2
-continued training. This full-corpus continuation starts from the completed
-12-layer epoch-2 best weights and trains on the same data; the newly downloaded
-Ultra-FineWeb corpus is not yet included.
+`web-mix-20m-192ch-16conv-20260915`, exported on 2026-09-16. This continuation
+starts from the previous 16-layer best weights and adds 20 million Ultra-FineWeb
+training pairs to the existing corpus. It is the latest completed, validated best
+checkpoint; the separate 40-million-web-pair expansion is still training epoch 1.
 
 | Property | Value |
 | --- | ---: |
@@ -14,56 +14,67 @@ Ultra-FineWeb corpus is not yet included.
 | Parameters | 3,496,329 |
 | Structural gap receptive field | Up to 34 tokens, 17 on each side |
 | Vocabulary entries | 8,192 |
-| Training examples per epoch | 74,121,940 |
-| Full validation examples | 727,578 |
-| Validation accuracy | 89.1495% |
-| Mean domain validation accuracy | 86.0492% |
-| Validation selection score | 87.5993% |
+| Training examples per epoch | 94,121,940 |
+| Full validation examples | 1,158,011 |
+| Validation accuracy | 87.4859% |
+| Mean domain validation accuracy | 86.5490% |
+| Validation selection score | 87.0174% |
 | Test accuracy | Not evaluated for this interim export |
 
-Accuracy measures recovery of hidden punctuation boundaries. Historical Han-only
-scores used different inputs and holdouts and are not directly comparable.
+Accuracy measures recovery of hidden punctuation boundaries. On this same full
+validation set, the previous bundled model scored 86.3990%; the gain is 1.0869
+percentage points. Its previously reported 89.1495% used only the original
+727,578 validation examples, so that number is not directly comparable with the
+expanded set. The new set adds 430,433 held-out web examples, and its SHA-256 is
+`46b6643fbe5511eacd67e4200b4fa55fbdf3b49c8bb71119270a582bbeedc43d`.
 
 Checkpoint SHA-256:
-`6027142f074a5609495b81cbee68044e1ff6d908ce8d4ffe333165bb8c007871`
+`681666f1105f91e32e5d4fc2b9b7e5a2090cb794ef137d01c700b3e9f7d553c4`
 
 The frozen release artifacts are in
-`training/artifacts/unicode-context-192ch-16conv-20260914/epoch-1-backend/`.
-`source-training-state.pt` captures the live checkpoint by reading one open file;
-`selected-state.pt` contains its completed best weights. `smoke-metrics.json`
-records the selection and source SHA-256
-`ec63d5f420b67bee1b533024a3d559edabfd9ea8e3d3cf2ba8a0187b6c7c1402`.
-The release uses `best_state`, never the partially trained epoch-2 `model_state`.
+`training/artifacts/web-mix-20m-192ch-16conv-20260915/epoch-1-backend/`.
+`source-training-state.pt` preserves the stopped 20-million run's checkpoint;
+`selected-state.pt` is the frozen selection also used to initialize the expanded
+run, with SHA-256
+`0dc993a820dc151ef8bc0bf2232722179a253fec443e8a5a11411cc172f191d2`.
+The export checks every parameter against the source's `best_state`, rather than
+using its partially trained epoch-2 `model_state`. `smoke-metrics.json` records
+the source hashes, data identity and validation results; `export_selected.py`
+records the selection and reference-generation procedure.
 
 `npm run model:export` reproduces the bundle from these local release artifacts.
 The script is 18,740,840 bytes, with SHA-256
-`590221a6dc0622f253f93480d69c26d2ffeb64d4db4d41bc933c9d97444ac0bd`.
+`ad6f0f8daa93cba44cded73facbf645622599d39ff83d763d77281e62b5cdaeb`.
 A clean checkout includes the exported model and
 test references; runtime and ordinary model tests require no training artifacts or PyTorch.
 
 `test/model-backend-reference.json` contains 11 independent PyTorch float32 cases,
 including times, numbers, Latin text, quotes, supplementary Han, emoji and a
 two-character input. JavaScript selects the same best gap in all cases.
-Maximum logit difference is 0.00004578; maximum softmax probability difference is
-0.00000195. Tests check absolute-plus-relative float32 tolerances, probabilities
+Maximum logit difference is 0.00003815; maximum softmax probability difference is
+0.00000202. Tests check absolute-plus-relative float32 tolerances, probabilities
 and selected gaps.
 
 An isolated headless Chrome 152 check loads the production inference service and
 Worker. Six inputs cover short-clause gating, long clauses, enumeration items,
 times, normalized numbers, emoji and supplementary Han. Cold and warm Worker
 results match Node, with valid UTF-16 offsets and original text preserved. The
-first service request, including model loading, took 325 ms while training was
+first service request, including model loading, took 332 ms while training was
 running, within the service's 5-second timeout. This is a smoke measurement, not
 a general latency guarantee; details are in `chrome-worker-verification.json`
 in the frozen release directory.
 
-With confidence abstention disabled, three model-output snapshots changed with this promotion: the divider example
-now starts `同一个无标点子句｜内的短语块`; the Euler example keeps
-`用"无数个小矩形累加"｜来近似积分` together around the quoted phrase; the driving
-example becomes `驾驶员会出于本能｜进行｜向左打方向盘等避险动作`. The last example
-still illustrates that short fragments can occur. These snapshots record runtime
-behavior, not human-labeled quality targets; validation accuracy alone does not
-establish that every full-sentence segmentation improves.
+Backend rules are unchanged by this promotion, but model-dependent snapshots
+change. At the default 75% threshold, `我一直在思考明天早上的早餐吃什么`
+stays intact: its best gap after `思考` has 53.21% confidence. The warning example
+now begins `在｜没有人｜被人特别留意的情况下，` while still avoiding cuts next
+to `（切勿模仿）`. With abstention disabled, the driving example becomes
+`驾驶员会出于本能进行｜向左打方向盘等避险动作，`.
+These are observed outputs, not human-labeled quality targets; short or awkward
+fragments remain possible despite aggregate validation improvement. Tests for
+bracket protection check bracket-adjacent cuts rather than requiring the entire
+input to have no cuts. The old model's confidence precision/recall figures have
+not been remeasured for this checkpoint.
 
 ## Backend preprocessing
 
@@ -103,12 +114,13 @@ A separate [recursive >90% trial](RECURSIVE_CONFIDENCE_EXPERIMENT.md) is availab
 with `{ minConfidence: 0.9, scoringStrategy: "recursive-model" }`. It reruns the
 model on longer child fragments while preserving tokenization and protection ranges.
 
-The subsequent [confidence audit](CONFIDENCE_THRESHOLD.md) measures the precision,
-recall and coverage tradeoff on full validation for original-input top-1 predictions;
-its precision figures do not establish the accuracy of recursive child decisions.
+The historical [confidence audit](CONFIDENCE_THRESHOLD.md) measures the previous
+model's precision, recall and coverage on its original validation set. Those
+figures do not describe this checkpoint or establish the accuracy of recursive
+child decisions.
 
 The completed [architecture smoke](CNN_TRANSFORMER_EXPERIMENT.md) was a separate
-experiment; its scripts and generated artifacts have been removed. The 16-layer
-continuation uses its own frozen training/export sources, so this backend release
-does not change the running experiment. Completing epoch 2 does not automatically
-replace this bundle.
+experiment; its scripts and generated artifacts have been removed. The current
+40-million-web-pair continuation uses its own frozen training/export sources, so
+this backend release does not change that run. Completing an epoch does not
+automatically replace this bundle.

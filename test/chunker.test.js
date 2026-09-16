@@ -548,20 +548,19 @@ test("renders the reported Euler-method example with model scores", () => {
     "因此它被称为一种数值积分方法（numerical integration method）。",
   ]);
   assert.deepEqual(chunkText(text, { minConfidence: 0 }), [
-    "欧拉法",
-    "是在积分无法直接计算时，",
+    "欧拉法是在积分",
+    "无法直接计算时，",
     '用"无数个小矩形',
     '累加"来近似积分，',
     "因此",
-    "它被称为",
-    "一种数值积分方法（numerical integration method）。",
+    "它被称为一种数值积分",
+    "方法（numerical integration method）。",
   ]);
 });
 
 test("model scoring keeps 方向盘 together at the current length threshold", () => {
   assert.deepEqual(chunkText("驾驶员会出于本能进行向左打方向盘等避险动作，", { minConfidence: 0 }), [
-    "驾驶员会出于本能",
-    "进行",
+    "驾驶员会出于本能进行",
     "向左打方向盘等避险动作，",
   ]);
 });

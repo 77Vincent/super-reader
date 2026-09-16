@@ -160,7 +160,8 @@ It uses the same deterministic sample of 500 examples per domain (seed 20260911)
 Keep input and sample hashes fixed for within-version comparisons.
 
 The bundled model is the completed epoch-1 best checkpoint from the 16-layer
-continuation run (`unicode-context-192ch-16conv-20260914`);
+web continuation run (`web-mix-20m-192ch-16conv-20260915`), trained on 94,121,940
+pairs including 20 million web pairs;
 see [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for its provenance and validation results.
 The backend first splits clauses using normalized proxy punctuation and enumeration
 commas. All resulting clauses, including enumeration items, follow the same rule:
@@ -171,8 +172,9 @@ Han characters on both sides in the original text, plus browser word protection.
 The default [recursive softmax](RECURSIVE_SOFTMAX.md) caches original window logits
 and recomputes softmax over each child's internal gaps. Only probabilities strictly
 above 75% are eligible, with raw-logit ranking. An uncertain longer clause stays intact.
-The [confidence audit](CONFIDENCE_THRESHOLD.md) measures original-input predictions;
-those precision figures do not establish the accuracy of recursive child decisions.
+The [confidence audit](CONFIDENCE_THRESHOLD.md) measures original-input predictions
+for the previous, pre-web model; its precision figures do not describe this new
+checkpoint or establish the accuracy of recursive child decisions.
 
 ## Verification and small experiments
 

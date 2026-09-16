@@ -612,7 +612,10 @@ test("the actual worker returns ordered model results for a whole viewport inclu
   assert.deepEqual(Array.from(response.offsetsByText[0]), [8]);
   assert.deepEqual(Array.from(response.offsetsByText[2]), []);
   assert.deepEqual(Array.from(response.offsetsByText[3]), []);
-  assert.deepEqual(Array.from(response.offsetsByText.at(-1)), []);
+  const warning = texts.at(-1);
+  const bracketEdges = [warning.indexOf("（"), warning.indexOf("（") + 1,
+    warning.indexOf("）"), warning.indexOf("）") + 1];
+  assert.ok(Array.from(response.offsetsByText.at(-1)).every((offset) => !bracketEdges.includes(offset)));
   // The real confidence gate may abstain on a long repetitive input.
   const expected = require("../src/backend/chunker.js").process(texts);
   assert.deepEqual(Array.from(response.offsetsByText, (offsets) => Array.from(offsets)), expected);
