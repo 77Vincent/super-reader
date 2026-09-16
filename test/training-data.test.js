@@ -17,16 +17,15 @@ test("training pairs use adjacent punctuation fragments with one target gap", as
   assert.equal(samples[1].document_id, samples[0].document_id);
 });
 
-test("colons remain context while ellipses create training boundaries", async () => {
+test("colons and ASCII dots remain context while Chinese ellipses create boundaries", async () => {
   const { splitIntoFragments, buildAdjacentSamples } = await import(
     "../training/prepare_smoke_data.mjs"
   );
   const text = "先说明：这里需要停顿……然后继续...最后结束。";
 
   assert.deepEqual(splitIntoFragments(text), [
-    { text: "先说明:这里需要停顿", punctuation: "......" },
-    { text: "然后继续", punctuation: "..." },
-    { text: "最后结束", punctuation: "。" },
+    { text: "先说明:这里需要停顿", punctuation: "……" },
+    { text: "然后继续...最后结束", punctuation: "。" },
   ]);
 
   const samples = buildAdjacentSamples({
@@ -36,7 +35,7 @@ test("colons remain context while ellipses create training boundaries", async ()
   });
   assert.deepEqual(
     samples.map((sample) => sample.punctuation),
-    ["......", "..."],
+    ["……"],
   );
 });
 

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable, TypeVar
 
 import pyarrow.parquet as pq
-from text_policy import DATA_POLICY, PROXY_PUNCTUATION, require_data_policy
+from text_policy import DATA_POLICY, PROXY_PUNCTUATION, normalize_context, require_data_policy
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -95,14 +95,14 @@ def is_han(character: str) -> bool:
 
 
 def normalize_document(text: str) -> str:
-    text = unicodedata.normalize("NFKC", str(text or ""))
+    text = normalize_context(str(text or ""))
     text = MARKDOWN_FENCE_PATTERN.sub(" ", text)
     text = URL_PATTERN.sub(" ", text)
     return SPACE_PATTERN.sub(" ", text).strip()
 
 
 def clean_fragment(text: str) -> str:
-    return SPACE_PATTERN.sub(" ", unicodedata.normalize("NFKC", text)).strip()
+    return SPACE_PATTERN.sub(" ", normalize_context(text)).strip()
 
 
 def split_into_fragments(text: str) -> list[str]:
@@ -110,7 +110,7 @@ def split_into_fragments(text: str) -> list[str]:
     buffer: list[str] = []
     normalized = normalize_document(text)
     for index, character in enumerate(normalized):
-        numeric_separator = (character in ".," and index > 0 and index + 1 < len(normalized)
+        numeric_separator = (character == "," and index > 0 and index + 1 < len(normalized)
                              and normalized[index - 1].isdecimal() and normalized[index + 1].isdecimal())
         if character not in PROXY_PUNCTUATION or numeric_separator:
             buffer.append(character)

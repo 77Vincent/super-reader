@@ -1,9 +1,9 @@
 {
-  "standard": "unicode-context-v1",
+  "standard": "unicode-context-v2",
   "input_representation": "unicode-context-v1",
   "tokenization": "character",
-  "excluded_proxy_punctuation": ["、", "：", ":"],
-  "proxy_punctuation": ["，", ",", "。", ".", "！", "!", "？", "?", "；", ";", "…"],
-  "normalization": "NFKC; collapse whitespace to ASCII space; trim fragment ends",
-  "numeric_punctuation": "Retain periods and commas between decimal digits"
+  "excluded_proxy_punctuation": ["、", "：", ":", ".", "．"],
+  "proxy_punctuation": ["，", ",", "。", "！", "!", "？", "?", "；", ";", "…"],
+  "normalization": "NFKC except preserve U+2026 ellipsis as a proxy; collapse whitespace to ASCII space; trim fragment ends",
+  "numeric_punctuation": "Retain commas between decimal digits; periods are always context"
 }

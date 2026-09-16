@@ -30,8 +30,8 @@ test("evaluation uses regenerated list fragments and records the Unicode context
     ...contextSummary, splits: { validation: { sha256: fixture.sha256 } },
   }));
   const result = await loadEvaluationSamples(fixture.input, 1);
-  assert.equal(result.standard, "unicode-context-v1");
-  assert.deepEqual(result.excludedProxyPunctuation, ["、", "：", ":"]);
+  assert.equal(result.standard, "unicode-context-v2");
+  assert.deepEqual(result.excludedProxyPunctuation, ["、", "：", ":", ".", "．"]);
   assert.equal(result.inputSha256, fixture.sha256);
   assert.match(result.summarySha256, /^[a-f0-9]{64}$/u);
   assert.equal(result.records.length, 1);
@@ -44,10 +44,12 @@ test("evaluation rejects missing or legacy metadata even when rows have no enume
   const records = [{ id: "legacy-filtered", domain: "news", punctuation: "，" }];
   for (const summary of [undefined, { tokenization: "character" },
     { tokenization: "character", excluded_proxy_punctuation: [] },
-    { tokenization: "word", excluded_proxy_punctuation: ["、"] }]) {
+    { tokenization: "word", excluded_proxy_punctuation: ["、"] },
+    { ...contextSummary, standard: "unicode-context-v1" },
+    { ...contextSummary, excluded_proxy_punctuation: ["、", "：", ":"] }]) {
     const fixture = evaluationFixture(t, records, summary);
     await assert.rejects(loadEvaluationSamples(fixture.input),
-      summary === undefined ? /Missing evaluation metadata/u : /Data requires unicode-context-v1/u);
+      summary === undefined ? /Missing evaluation metadata/u : /Data requires unicode-context-v2/u);
   }
 });
 
@@ -60,7 +62,7 @@ test("evaluation validates proxy labels on rows outside the sampled reservoir", 
   records.forEach((record) => sampler.add(record));
   const selectedId = sampler.result().records[0].id;
   const excludedIndex = records.findIndex(({ id }) => id !== selectedId);
-  for (const punctuation of ["、", "，、", ":", "：", "，:", undefined, ""]) {
+  for (const punctuation of ["、", "，、", ":", "：", "，:", ".", "．", "...", "，.", undefined, ""]) {
     const modified = records.map((record, index) => index === excludedIndex ? { ...record, punctuation } : record);
     const fixture = evaluationFixture(t, modified, contextSummary);
     await assert.rejects(loadEvaluationSamples(fixture.input, 1, "standard"),
@@ -106,8 +108,8 @@ test("default evaluation selects the corrected holdout even when a legacy generi
     cwd: directory, stdio: "pipe", timeout: 30000,
   });
   const report = JSON.parse(readFileSync(join(directory, "training/artifacts/model-baseline.json"), "utf8"));
-  assert.equal(report.evaluation.standard, "unicode-context-v1");
-  assert.deepEqual(report.evaluation.excludedProxyPunctuation, ["、", "：", ":"]);
+  assert.equal(report.evaluation.standard, "unicode-context-v2");
+  assert.deepEqual(report.evaluation.excludedProxyPunctuation, ["、", "：", ":", ".", "．"]);
   assert.equal(report.evaluation.input, "training/data/processed/unicode-context-192ch-12conv-20260913-eval/validation.jsonl");
   assert.equal(report.overall.count, 1);
   assert.equal(report.overall.accuracy, 1);

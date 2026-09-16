@@ -108,7 +108,7 @@ def labeled_samples(document):
     text = normalize_document(document)
     fragments, labels, buffer = [], [], []
     for i, character in enumerate(text):
-        numeric = character in ".," and 0 < i < len(text) - 1 and text[i - 1].isdecimal() and text[i + 1].isdecimal()
+        numeric = character == "," and 0 < i < len(text) - 1 and text[i - 1].isdecimal() and text[i + 1].isdecimal()
         if character not in PROXY_PUNCTUATION or numeric:
             buffer.append(character)
             continue

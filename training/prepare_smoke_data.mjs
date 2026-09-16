@@ -13,7 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { DATA_POLICY, PROXY_PUNCTUATION } from "./text_policy.mjs";
+import { DATA_POLICY, PROXY_PUNCTUATION, normalizeContext } from "./text_policy.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const RAW_DIR = join(SCRIPT_DIR, "data", "raw");
@@ -73,8 +73,7 @@ function hashText(text) {
 }
 
 function normalizeDocument(text) {
-  return String(text || "")
-    .normalize("NFKC")
+  return normalizeContext(String(text || ""))
     .replace(/\s+/gu, " ")
     .trim();
 }
@@ -103,7 +102,7 @@ export function splitIntoFragments(text) {
   const characters = Array.from(normalizeDocument(text));
   for (let position = 0; position < characters.length; position += 1) {
     const character = characters[position];
-    const numericSeparator = /[.,]/u.test(character) &&
+    const numericSeparator = character === "," &&
       /^\p{Nd}$/u.test(characters[position - 1] || "") && /^\p{Nd}$/u.test(characters[position + 1] || "");
     if (!PROXY_PUNCTUATION.has(character) || numericSeparator) {
       buffer += character;
