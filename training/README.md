@@ -99,8 +99,8 @@ retain bounded retries; size and checksum mismatches stop the download.
 Its manifest, verified-file list, progress and upstream
 documentation are stored in `training/data/raw/ultra-fineweb-zh/`.
 The upstream license also requires checking the original component datasets'
-terms. Downloaded text has not yet been converted into training samples or audited
-against existing holdouts and is not automatically added to a running epoch.
+terms. Downloaded text is not automatically added to a running epoch; the separate
+web continuation below prepares samples and protects the holdouts first.
 
 The continuation run is
 `training/artifacts/unicode-context-192ch-16conv-20260914/`. It inherits the
@@ -126,6 +126,23 @@ every four shards and at safe interrupt boundaries. `status.json`, `training.log
 `preflight/verification.json` and the candidate checkpoints record progress.
 Completion exports a separate candidate; the bundled backend stays on its
 currently released model until explicitly promoted.
+
+## Web data continuation
+
+`npm run model:continue-web` prepares 20 million new training pairs across all
+256 downloaded Chinese web files, combines them with the existing 74,121,940
+pairs, and continues the best 16-layer epoch-1 weights for two epochs. It keeps
+the vocabulary and architecture fixed. Whole-document web holdouts supplement
+the unchanged original validation/test sets; no evaluation subset is used.
+Historical input deduplication runs before sampling. Preparation and training
+resume with `npm run model:continue-web -- --resume`.
+See [the run design and overlap controls](WEB_CONTINUATION.md).
+
+After the first mixed epoch improved full validation accuracy to 87.4859%,
+`npm run model:expand-web` starts a separate continuation from that best epoch.
+It retains the existing data, adds another 20 million distinct web training
+pairs (40 million web / 114,121,940 total), and keeps both complete evaluation
+splits byte-identical. `npm run model:expand-web -- --resume` resumes this run.
 
 ## Evaluation
 
