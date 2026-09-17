@@ -55,7 +55,7 @@ test("enumeration commas keep list items together without creating training targ
     }, { tokenization });
     assert.equal(samples.length, 1);
     const [sample] = samples;
-    assert.equal(sample.punctuation, ",");
+    assert.equal(sample.punctuation, "，");
     assert.equal(sample.tokens.slice(0, sample.target_index + 1).join(""), "我买了苹果、香蕉");
     assert.equal(sample.tokens.slice(sample.target_index + 1).join(""), "准备制作果汁、沙拉");
   }
@@ -69,7 +69,7 @@ test("regenerated validation and test use the revised proxies and retain documen
     assert.equal(result.split, split);
     assert.equal(result.samples.length, 1);
     const [sample] = result.samples;
-    assert.equal(sample.punctuation, ",");
+    assert.equal(sample.punctuation, "，");
     assert.equal(sample.tokens.slice(0, sample.target_index + 1).join(""), "我买了苹果、香蕉");
     assert.equal(sample.tokens.slice(sample.target_index + 1).join(""), "准备做果汁");
   }
@@ -86,7 +86,7 @@ test("corrected holdouts exclude known training pairs and reject enumeration lab
   const { join } = require("node:path");
   const { execFileSync, spawnSync } = require("node:child_process");
   const directory = mkdtempSync(join(tmpdir(), "reader-holdout-test-"));
-  const record = (id, text, punctuation = ",") => ({ id, document_id: id, domain: "fixture", tokens: Array.from(text), target_index: 1, punctuation });
+  const record = (id, text, punctuation = "，") => ({ id, document_id: id, domain: "fixture", tokens: Array.from(text), target_index: 1, punctuation });
   try {
     const input = join(directory, "input");
     const output = join(directory, "output");
@@ -162,7 +162,7 @@ test("training input hides the target proxy and retains quotation context", asyn
     text: "模型只看文字，“标点”不会泄露。",
   });
 
-  assert.equal(sample.punctuation, ",");
+  assert.equal(sample.punctuation, "，");
   assert.equal(sample.tokens.join(""), "模型只看文字“标点”不会泄露");
 });
 

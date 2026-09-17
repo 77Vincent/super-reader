@@ -56,7 +56,7 @@ export async function loadEvaluationSamples(input, perDomain = 500, seed = "2026
     counts, records, inputSha256,
     standard: EVALUATION_STANDARD,
     inputRepresentation: summary.input_representation,
-    excludedProxyPunctuation: summary.excluded_proxy_punctuation,
+    proxyPunctuation: summary.proxy_punctuation,
     summaryPath, summarySha256: sha256(summaryBytes),
   };
 }
@@ -234,7 +234,7 @@ async function main() {
       source: options.model, sourceSha256: sha256(readFileSync(resolve(project, options.model))),
     },
     evaluation: {
-      standard: evaluation.standard, excludedProxyPunctuation: evaluation.excludedProxyPunctuation,
+      standard: evaluation.standard, proxyPunctuation: evaluation.proxyPunctuation,
       inputRepresentation: evaluation.inputRepresentation,
       summaryPath: evaluation.summaryPath, summarySha256: evaluation.summarySha256,
       input: options.input, inputSha256: evaluation.inputSha256, availableCounts: counts,

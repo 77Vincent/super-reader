@@ -11,17 +11,18 @@ mixed into a new run.
 
 Adjacent fragments A and B become the input AB. Only their separating proxy
 punctuation is hidden; the target is the code-point gap between A and B.
-The proxy set contains Chinese/ASCII commas, exclamation marks, question marks
-and semicolons, plus the Chinese full stop `。` and ellipsis `…`. ASCII periods
-`.` and their NFKC-compatible forms such as `．` remain context, including
-numbering, initials, domains, filenames and runs of dots (`...`). Colons also
-remain context.
+`proxy_punctuation` is the single whitelist: `， 。 ； ！ ？ …`.
+These exact characters are recognized in the original source, before NFKC.
+Other punctuation remains context and does not produce a label; no inverse
+exclusion list is maintained. Thus ASCII punctuation and compatibility forms
+such as `﹐` or `｡` do not become proxies merely because normalization changes
+their appearance.
 
 Other punctuation, digits, letters, quotes and symbols remain in the input.
-NFKC normalization standardizes compatible forms, except that `…` is preserved
-so it cannot become an ASCII-dot proxy accidentally. Whitespace becomes a single
-ASCII space and fragment edges are trimmed. Commas between digits stay intact;
-periods are always retained. Both sides must contain a letter or number. Corpus-specific
+After proxy detection, retained fragments are normalized with NFKC. Whitespace
+becomes a single ASCII space and fragment edges are trimmed. A comma proxy
+between decimal digits stays intact as numeric context. Both sides must contain
+a letter or number. Corpus-specific
 Wikipedia markup and synthetic fenced-code/URL cleanup still happen during text
 extraction, before sample generation.
 
@@ -37,6 +38,10 @@ Target: 上午8:30至下午4:30 | 假日关门
 Source: F. Billinghurst负责设计，团队实施。
 Input:  F. Billinghurst负责设计团队实施
 Target: F. Billinghurst负责设计 | 团队实施
+
+Source: 坐标为(a,b)，继续计算。
+Input:  坐标为(a,b)继续计算
+Target: 坐标为(a,b) | 继续计算
 ```
 
 The labels are punctuation-derived weak supervision. Accuracy measures recovery
@@ -46,13 +51,18 @@ The [2026-09-16 corpus quality audit](CORPUS_QUALITY_AUDIT.md) records a stratif
 1,000-row AI semantic review, 20,000-row automatic checks, proxy-label failure
 examples, and limits of the resulting quality estimates.
 
-The existing dated corpora, evaluation splits and running web-continuation job
+[Local web prose screening](WEB_SCREENING.md) selects intact source paragraphs
+from cached web documents, records exclusions and provenance, and preserves
+holdout ownership before any new boundary samples are prepared.
+
+The existing dated corpora, evaluation splits and paused web-continuation job
 were prepared under v1. Changing this default does not rewrite their samples or
 alter their frozen source snapshots. Before a v2 run, regenerate train,
 validation and test from the original documents into fresh directories while
-preserving document ownership and overlap checks; dropping period-labeled rows
-alone cannot restore periods previously removed from their inputs. Current
-training/evaluation loaders reject v1 metadata. Historical jobs can continue
+preserving document ownership and overlap checks; dropping disallowed labels
+alone cannot restore punctuation previously removed from their inputs. Current
+training/evaluation loaders compare the proxy set, normalization and numeric
+context rules, and reject v1 or incompatible intermediate v2 metadata. Historical jobs can continue
 using their recorded v1 source snapshots. Accuracy across these label standards
 must not be compared as if it were measured on the same holdout.
 

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable, TypeVar
 
 import pyarrow.parquet as pq
-from text_policy import DATA_POLICY, PROXY_PUNCTUATION, normalize_context, require_data_policy
+from text_policy import DATA_POLICY, PROXY_PUNCTUATION, require_data_policy, training_pairs
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -94,24 +94,25 @@ def is_han(character: str) -> bool:
     )
 
 
-def normalize_document(text: str) -> str:
-    text = normalize_context(str(text or ""))
+def clean_document(text: str) -> str:
+    # Cleanup must preserve source punctuation until proxy detection.
+    text = str(text or "")
     text = MARKDOWN_FENCE_PATTERN.sub(" ", text)
     text = URL_PATTERN.sub(" ", text)
     return SPACE_PATTERN.sub(" ", text).strip()
 
 
 def clean_fragment(text: str) -> str:
-    return SPACE_PATTERN.sub(" ", normalize_context(text)).strip()
+    return SPACE_PATTERN.sub(" ", unicodedata.normalize("NFKC", text)).strip()
 
 
 def split_into_fragments(text: str) -> list[str]:
     fragments: list[str] = []
     buffer: list[str] = []
-    normalized = normalize_document(text)
-    for index, character in enumerate(normalized):
-        numeric_separator = (character == "," and index > 0 and index + 1 < len(normalized)
-                             and normalized[index - 1].isdecimal() and normalized[index + 1].isdecimal())
+    original = clean_document(text)
+    for index, character in enumerate(original):
+        numeric_separator = (character == "，" and index > 0 and index + 1 < len(original)
+                             and original[index - 1].isdecimal() and original[index + 1].isdecimal())
         if character not in PROXY_PUNCTUATION or numeric_separator:
             buffer.append(character)
             continue
@@ -125,18 +126,13 @@ def split_into_fragments(text: str) -> list[str]:
     return fragments
 
 
-def adjacent_samples(text: str) -> list[tuple[str, int]]:
-    fragments = split_into_fragments(text)
-    result: list[tuple[str, int]] = []
-    for left_fragment, right_fragment in zip(fragments, fragments[1:]):
-        left, right = left_fragment, right_fragment
-        if not any(c.isalnum() for c in left) or not any(c.isalnum() for c in right):
-            continue
-        result.append((left + right, len(left) - 1))
-    return result
+def adjacent_samples(text: str, rejection_counts=None) -> list[tuple[str, int]]:
+    prepared = URL_PATTERN.sub(' ', MARKDOWN_FENCE_PATTERN.sub(' ', str(text or '')))
+    return [(value, target) for value, target, _ in training_pairs(prepared, rejection_counts)]
 
 
 def quality_document(text: str) -> bool:
+    text = unicodedata.normalize("NFKC", text)
     han = sum(is_han(character) for character in text)
     latin = sum(character.isascii() and character.isalpha() for character in text)
     return han >= 80 and han / max(1, han + latin) >= 0.70
@@ -565,11 +561,11 @@ def main() -> None:
                     if document_signature(str(content or "")) in holdout_hashes:
                         state["statistics"]["holdout_documents_filtered"] = state["statistics"].get("holdout_documents_filtered", 0) + 1
                         continue
-                    normalized = normalize_document(content)
-                    if not quality_document(normalized):
+                    cleaned = clean_document(content)
+                    if not quality_document(cleaned):
                         state["statistics"]["quality_documents_filtered"] += 1
                         continue
-                    candidates = adjacent_samples(normalized)
+                    candidates = adjacent_samples(content, state["statistics"].setdefault("surface_rejected", {}))
                     samples = evenly_capped(candidates, options.max_samples_per_document)
                     state["statistics"]["document_sample_cap_filtered"] += (
                         len(candidates) - len(samples)

@@ -13,7 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { DATA_POLICY, PROXY_PUNCTUATION, normalizeContext } from "./text_policy.mjs";
+import { DATA_POLICY, trainingFragmentLines, trainingPairs } from "./text_policy.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const RAW_DIR = join(SCRIPT_DIR, "data", "raw");
@@ -72,14 +72,15 @@ function hashText(text) {
   return createHash("sha256").update(text).digest("hex");
 }
 
-function normalizeDocument(text) {
-  return normalizeContext(String(text || ""))
+function cleanDocument(text) {
+  // Preserve original punctuation until the proxy decision has been made.
+  return String(text || "")
     .replace(/\s+/gu, " ")
     .trim();
 }
 
 function cleanFragment(text) {
-  return normalizeDocument(text);
+  return cleanDocument(text.normalize("NFKC"));
 }
 
 function tokenize(text, tokenization) {
@@ -96,42 +97,17 @@ function contentCharacterLength(text) {
 }
 
 export function splitIntoFragments(text) {
-  const fragments = [];
-  let buffer = "";
-
-  const characters = Array.from(normalizeDocument(text));
-  for (let position = 0; position < characters.length; position += 1) {
-    const character = characters[position];
-    const numericSeparator = character === "," &&
-      /^\p{Nd}$/u.test(characters[position - 1] || "") && /^\p{Nd}$/u.test(characters[position + 1] || "");
-    if (!PROXY_PUNCTUATION.has(character) || numericSeparator) {
-      buffer += character;
-      continue;
-    }
-
-    const cleaned = cleanFragment(buffer);
-    if (cleaned) {
-      fragments.push({ text: cleaned, punctuation: character });
-    } else if (fragments.length > 0) {
-      fragments[fragments.length - 1].punctuation += character;
-    }
-    buffer = "";
-  }
-
-  const tail = cleanFragment(buffer);
-  if (tail) fragments.push({ text: tail, punctuation: "" });
-  return fragments;
+  return Array.from(trainingFragmentLines(text)).flat()
+    .map(({ text: value, punctuation }) => ({ text: value, punctuation }));
 }
 
 export function buildAdjacentSamples(document, options = {}) {
   const tokenization = options.tokenization || "character";
-  const fragments = splitIntoFragments(document.text);
   const samples = [];
 
-  for (let index = 0; index < fragments.length - 1; index += 1) {
-    const leftText = fragments[index].text;
-    const rightText = fragments[index + 1].text;
-    if (!/[\p{L}\p{N}]/u.test(leftText) || !/[\p{L}\p{N}]/u.test(rightText)) continue;
+  for (const pair of trainingPairs(document.text, options.rejectionCounts)) {
+    const leftText = pair.left;
+    const rightText = pair.right;
     const leftCharacterLength = contentCharacterLength(leftText);
     const rightCharacterLength = contentCharacterLength(rightText);
 
@@ -143,12 +119,12 @@ export function buildAdjacentSamples(document, options = {}) {
     if (tokens.length < 2) continue;
 
     samples.push({
-      id: `${document.id}:pair:${index}`,
+      id: `${document.id}:line:${pair.lineIndex}:pair:${pair.index}`,
       domain: document.domain,
       document_id: document.id,
       tokens,
       target_index: left.length - 1,
-      punctuation: fragments[index].punctuation,
+      punctuation: pair.punctuation,
       left_character_length: leftCharacterLength,
       right_character_length: rightCharacterLength,
       relative_boundary_position: (
@@ -238,7 +214,8 @@ export function cleanWikipediaMarkup(wikitext) {
     .replace(/__(?:TOC|NOTOC|FORCETOC|NOEDITSECTION|NEWSECTIONLINK|NONEWSECTIONLINK)__/giu, " ")
     .replace(/&nbsp;/giu, " ");
 
-  return normalizeDocument(text);
+  // Candidate generation needs the original line boundaries.
+  return text.trim();
 }
 
 export function wikipediaDocumentsFromXml(xml, streamOffset = 0) {
@@ -455,10 +432,10 @@ function filterAndDeduplicate(documentsByDomain) {
   for (const [domain, documents] of documentsByDomain) {
     const accepted = [];
     for (const document of documents) {
-      const text = normalizeDocument(document.text);
+      const text = cleanDocument(document.text);
       if (splitIntoFragments(text).length < 2) continue;
 
-      const fingerprint = hashText(text);
+      const fingerprint = hashText(cleanFragment(text));
       if (seen.has(fingerprint)) {
         duplicateCount += 1;
         continue;

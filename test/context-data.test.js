@@ -15,6 +15,10 @@ const cases = [
   ["头文件为unistd.h，编号是２．３。", "头文件为unistd.h", "编号是2.3"],
   ["序号是３．检查完毕。随后提交报告。", "序号是3.检查完毕", "随后提交报告"],
   ["先停顿……然后继续...最后结束。", "先停顿", "然后继续...最后结束"],
+  ["坐标为(a,b)，继续计算。", "坐标为(a,b)", "继续计算"],
+  ["调用f(x,y);然后返回，稍后重试。", "调用f(x,y);然后返回", "稍后重试"],
+  ["共计１，０００人，准备出发。", "共计1,000人", "准备出发"],
+  ["保留﹐﹔‼⁇︒｡，然后继续。", "保留,;!!??。。", "然后继续"],
 ];
 
 test("context samples hide only the target proxy and use code-point gap indices", async () => {
@@ -51,9 +55,10 @@ print(json.dumps({"synthetic":[adjacent_samples(t) for t in texts],
   assert.deepEqual(labeledJs, python.web);
 });
 
-test("period-only text creates no target in any preparation path", async () => {
+test("non-proxy punctuation creates no target in any preparation path", async () => {
   const { buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
-  const texts = ["3.高压系统设备安装完成80%", "F. Billinghurst", "docs.example.com", "３．检查完毕", "甲...乙"];
+  const texts = ["3.高压系统设备安装完成80%", "F. Billinghurst", "docs.example.com", "３．检查完毕", "甲...乙",
+    ...[",", ";", "!", "?", "﹐", "﹔", "‼", "⁇", "︒", "｡", "、", ":"].map((mark) => `甲${mark}乙`)];
   for (const text of texts) assert.deepEqual(buildAdjacentSamples({ id: "dots", domain: "fixture", text }), []);
   execFileSync("python3", ["-c", String.raw`
 import sys,json,types
@@ -66,6 +71,60 @@ for text in json.load(sys.stdin):
     assert adjacent_samples(text) == [], text
     assert list(labeled_samples(text)) == [], text
 `], { input: JSON.stringify(texts) });
+});
+
+test("every raw Chinese proxy remains a label before normalization", async () => {
+  const { buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
+  const { DATA_POLICY } = await import("../training/text_policy.mjs");
+  const texts = DATA_POLICY.proxy_punctuation.map((mark) => `甲${mark}乙`);
+  const js = texts.map((text) => buildAdjacentSamples({ id: "raw", domain: "fixture", text })
+    .map((row) => [row.tokens.join(""), row.target_index, row.punctuation]));
+  assert.deepEqual(js, DATA_POLICY.proxy_punctuation.map((mark) => [["甲乙", 0, mark]]));
+  const python = JSON.parse(execFileSync("python3", ["-c", String.raw`
+import sys,json,types
+sys.path.insert(0,'training')
+sys.modules['pyarrow']=types.ModuleType('pyarrow')
+sys.modules['pyarrow.parquet']=types.ModuleType('pyarrow.parquet')
+from prepare_web_data import labeled_samples
+print(json.dumps([list(labeled_samples(t)) for t in json.load(sys.stdin)],ensure_ascii=False))
+`], { input: JSON.stringify(texts), encoding: "utf8" }));
+  assert.deepEqual(python, js);
+});
+
+test("Wikipedia extraction preserves raw punctuation until sample generation", async () => {
+  const { wikipediaDocumentsFromXml, buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
+  const [document] = wikipediaDocumentsFromXml('<mediawiki><page><title>示例</title><ns>0</ns><id>1</id><revision><text>甲,乙，丙﹐丁。</text></revision></page></mediawiki>');
+  assert.equal(document.text, "甲,乙，丙﹐丁。");
+  const [row] = buildAdjacentSamples(document);
+  assert.equal(row.tokens.join(""), "甲,乙丙,丁");
+  assert.equal(row.target_index, 2);
+  assert.equal(row.punctuation, "，");
+});
+
+test("both policy validators compare the whitelist and normalization semantics", async () => {
+  const { DATA_POLICY, requireDataPolicy } = await import("../training/text_policy.mjs");
+  const reordered = { ...DATA_POLICY, proxy_punctuation: [...DATA_POLICY.proxy_punctuation].reverse() };
+  requireDataPolicy(reordered);
+  const invalid = [
+    { ...DATA_POLICY, proxy_punctuation: ["，"] },
+    { ...DATA_POLICY, proxy_punctuation: [...DATA_POLICY.proxy_punctuation, ","] },
+    { ...DATA_POLICY, normalization: "NFKC before proxy detection" },
+    { ...DATA_POLICY, numeric_punctuation: "none" },
+  ];
+  invalid.forEach((summary) => assert.throws(() => requireDataPolicy(summary), /Data requires/u));
+  execFileSync("python3", ["-c", String.raw`
+import sys,json
+sys.path.insert(0,'training')
+from text_policy import require_data_policy
+valid,invalid=json.load(sys.stdin)
+require_data_policy(valid)
+for summary in invalid:
+    try:
+        require_data_policy(summary)
+    except ValueError:
+        continue
+    raise AssertionError('incompatible policy was accepted')
+`], { input: JSON.stringify([reordered, invalid]) });
 });
 
 test("vocabulary extension preserves existing IDs and assigns context distinct IDs", () => {

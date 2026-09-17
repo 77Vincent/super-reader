@@ -22,7 +22,7 @@ import unicodedata
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "training/.deps"))
 import pyarrow.parquet as pq
-from prepare_synthetic_data import normalize_document, quality_document, document_signature
+from prepare_synthetic_data import clean_document, clean_fragment, quality_document, document_signature
 from text_policy import DATA_POLICY, PROXY_PUNCTUATION, require_data_policy, valid_proxy_label
 
 BASE = ROOT / "training/data/processed/unicode-context-192ch-12conv-20260913-combined/manifest.json"
@@ -103,29 +103,12 @@ class Bloom:
             self.handle.close()
 
 
-def labeled_samples(document):
-    """The existing adjacent-fragment target, with its actual removed proxy label."""
-    text = normalize_document(document)
-    fragments, labels, buffer = [], [], []
-    for i, character in enumerate(text):
-        numeric = character == "," and 0 < i < len(text) - 1 and text[i - 1].isdecimal() and text[i + 1].isdecimal()
-        if character not in PROXY_PUNCTUATION or numeric:
-            buffer.append(character)
-            continue
-        fragment = "".join(buffer).strip()
-        buffer.clear()
-        if fragment:
-            fragments.append(fragment)
-            labels.append(character)
-        elif labels:
-            labels[-1] += character
-    tail = "".join(buffer).strip()
-    if tail:
-        fragments.append(tail)
-    for i, (left, right) in enumerate(zip(fragments, fragments[1:])):
-        if any(c.isalnum() for c in left) and any(c.isalnum() for c in right):
-            assert valid_proxy_label(labels[i])
-            yield left + right, len(left) - 1, labels[i]
+def labeled_samples(document, rejection_counts=None):
+    """Line-local candidates with original proxy glyphs and shared surface filtering."""
+    from text_policy import training_pairs
+    from prepare_synthetic_data import URL_PATTERN, MARKDOWN_FENCE_PATTERN
+    prepared = URL_PATTERN.sub(' ', MARKDOWN_FENCE_PATTERN.sub(' ', str(document or '')))
+    yield from training_pairs(prepared, rejection_counts)
 
 
 def document_split(fingerprint, seed):
@@ -347,10 +330,10 @@ def generate(args, base, evaluation, downloaded, old, stop, status):
                             state["holdout_documents_filtered"] += 1
                         elif args.freeze_evaluation and split != "train":
                             state["reserved_holdout_documents"] += 1
-                        elif not quality_document(normalize_document(content)):
+                        elif not quality_document(clean_document(content)):
                             state["quality_filtered"] += 1
                         else:
-                            for text, target, punctuation in labeled_samples(content):
+                            for text, target, punctuation in labeled_samples(content, state.setdefault("surface_rejected", {})):
                                 key = projected_key(text)
                                 if old.contains(key) or seen.contains(key):
                                     state["duplicate_or_bloom_filtered"] += 1
