@@ -1,6 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { execFileSync } = require("node:child_process");
+// Give non-edge policy fixtures an interior A; line-edge behavior is tested separately.
+const withContext = (text) => text.split("\n").map((line) => `引句。${line}`).join("\n");
 
 const cases = [
   ["女：那可挺麻烦的，吃点儿治疗过敏的药吧。", "女:那可挺麻烦的", "吃点儿治疗过敏的药吧"],
@@ -19,16 +21,16 @@ const cases = [
   ["调用f(x,y);然后返回，稍后重试。", "调用f(x,y);然后返回", "稍后重试"],
   ["共计１，０００人，准备出发。", "共计1,000人", "准备出发"],
   ["保留﹐﹔‼⁇︒｡，然后继续。", "保留,;!!??。。", "然后继续"],
-];
+].map(([text, ...expected]) => [withContext(text), ...expected]);
 
 test("context samples hide only the target proxy and use code-point gap indices", async () => {
   const { buildAdjacentSamples, splitIntoFragments } = await import("../training/prepare_smoke_data.mjs");
   const blocked = new Set(["价格是1,000.50元，型号是AI-20。", "苹果、香蕉，放入（A）袋。", "头文件为unistd.h，编号是２．３。"]);
   for (const [text, left, right] of cases) {
     const rows = buildAdjacentSamples({ id: "context", domain: "fixture", text });
-    if (blocked.has(text)) {
+    if (blocked.has(text.slice("引句。".length))) {
       assert.deepEqual(rows, [], text);
-      assert.deepEqual(splitIntoFragments(text).map((f) => f.text), [left, right]);
+      assert.deepEqual(splitIntoFragments(text).map((f) => f.text), ["引句", left, right]);
       continue;
     }
     assert.equal(rows.length, 1, text);
@@ -82,7 +84,7 @@ for text in json.load(sys.stdin):
 test("every raw Chinese proxy remains a label before normalization", async () => {
   const { buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
   const { DATA_POLICY } = await import("../training/text_policy.mjs");
-  const texts = DATA_POLICY.proxy_punctuation.map((mark) => `甲${mark}乙`);
+  const texts = DATA_POLICY.proxy_punctuation.map((mark) => `引句。甲${mark}乙。`);
   const js = texts.map((text) => buildAdjacentSamples({ id: "raw", domain: "fixture", text })
     .map((row) => [row.tokens.join(""), row.target_index, row.punctuation]));
   assert.deepEqual(js, DATA_POLICY.proxy_punctuation.map((mark) => [["甲乙", 0, mark]]));
@@ -123,13 +125,13 @@ test("signed numeric separators remain context and the immediate-neighbor rule i
     ["甲，-暂停。", [pair("甲", "-暂停")]],
     ["ASCII,-2，下一句。", []],
   ];
-  const js = fixtures.map(([text]) => buildAdjacentSamples({ id: "boundary-context", domain: "fixture", text })
+  const js = fixtures.map(([text]) => buildAdjacentSamples({ id: "boundary-context", domain: "fixture", text: withContext(text) })
     .map((row) => [row.tokens.join(""), row.target_index, row.punctuation]));
   fixtures.forEach(([text, expected], i) => assert.deepEqual(js[i], expected, text));
   const counts = {};
   const retained = Array.from(trainingPairs("甲A，B乙，丙丁。", counts));
   assert.equal(retained.length, 1);
-  assert.deepEqual(counts, { pairs: 1, both_neighbors_non_han: 1 });
+  assert.deepEqual(counts, { pairs: 1, both_neighbors_non_han: 1, line_first_fragment: 1 });
   const python = JSON.parse(execFileSync("python3", ["-c", String.raw`
 import sys,json,types
 sys.path.insert(0,'training')
@@ -146,9 +148,9 @@ for text in json.load(sys.stdin):
     result.append(rows)
 counts={}
 assert list(training_pairs('甲A，B乙，丙丁。',counts))==[('B乙丙丁',1,'，')]
-assert counts=={'pairs':1,'both_neighbors_non_han':1}
+assert counts=={'pairs':1,'both_neighbors_non_han':1,'line_first_fragment':1}
 print(json.dumps(result,ensure_ascii=False))
-`], { input: JSON.stringify(fixtures.map(([text]) => text)), encoding: "utf8" }));
+`], { input: JSON.stringify(fixtures.map(([text]) => withContext(text))), encoding: "utf8" }));
   assert.deepEqual(python, js);
 });
 
@@ -170,13 +172,13 @@ test("each entire fragment requires Han without bridging over discarded fragment
     ["中文API，HTTP中文。", []], // Han inside both fragments does not replace the edge rule.
     ["集合 {空，a，aa，aaa，a…a(n个a)}", []], // Han gate covers the old n=15 counterexample by itself.
   ];
-  const js = fixtures.map(([text]) => [...trainingPairs(text, null, { symbolWindow: 0 })].map(({ left, right }) => [left, right]));
+  const js = fixtures.map(([text]) => [...trainingPairs(withContext(text), null, { symbolWindow: 0 })].map(({ left, right }) => [left, right]));
   fixtures.forEach(([text, expected], index) => assert.deepEqual(js[index], expected, text));
   const counts = {};
   assert.deepEqual([...trainingPairs("前句，API，后句。", counts)], []);
-  assert.deepEqual(counts, { pairs: 2, fragment_without_han: 2 });
+  assert.deepEqual(counts, { pairs: 2, fragment_without_han: 2, line_first_fragment: 1 });
   assert.deepEqual([...trainingFragmentLines("前句，API，后句。")][0].map(({ text, reasons }) => [text, reasons]),
-    [["前句", []], ["API", ["fragment_without_han"]], ["后句", []]]);
+    [["前句", ["line_first_fragment"]], ["API", ["fragment_without_han"]], ["后句", []]]);
   const python = JSON.parse(execFileSync("python3", ["-c", String.raw`
 import sys,json
 sys.path.insert(0,'training')
@@ -184,16 +186,16 @@ from text_policy import training_pairs
 texts=json.load(sys.stdin)
 counts={}
 assert list(training_pairs('前句，API，后句。',counts))==[]
-assert counts=={'pairs':2,'fragment_without_han':2}
+assert counts=={'pairs':2,'fragment_without_han':2,'line_first_fragment':1}
 print(json.dumps([[[t[:k+1],t[k+1:]] for t,k,_ in training_pairs(text,symbol_window=0)] for text in texts],ensure_ascii=False))
-`], { input: JSON.stringify(fixtures.map(([text]) => text)), encoding: "utf8" }));
+`], { input: JSON.stringify(fixtures.map(([text]) => withContext(text))), encoding: "utf8" }));
   assert.deepEqual(python, js);
 });
 
 test("Wikipedia extraction preserves raw punctuation until sample generation", async () => {
   const { wikipediaDocumentsFromXml, buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
-  const [document] = wikipediaDocumentsFromXml('<mediawiki><page><title>示例</title><ns>0</ns><id>1</id><revision><text>甲,乙，丙丁。</text></revision></page></mediawiki>');
-  assert.equal(document.text, "甲,乙，丙丁。");
+  const [document] = wikipediaDocumentsFromXml('<mediawiki><page><title>示例</title><ns>0</ns><id>1</id><revision><text>引句。甲,乙，丙丁。</text></revision></page></mediawiki>');
+  assert.equal(document.text, "引句。甲,乙，丙丁。");
   const [row] = buildAdjacentSamples(document);
   assert.equal(row.tokens.join(""), "甲,乙丙丁");
   assert.equal(row.target_index, 2);
@@ -215,6 +217,9 @@ test("both policy validators compare the whitelist and normalization semantics",
     { ...DATA_POLICY, sample_filter: { version: "obsolete" } },
     { ...DATA_POLICY, sample_filter: { ...DATA_POLICY.sample_filter, require_han: undefined } },
     { ...DATA_POLICY, sample_filter: { ...DATA_POLICY.sample_filter, require_han: false } },
+    { ...DATA_POLICY, standard: "unicode-context-v6" },
+    { ...DATA_POLICY, sample_filter: { ...DATA_POLICY.sample_filter, line_edges: undefined } },
+    { ...DATA_POLICY, sample_filter: { ...DATA_POLICY.sample_filter, line_edges: { discard_first_fragment: false, discard_unterminated_last_fragment: true } } },
     { ...DATA_POLICY, source_filter: undefined },
     { ...DATA_POLICY, symbol_window: { ...DATA_POLICY.symbol_window, max_distance: 24 } },
     { ...DATA_POLICY, symbol_window: { ...DATA_POLICY.symbol_window, symbols_sha256: "wrong" } },
@@ -251,7 +256,7 @@ test("surface rules reject affected pairs without bridging or crossing actual li
     ["笔记 本里有  多余空格，照常保留。", [["笔记 本里有 多余空格照常保留", 10, "，"]]],
     ["股票代表股权。圆柱误差很小。", [["股票代表股权圆柱误差很小", 5, "。"]]],
   ];
-  const js = fixtures.map(([text]) => buildAdjacentSamples({ id: "surface", domain: "fixture", text })
+  const js = fixtures.map(([text]) => buildAdjacentSamples({ id: "surface", domain: "fixture", text: withContext(text) })
     .map((r) => [r.tokens.join(""), r.target_index, r.punctuation]));
   fixtures.forEach(([text, expected], i) => assert.deepEqual(js[i], expected, text));
   const python = JSON.parse(execFileSync("python3", ["-c", String.raw`
@@ -267,9 +272,9 @@ for text in json.load(sys.stdin):
     assert [(t,k) for t,k,_ in result]==adjacent_samples(text)
     rows.append(result)
 print(json.dumps(rows,ensure_ascii=False))
-`], {input: JSON.stringify(fixtures.map(([text]) => text)),encoding:"utf8"}));
+`], {input: JSON.stringify(fixtures.map(([text]) => withContext(text))),encoding:"utf8"}));
   assert.deepEqual(js, python);
-  const [doc] = wikipediaDocumentsFromXml('<mediawiki><page><title>示例</title><ns>0</ns><id>1</id><revision><text>正文结束。\nEND\n正常甲，正常乙。</text></revision></page></mediawiki>');
+  const [doc] = wikipediaDocumentsFromXml('<mediawiki><page><title>示例</title><ns>0</ns><id>1</id><revision><text>正文结束。\nEND\n引句。正常甲，正常乙。</text></revision></page></mediawiki>');
   assert.equal(buildAdjacentSamples(doc).length, 1);
 });
 

@@ -18,21 +18,22 @@ test("symbol windows use both nearest symbols and total code-point distance", as
   assert.deepEqual([...symbolEnclosures("（甲\u0000，乙）", 64)], []);
   const pairs = (t, n) => [...trainingPairs(t, null, { symbolWindow: n })];
   assert.equal(pairs("（甲，乙）", 4).length, 0);
-  assert.equal(pairs("（甲 ， 乙）", 4).length, 1); // Spaces count before normalization.
-  assert.equal(pairs("（甲，乙\n丙）", 64).length, 1); // Cannot look across lines.
-  assert.equal(pairs("甲，乙。丙，丁", 64).length, 3);
-  const title = "參加《測驗！你比五年級還聰明嗎？》中答題。";
+  assert.equal(pairs("引句。（甲 ， 乙）。", 4).length, 1); // Spaces count before normalization.
+  assert.equal(pairs("引句。（甲，乙。\n丙）", 64).length, 1); // Cannot look across lines.
+  assert.equal(pairs("引句。甲，乙。丙，丁。", 64).length, 3);
+  const title = "引句。參加《測驗！你比五年級還聰明嗎？》中答題。";
   assert.equal(pairs(title, 13).length, 2);
   assert.deepEqual([...trainingPairs(title)], []);
 });
 
 test("a rejected target remains a barrier without discarding intact neighboring targets", async () => {
   const { trainingPairs, trainingFragmentLines } = await import("../training/text_policy.mjs");
-  const text = "前句，甲{，乙}，后句。";
+  // Parentheses exercise target-only rejection; braces now reject the fragment itself.
+  const text = "引句。前句，甲(，乙)，后句。";
   const rows = [...trainingPairs(text)];
-  assert.deepEqual(rows.map(({ left, right }) => [left, right]), [["前句", "甲{"], ["乙}", "后句"]]);
-  assert.equal([...trainingFragmentLines(text)][0][1].boundary_reasons[0], "symbol_window");
-  assert(rows.every(({ left, right }) => !(left + right).includes("甲{乙}")));
+  assert.deepEqual(rows.map(({ left, right }) => [left, right]), [["前句", "甲("], ["乙)", "后句"]]);
+  assert.equal([...trainingFragmentLines(text)][0][2].boundary_reasons[0], "symbol_window");
+  assert(rows.every(({ left, right }) => !(left + right).includes("甲(乙)")));
   // An enclosed member of a punctuation run blocks the entire target.
   assert.deepEqual([...trainingPairs("（甲……乙）")], []);
 });
@@ -65,7 +66,7 @@ test("source residue rejects pairs without reconnecting fragments or repairing i
     const rows = [...trainingPairs(`前句，${bad}，后句，继续。`)];
     assert.deepEqual(rows.map(({ left, right }) => [left, right]), [["后句", "继续"]], bad);
   }
-  const rows = [...trainingPairs("调用__init__初始化，继续处理。")];
+  const rows = [...trainingPairs("引句。调用__init__初始化，继续处理。")];
   assert.equal(rows.length, 1);
   assert(rows[0].left.includes("__init__"));
 });

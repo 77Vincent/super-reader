@@ -99,12 +99,14 @@ def training_fragment_lines(text, *, symbol_window=None):
         def add(end, punctuation, boundary_reasons=None):
             raw = line[start:end]
             value = normalized_fragment(raw)
-            if not value:
+            # Inspect source glyphs before whitespace folding can erase a control.
+            original = raw_line[start:end]
+            reasons = [name for name, pattern in SURFACE_PATTERNS.items() if pattern.search(original) or pattern.search(value)]
+            if not value and not reasons:
                 if fragments:
                     fragments[-1]['punctuation'] += punctuation
                     fragments[-1]['boundary_reasons'].extend(boundary_reasons or [])
                 return
-            reasons = [name for name, pattern in SURFACE_PATTERNS.items() if pattern.search(raw) or pattern.search(value)]
             if DATA_POLICY['sample_filter']['require_han'] and not HAN.search(value):
                 reasons.append('fragment_without_han')
             if WHOLE_FRAGMENT.fullmatch(raw.strip()) or WHOLE_FRAGMENT.fullmatch(value):
@@ -119,6 +121,12 @@ def training_fragment_lines(text, *, symbol_window=None):
                 add(i, character, ['symbol_window'] if i in surrounded else [])
                 start = i+1
         add(len(line), '')
+        if fragments:
+            edges = DATA_POLICY['sample_filter']['line_edges']
+            if edges['discard_first_fragment']:
+                fragments[0]['reasons'].append('line_first_fragment')
+            if edges['discard_unterminated_last_fragment'] and not fragments[-1]['punctuation']:
+                fragments[-1]['reasons'].append('line_unterminated_tail')
         yield fragments
 
 

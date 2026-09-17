@@ -20,8 +20,9 @@ class SurfaceRetrainingTests(unittest.TestCase):
 
     def test_fillers_and_emoji_are_distinct_from_plain_spaces(self):
         self.assertEqual(list(training_pairs('b的钢材，表示屈服点为_ MPa的A级。')),[])
-        self.assertEqual(len(list(training_pairs('调用__init__函数，随后继续。'))),1)
-        self.assertEqual(len(list(training_pairs('普通  空格保留，👨‍👩‍👧‍👦一家出游。'))),1)
+        self.assertEqual(len(list(training_pairs('引句。调用__init__函数，随后继续。'))),1)
+        self.assertEqual(len(list(training_pairs('引句。普通  空格保留，👨‍👩‍👧‍👦一家出游。'))),0)
+        self.assertEqual(len(list(training_pairs('引句。普通  空格保留，😀一家出游。'))),1)
 
     def fixture(self,root):
         raw=root/'raw';raw.mkdir();base=root/'base';base.mkdir()

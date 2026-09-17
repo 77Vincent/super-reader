@@ -1,10 +1,11 @@
 # Boundary model training
 
-The current data contract is **unicode-context-v6**, defined in
+The current data contract is **unicode-context-v7**, defined in
 [text-policy.json](text-policy.json). Its model input representation remains
-**unicode-context-v1**; v6 additionally requires each complete fragment to contain
-a Han character. Bounded symbol windows, explicit source-deletion barriers,
-format-residue checks, signed-number protection, neighbor and line rules remain. It does not change the CNN architecture
+**unicode-context-v1**. In addition to requiring Han in each fragment, v7 rejects
+structural symbols, single invisible controls, every physical line's first
+fragment, and an unterminated last fragment. Bounded symbol windows, explicit
+source-deletion barriers, signed-number protection and neighbor rules remain. It does not change the CNN architecture
 or token IDs. Training, validation and test preparation share
 this contract. Older corpora are retained for provenance and cannot be silently
 mixed into a new run.
@@ -20,9 +21,16 @@ exclusion list is maintained. Thus ASCII punctuation and compatibility forms
 such as `﹐` or `｡` do not become proxies merely because normalization changes
 their appearance.
 
-Other punctuation, digits, letters, quotes and symbols remain in the input.
+Other punctuation, digits, letters and quotes remain in eligible input;
+fragments with `{ } < > & =` or their NFKC equivalents are discarded whole.
 Actual line breaks are split before whitespace normalization: no pair crosses a
-source line, and a newline itself never supplies a target. After proxy detection,
+source line, and a newline itself never supplies a target. Every line's first
+nonempty fragment is ineligible, including the first line of a document.
+The last fragment is also ineligible unless terminated by a recognized proxy
+(ASCII punctuation does not qualify). Consecutive proxies form one delimiter.
+These are independent defaults under `sample_filter.line_edges`: a line with only
+`A，B。` yields no samples, while `A，B，C。` can yield `B｜C`. Leading empty
+punctuation does not rescue the first real fragment. After proxy detection,
 retained fragments are normalized with NFKC. Whitespace within a line
 becomes a single ASCII space and fragment edges are trimmed. A comma proxy
 between decimal numbers stays intact as numeric context, including signed values,
@@ -52,8 +60,8 @@ of code-point distances is **at most 18**, reject that target. Spaces count befo
 normalization; the symbols need not match. Unicode punctuation/symbol categories
 are frozen in [unicode-symbols.json](unicode-symbols.json), shared and hash-checked
 by Python and JavaScript. A one-sided symbol does not trigger this rule.
-A rejected proxy still delimits fragments: in `前句，甲{，乙}，后句`,
-`前句｜甲{` and `乙}｜后句` remain eligible; `甲{｜乙}` is rejected, and
+A rejected proxy still delimits fragments: in `引句。前句，甲(，乙)，后句。`,
+`前句｜甲(` and `乙)｜后句` remain eligible; `甲(｜乙)` is rejected, and
 no larger fragment is formed by joining across it. If any mark in a consecutive
 proxy run is rejected, the whole target is rejected. Numeric separators differ:
 they are retained *inside* fragments as described above.
@@ -63,7 +71,7 @@ the Han-fragment rule; the [v5 study](SYMBOL_WINDOW_STUDY.md) is historical. Nor
 this is a conservative rule, not a guarantee of clean semantics.
 
 Discard pairs touching explicit placeholders (`$P$`, `(I_M_G)`), fill-in blanks,
-empty templates, Markdown heading markers, repeated invisible controls, or a
+empty templates, Markdown heading markers, even single invisible controls, or a
 whole fragment that is a known web control such as `更多`. HTML/Wiki/Markdown
 residue, literal `\r`/`\n`, replacement characters and URL fragments are also
 rejected; matched code/format spans are masked with barriers instead of repaired. Rejected fragments
@@ -72,21 +80,32 @@ code identifiers such as `__init__`, and semantic topic changes are retained
 unless another rule rejects the pair. Parentheses and quotes remain in eligible
 inputs, but the symbol-window rule may reject targets between them. There is no new score threshold or semantic prose filter;
 these rules reduce visible formatting noise but do not certify meaning or quality.
+The structural-symbol gate intentionally also loses legitimate formulas and
+names containing `&`. Invisible controls are checked before whitespace folding,
+including U+FEFF; zero-width joiner emoji are also rejected by this conservative
+policy. Ordinary spaces and single non-joiner emoji remain eligible.
+No Japanese-script blacklist is added: Japanese/mixed-language fragments may
+remain if they satisfy the existing Han and boundary rules. Kana presence in
+an audit is a script indicator, not a language classifier.
+
+The [v6 expanded audit](V6_EXPANDED_QUALITY_AUDIT.md) supplied the new counterexamples;
+the [v7 paired loss study](CONSERVATIVE_CLEANING_V7.md) records actual per-source
+losses, overlap between gates, and the disproportionate cost to short headlines.
 
 ```text
-Source: 女：那可挺麻烦的，吃点儿治疗过敏的药吧。
+Source: 引句。女：那可挺麻烦的，吃点儿治疗过敏的药吧。
 Input:  女:那可挺麻烦的吃点儿治疗过敏的药吧
 Target: 女:那可挺麻烦的 | 吃点儿治疗过敏的药吧
 
-Source: 上午8:30至下午4:30；假日关门。
+Source: 引句。上午8:30至下午4:30；假日关门。
 Input:  上午8:30至下午4:30假日关门
 Target: 上午8:30至下午4:30 | 假日关门
 
-Source: F. Billinghurst负责设计，团队实施。
+Source: 引句。F. Billinghurst负责设计，团队实施。
 Input:  F. Billinghurst负责设计团队实施
 Target: F. Billinghurst负责设计 | 团队实施
 
-Source: 坐标为(a,b)，继续计算。
+Source: 引句。坐标为(a,b)，继续计算。
 Input:  坐标为(a,b)继续计算
 Target: 坐标为(a,b) | 继续计算
 ```
@@ -103,7 +122,7 @@ experiment. The current rebuild does not use its paragraph selection rules.
 
 The existing dated corpora, evaluation splits and paused web-continuation job
 were prepared under v1. Changing this default does not rewrite their samples or
-alter their frozen source snapshots. Before a v6 run, regenerate train,
+alter their frozen source snapshots. Before a v7 run, regenerate train,
 validation and test from the original documents into fresh directories while
 preserving document ownership and overlap checks; dropping disallowed labels
 alone cannot restore punctuation previously removed from their inputs. Current
@@ -119,8 +138,8 @@ base-data preparation; model training has not started. The
 [independent policy audit](POLICY_REVIEW_20260917.md) found reproducible
 cross-line cleanup and Wikipedia template-deletion defects. The commands below
 describe the coordinator, not a recommendation to resume its frozen v4 snapshot.
-The current v6 implementation and bounded analysis are recorded in the window review.
-No v6 full rebuild or training has started. Use a fresh v6 run for the next rebuild;
+The current v7 implementation and bounded analysis are recorded in the paired loss study.
+No v7 full rebuild or training has started. Use a fresh v7 run for the next rebuild;
 do not resume the frozen v4 code as if it contained these fixes.
 
 ```bash
@@ -131,13 +150,13 @@ npm run model:retrain-surface -- --resume
 
 [run_surface_retraining.py](run_surface_retraining.py) rebuilds every cached CLUE
 entry, the full Wikipedia dump and the cached Chinese multi-style L3 source
-under v6. It then adds **100,000,000 distinct web training pairs**, sampled across
+under v7. It then adds **100,000,000 distinct web training pairs**, sampled across
 all 256 downloaded Chinese web files. This is the web target, not the total
 training count; the rebuilt older sources are additional. Existing source-level
 Chinese-text checks remain. No score gate, per-document cap or sequence-length
 cap is added. Historical training inputs are excluded from the new web sample.
 
-The run is `training/artifacts/chinese-line-web-100m-16conv-v6-20260917/`.
+The run is `training/artifacts/chinese-line-web-100m-16conv-v7-20260917/`.
 The earlier v3 preparation was stopped before model training and is preserved in
 its original directory. The new run regenerates original sources because source
 barriers and symbol windows require text that old compact samples have lost;
@@ -159,9 +178,9 @@ Old document holdouts stay reserved. Revised evaluation pairs are screened
 against inherited and newly rebuilt training inputs using Han-projected input
 identity independent of the target gap. New web documents use the existing
 96%/2%/2% train/validation/test hash partition. Web holdouts supplement the
-rebuilt local holdouts, and all splits use the same v6 preparation rules.
+rebuilt local holdouts, and all splits use the same v7 preparation rules.
 The final evaluation directory is
-`training/data/processed/chinese-line-web-100m-16conv-v6-20260917-eval/`.
+`training/data/processed/chinese-line-web-100m-16conv-v7-20260917-eval/`.
 
 The coordinator freezes source code and weights, records stage logs and
 `status.json`, and automatically starts training after preparation. Resuming
@@ -289,7 +308,7 @@ npm run model:baseline
 ```
 
 The real defaults are the bundled `src/boundary-model-data.js` model and
-`training/data/processed/chinese-line-web-100m-16conv-v6-20260917-eval/validation.jsonl`.
+`training/data/processed/chinese-line-web-100m-16conv-v7-20260917-eval/validation.jsonl`.
 The rebuilt holdout must exist before this command can run. `--model`,
 `--input` and `--output` are optional explicit experiment paths; they cannot bypass
 input-policy checks. The evaluator rejects mismatched model/data representations,

@@ -56,10 +56,10 @@ with tempfile.TemporaryDirectory() as directory:
  data=root/'data'; data.mkdir()
  for split in ['validation','test']:
   (data/(split+'.jsonl')).write_text('')
- heldout='保护留出文章'*20+'，'+'不能用于训练'*20+'。'
+ heldout='引句。'+'保护留出文章'*20+'，'+'不能用于训练'*20+'。'
  (data/'holdout-document-hashes.json').write_text(json.dumps([p.document_signature(heldout)]))
  downloads=[]
- rows=[['甲'*90+'，'+'乙'*90+'。',heldout],['丙'*90+'，'+'丁'*90+'。','戊'*90+'，'+'己'*90+'。']]
+ rows=[['引句。'+'甲'*90+'，'+'乙'*90+'。',heldout],['引句。'+'丙'*90+'，'+'丁'*90+'。','引句。'+'戊'*90+'，'+'己'*90+'。']]
  for index,values in enumerate(rows):
   path=raw/f'{index:05d}.parquet'
   pq.write_table(pa.table({'content':values}),path)

@@ -122,5 +122,5 @@ def validate(out):
     (out/'final-yield.json').write_text(json.dumps({'policy':policy.DATA_POLICY,'profiles':profiles},ensure_ascii=False,indent=2)+'\n')
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--output',type=Path,default=ROOT/'training/artifacts/v6-window-study-20260917');p.add_argument('--validate',action='store_true');args=p.parse_args();args.output.mkdir(parents=True,exist_ok=True)
+    p=argparse.ArgumentParser();p.add_argument('--output',type=Path,default=ROOT/'training/artifacts/v7-window-study-20260917');p.add_argument('--validate',action='store_true');args=p.parse_args();args.output.mkdir(parents=True,exist_ok=True)
     (validate if args.validate else study)(args.output)

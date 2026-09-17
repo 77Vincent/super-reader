@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 ROOT=Path(__file__).resolve().parent.parent
-NAME='chinese-line-web-100m-16conv-v6-20260917'
+NAME='chinese-line-web-100m-16conv-v7-20260917'
 LAST=ROOT/'training/artifacts/web-mix-40m-192ch-16conv-20260916/candidate/training-state.pt'
 LAST_MANIFEST=ROOT/'training/data/processed/web-mix-40m-192ch-16conv-20260916/manifest.json'
 OLD_LOCAL=ROOT/'training/data/processed/unicode-context-192ch-12conv-20260913-combined/manifest.json'
@@ -73,7 +73,8 @@ def freeze_initialization(run, checkpoint):
     assert all(torch.equal(value,weights[key]) for key,value in model.state_dict().items())
     # A tiny numerical check of the selected weights; probe updates are discarded.
     from text_policy import training_pairs
-    pairs=list(training_pairs('今天下雨，我们留在家里。\n明天放晴，大家出去散步。'))
+    pairs=list(training_pairs('天气预报来了。今天下雨，我们留在家里。\n大家一起商量。明天放晴，大家出去散步。'))
+    assert pairs, 'Initialization probe requires eligible interior fragments'
     length=max(len(t) for t,_,_ in pairs)
     tokens=torch.zeros((len(pairs),length),dtype=torch.long);mask=torch.zeros_like(tokens,dtype=torch.bool)
     for i,(text,_,_) in enumerate(pairs):

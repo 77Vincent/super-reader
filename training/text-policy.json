@@ -1,5 +1,5 @@
 {
-  "standard": "unicode-context-v6",
+  "standard": "unicode-context-v7",
   "input_representation": "unicode-context-v1",
   "tokenization": "character",
   "proxy_punctuation": [
@@ -15,14 +15,19 @@
   "boundary_context": "Require at least one Han neighbor at normalized, whitespace-trimmed fragment edges; do not skip quotes or symbols; Han means CJK unified/compatibility ideograph blocks plus U+3007",
   "line_boundaries": "\\r\\n|[\\n\\r\\v\\f\\u001c-\\u001e\\u0085\\u2028\\u2029]",
   "sample_filter": {
-    "version": "surface-noise-v3",
+    "version": "surface-noise-v4",
     "require_han": true,
+    "line_edges": {
+      "discard_first_fragment": true,
+      "discard_unterminated_last_fragment": true
+    },
     "action": "Discard pairs touching a flagged fragment; never reconnect across rejected fragments",
     "fragment_patterns": {
       "placeholder": "\\$P\\$|\\(I_M_G\\)",
+      "structural_symbols": "[{}<>&=]",
       "fill_in_blank": "(?:^|[^A-Za-z0-9_])_{2,}(?=$|[^A-Za-z0-9_])|(?:^|[^A-Za-z0-9_])_(?=\\s|$)|□{2,}|_{3,}",
       "markdown_heading": "^\\s{0,3}#{1,6}(?:\\s|$)",
-      "invisible_controls": "[\\u0000-\\u0008\\u000e-\\u001b\\u007f]|[\\u200b-\\u200f\\u2060\\ufeff]{2,}",
+      "invisible_controls": "[\\u0000-\\u0008\\u000e-\\u001b\\u007f\\u200b-\\u200f\\u2060\\ufeff]",
       "discarded_source": "\\u0000",
       "replacement_character": "\\ufffd",
       "literal_line_escape": "\\\\+[rn]",

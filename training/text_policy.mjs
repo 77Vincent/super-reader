@@ -89,14 +89,16 @@ export function* trainingFragmentLines(text, { symbolWindow = DATA_POLICY.symbol
     let start = 0;
     const add = (end, punctuation, boundaryReasons = []) => {
       const raw = line.slice(start, end), value = normalizeFragment(raw);
-      if (!value) {
+      // In particular JS treats U+FEFF as whitespace: inspect it before folding.
+      const original = rawLine.slice(start, end);
+      const reasons = SURFACE_PATTERNS.filter(([, pattern]) => pattern.test(original) || pattern.test(value)).map(([name]) => name);
+      if (!value && !reasons.length) {
         if (fragments.length) {
           fragments.at(-1).punctuation += punctuation;
           fragments.at(-1).boundary_reasons.push(...boundaryReasons);
         }
         return;
       }
-      const reasons = SURFACE_PATTERNS.filter(([, pattern]) => pattern.test(raw) || pattern.test(value)).map(([name]) => name);
       if (DATA_POLICY.sample_filter.require_han && !HAN.test(value)) reasons.push("fragment_without_han");
       if (WHOLE_FRAGMENT.test(raw.trim()) || WHOLE_FRAGMENT.test(value)) reasons.push("web_control");
       if (emptySpans.some(([left, right]) => left < end && right > start)) reasons.push("empty_template");
@@ -114,6 +116,13 @@ export function* trainingFragmentLines(text, { symbolWindow = DATA_POLICY.symbol
       offset += character.length;
     }
     add(line.length, "");
+    if (fragments.length) {
+      const edges = DATA_POLICY.sample_filter.line_edges;
+      if (edges.discard_first_fragment) fragments[0].reasons.push("line_first_fragment");
+      if (edges.discard_unterminated_last_fragment && !fragments.at(-1).punctuation) {
+        fragments.at(-1).reasons.push("line_unterminated_tail");
+      }
+    }
     yield fragments;
   }
 }

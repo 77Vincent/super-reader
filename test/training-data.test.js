@@ -6,7 +6,7 @@ test("training pairs use adjacent punctuation fragments with one target gap", as
   const samples = buildAdjacentSamples({
     id: "fixture:1",
     domain: "fixture",
-    text: "今天下雨，我们留在家里；明天再出去。",
+    text: "引句。今天下雨，我们留在家里；明天再出去。",
   });
 
   assert.equal(samples.length, 2);
@@ -31,7 +31,7 @@ test("colons and ASCII dots remain context while Chinese ellipses create boundar
   const samples = buildAdjacentSamples({
     id: "fixture:colon-ellipsis",
     domain: "fixture",
-    text,
+    text: `引句。${text}`,
   });
   assert.deepEqual(
     samples.map((sample) => sample.punctuation),
@@ -51,14 +51,14 @@ test("enumeration commas keep list items together without creating training targ
 
     const samples = buildAdjacentSamples({
       ...document,
-      text: "我买了苹果、香蕉，准备制作果汁。",
+      text: "引句。我买了苹果、香蕉，准备制作果汁。",
     }, { tokenization });
     assert.equal(samples.length, 1);
     const [sample] = samples;
     assert.equal(sample.punctuation, "，");
     assert.equal(sample.tokens.slice(0, sample.target_index + 1).join(""), "我买了苹果、香蕉");
     assert.equal(sample.tokens.slice(sample.target_index + 1).join(""), "准备制作果汁");
-    assert.deepEqual(buildAdjacentSamples({ ...document, text: "我买了苹果、香蕉，准备制作果汁、沙拉。" }, { tokenization }), []);
+    assert.deepEqual(buildAdjacentSamples({ ...document, text: "引句。我买了苹果、香蕉，准备制作果汁、沙拉。" }, { tokenization }), []);
   }
 });
 
@@ -66,7 +66,7 @@ test("regenerated validation and test use the revised proxies and retain documen
   const { samplesForReferenceDocument } = await import("../training/prepare_retraining_base.mjs");
   const owners = new Map([["train-doc", "train"], ["validation-doc", "validation"], ["test-doc", "test"]]);
   for (const [id, split] of owners) {
-    const result = samplesForReferenceDocument({ id, domain: "fixture", text: "我买了苹果、香蕉，准备做果汁。" }, owners);
+    const result = samplesForReferenceDocument({ id, domain: "fixture", text: "引句。我买了苹果、香蕉，准备做果汁。" }, owners);
     assert.equal(result.split, split);
     assert.equal(result.samples.length, 1);
     const [sample] = result.samples;
@@ -160,7 +160,7 @@ test("training input hides the target proxy and retains quotation context", asyn
   const [sample] = buildAdjacentSamples({
     id: "fixture:2",
     domain: "fixture",
-    text: "模型只看文字，“标点”不会泄露。",
+    text: "引句。模型只看文字，“标点”不会泄露。",
   });
 
   assert.equal(sample.punctuation, "，");
@@ -172,7 +172,7 @@ test("training sides have no character-length ceiling", async () => {
   const [sample] = buildAdjacentSamples({
     id: "fixture:no-limit",
     domain: "fixture",
-    text: `${"甲".repeat(64)}，好。`,
+    text: `引句。${"甲".repeat(64)}，好。`,
   });
 
   assert.equal(sample.left_character_length, 64);
@@ -185,7 +185,7 @@ test("one-character fragments remain valid training sides", async () => {
   const [sample] = buildAdjacentSamples({
     id: "fixture:minimum",
     domain: "fixture",
-    text: "好，走。",
+    text: "引句。好，走。",
   });
 
   assert.deepEqual(sample.tokens, ["好", "走"]);
@@ -381,7 +381,7 @@ test("comparison modes keep the same text and gold boundary but change candidate
   const document = {
     id: "fixture:comparison",
     domain: "fixture",
-    text: "阅读不是更快地扫过文字，模型开始工作。",
+    text: "引句。阅读不是更快地扫过文字，模型开始工作。",
   };
   const [word] = buildAdjacentSamples(document, { tokenization: "word" });
   const [character] = buildAdjacentSamples(document, { tokenization: "character" });
@@ -402,7 +402,7 @@ test("both comparison modes retain non-Chinese context", async () => {
   const document = {
     id: "fixture:han-only",
     domain: "fixture",
-    text: "Synthetic 中文 20个，AI 模型。",
+    text: "引句。Synthetic 中文 20个，AI 模型。",
   };
 
   for (const tokenization of ["word", "character"]) {
