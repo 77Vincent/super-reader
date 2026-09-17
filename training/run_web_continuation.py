@@ -22,7 +22,7 @@ BASE = ROOT / "training/data/processed/unicode-context-192ch-12conv-20260913-com
 EVAL = ROOT / "training/data/processed/unicode-context-192ch-12conv-20260913-eval"
 RAW = ROOT / "training/data/raw/ultra-fineweb-zh"
 SOURCES = ["training/" + name for name in ("prepare_web_data.py", "prepare_synthetic_data.py", "run_sharded.py",
-    "run_smoke.py", "train_sharded.py", "train_smoke.py", "text_policy.py", "text-policy.json", "export_browser_model.py")]
+    "run_smoke.py", "train_sharded.py", "train_smoke.py", "text_policy.py", "text-policy.json", "unicode-symbols.json", "export_browser_model.py")]
 
 
 def read(path):

@@ -13,7 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { DATA_POLICY, trainingFragmentLines, trainingPairs } from "./text_policy.mjs";
+import { DATA_POLICY, trainingFragmentLines, trainingPairs, discardedSpan, prepareSourceText } from "./text_policy.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const RAW_DIR = join(SCRIPT_DIR, "data", "raw");
@@ -171,47 +171,18 @@ function decodeXmlEntities(text) {
   });
 }
 
-function removeBalancedMarkup(text, opening, closing) {
-  let result = "";
-  let depth = 0;
-
-  for (let index = 0; index < text.length;) {
-    if (text.startsWith(opening, index)) {
-      depth += 1;
-      index += opening.length;
-      continue;
-    }
-    if (depth > 0 && text.startsWith(closing, index)) {
-      depth -= 1;
-      index += closing.length;
-      continue;
-    }
-    if (depth === 0) result += text[index];
-    index += 1;
-  }
-
-  return result;
-}
-
 export function cleanWikipediaMarkup(wikitext) {
-  let text = String(wikitext || "")
-    .replace(/<!--[\s\S]*?-->/gu, " ")
-    .replace(/<ref\b[^>]*\/>/giu, " ")
-    .replace(/<ref\b[^>]*>[\s\S]*?<\/ref\s*>/giu, " ")
-    .replace(/<(math|code|timeline|gallery|mapframe|syntaxhighlight)\b[^>]*>[\s\S]*?<\/\1\s*>/giu, " ");
-
-  text = removeBalancedMarkup(text, "{{", "}}");
-  text = removeBalancedMarkup(text, "{|", "|}");
-  text = text
-    .replace(/\[\[(?:File|Image|文件|檔案|图像|圖像|Category|分类|分類):[^\]]*\]\]/giu, " ")
-    .replace(/\[\[[^\]|]+\|([^\]]+)\]\]/gu, "$1")
-    .replace(/\[\[([^\]]+)\]\]/gu, "$1")
-    .replace(/\[(?:https?|ftp):\/\/\S+(?:\s+([^\]]+))?\]/giu, "$1")
-    .replace(/(?:https?|ftp):\/\/\S+/giu, " ")
-    .replace(/<[^>]+>/gu, " ")
-    .replace(/'{2,5}/gu, "")
-    .replace(/^\s*(?:={2,}|[*#:;]+|\|-?|!+).*$/gmu, " ")
-    .replace(/__(?:TOC|NOTOC|FORCETOC|NOEDITSECTION|NEWSECTIONLINK|NONEWSECTIONLINK)__/giu, " ")
+  // Removing source content creates a barrier, never an apparently complete sentence.
+  let text = prepareSourceText(wikitext)
+    .replace(/\[\[(?:File|Image|文件|檔案|图像|圖像|Category|分类|分類):[^\]]*\]\]/giu, (match) => discardedSpan(match))
+    .replace(/\[\[[^\]|]+\|([^\]]+)\]\]/gu, (match, label) =>
+      new RegExp(DATA_POLICY.line_boundaries, "u").test(match) ? discardedSpan(match) : label)
+    .replace(/\[\[([^\]]+)\]\]/gu, (match, label) =>
+      new RegExp(DATA_POLICY.line_boundaries, "u").test(match) ? discardedSpan(match) : label)
+    .replace(/\[(?:https?|ftp):\/\/[^\]\r\n]*\]/giu, (match) => discardedSpan(match))
+    .replace(/('{2,5})[\s\S]*?\1/gu, (match) => discardedSpan(match))
+    .replace(/^[^\S\r\n]*(?:={2,}|[*#:;]+|\|-?|!+)[^\r\n]*$/gmu, (match) => discardedSpan(match))
+    .replace(/__(?:TOC|NOTOC|FORCETOC|NOEDITSECTION|NEWSECTIONLINK|NONEWSECTIONLINK)__/giu, (match) => discardedSpan(match))
     .replace(/&nbsp;/giu, " ");
 
   // Candidate generation needs the original line boundaries.

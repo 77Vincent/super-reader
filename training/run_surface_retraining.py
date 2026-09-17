@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 ROOT=Path(__file__).resolve().parent.parent
-NAME='chinese-line-web-100m-16conv-v4-20260917'
+NAME='chinese-line-web-100m-16conv-v5-20260917'
 LAST=ROOT/'training/artifacts/web-mix-40m-192ch-16conv-20260916/candidate/training-state.pt'
 LAST_MANIFEST=ROOT/'training/data/processed/web-mix-40m-192ch-16conv-20260916/manifest.json'
 OLD_LOCAL=ROOT/'training/data/processed/unicode-context-192ch-12conv-20260913-combined/manifest.json'
@@ -23,7 +23,7 @@ FILES=['training/'+name for name in (
     'run_surface_retraining.py','prepare_retraining_base.mjs','prepare_smoke_data.mjs',
     'prepare_full_wikipedia_data.mjs','prepare_synthetic_data.py','run_prepare_synthetic.py',
     'prepare_web_data.py','filter_retraining_holdouts.py','text_policy.py','text_policy.mjs',
-    'text-policy.json','run_sharded.py','run_smoke.py','train_sharded.py','train_smoke.py','export_browser_model.py')]
+    'text-policy.json','unicode-symbols.json','run_sharded.py','run_smoke.py','train_sharded.py','train_smoke.py','export_browser_model.py')]
 
 def read(path): return json.loads(Path(path).read_text())
 def write(path,value):

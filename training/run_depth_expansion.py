@@ -20,7 +20,7 @@ DEFAULT_RUN = ROOT / "training/artifacts/unicode-context-192ch-16conv-20260914"
 MANIFEST = ROOT / "training/data/processed/unicode-context-192ch-12conv-20260913-combined/manifest.json"
 EVALUATION = ROOT / "training/data/processed/unicode-context-192ch-12conv-20260913-eval"
 SOURCES = ["training/" + name for name in ("run_sharded.py", "run_smoke.py", "train_sharded.py",
-    "train_smoke.py", "text_policy.py", "text-policy.json", "export_browser_model.py", "preflight_depth_expansion.py")]
+    "train_smoke.py", "text_policy.py", "text-policy.json", "unicode-symbols.json", "export_browser_model.py", "preflight_depth_expansion.py")]
 SOURCES += ["src/backend/inference.js"]
 
 

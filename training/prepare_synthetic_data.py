@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable, TypeVar
 
 import pyarrow.parquet as pq
-from text_policy import DATA_POLICY, PROXY_PUNCTUATION, require_data_policy, training_fragment_lines, training_pairs
+from text_policy import DATA_POLICY, PROXY_PUNCTUATION, require_data_policy, training_fragment_lines, training_pairs, prepare_source_text
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -96,9 +96,7 @@ def is_han(character: str) -> bool:
 
 def clean_document(text: str) -> str:
     # Cleanup must preserve source punctuation until proxy detection.
-    text = str(text or "")
-    text = MARKDOWN_FENCE_PATTERN.sub(" ", text)
-    text = URL_PATTERN.sub(" ", text)
+    text = prepare_source_text(text)
     return SPACE_PATTERN.sub(" ", text).strip()
 
 
@@ -108,13 +106,11 @@ def clean_fragment(text: str) -> str:
 
 def split_into_fragments(text: str) -> list[str]:
     """Display fragments under the shared policy; use adjacent_samples for labels."""
-    prepared = URL_PATTERN.sub(' ', MARKDOWN_FENCE_PATTERN.sub(' ', str(text or '')))
-    return [fragment['text'] for line in training_fragment_lines(prepared) for fragment in line]
+    return [fragment['text'] for line in training_fragment_lines(text) for fragment in line]
 
 
 def adjacent_samples(text: str, rejection_counts=None) -> list[tuple[str, int]]:
-    prepared = URL_PATTERN.sub(' ', MARKDOWN_FENCE_PATTERN.sub(' ', str(text or '')))
-    return [(value, target) for value, target, _ in training_pairs(prepared, rejection_counts)]
+    return [(value, target) for value, target, _ in training_pairs(text, rejection_counts)]
 
 
 def quality_document(text: str) -> bool:

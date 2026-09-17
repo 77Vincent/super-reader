@@ -106,9 +106,7 @@ class Bloom:
 def labeled_samples(document, rejection_counts=None):
     """Line-local candidates with original proxy glyphs and shared surface filtering."""
     from text_policy import training_pairs
-    from prepare_synthetic_data import URL_PATTERN, MARKDOWN_FENCE_PATTERN
-    prepared = URL_PATTERN.sub(' ', MARKDOWN_FENCE_PATTERN.sub(' ', str(document or '')))
-    yield from training_pairs(prepared, rejection_counts)
+    yield from training_pairs(document, rejection_counts)
 
 
 def document_split(fingerprint, seed):
@@ -213,7 +211,7 @@ def source_configuration(args):
               "source_files": [{**x, "mtime_ns": (args.raw_dir / x["filename"]).stat().st_mtime_ns} for x in downloaded["files"]],
               "seed_files": list(files.values()), "policy": DATA_POLICY,
               "code_sha256": {name: sha(Path(__file__).with_name(name)) for name in
-                              ("prepare_web_data.py", "prepare_synthetic_data.py", "text_policy.py", "text-policy.json")}}
+                              ("prepare_web_data.py", "prepare_synthetic_data.py", "text_policy.py", "text-policy.json", "unicode-symbols.json")}}
     return base, evaluation, downloaded, config
 
 

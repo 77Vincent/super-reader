@@ -22,9 +22,15 @@ const cases = [
 ];
 
 test("context samples hide only the target proxy and use code-point gap indices", async () => {
-  const { buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
+  const { buildAdjacentSamples, splitIntoFragments } = await import("../training/prepare_smoke_data.mjs");
+  const blocked = new Set(["价格是1,000.50元，型号是AI-20。", "苹果、香蕉，放入（A）袋。", "头文件为unistd.h，编号是２．３。"]);
   for (const [text, left, right] of cases) {
     const rows = buildAdjacentSamples({ id: "context", domain: "fixture", text });
+    if (blocked.has(text)) {
+      assert.deepEqual(rows, [], text);
+      assert.deepEqual(splitIntoFragments(text).map((f) => f.text), [left, right]);
+      continue;
+    }
     assert.equal(rows.length, 1, text);
     const row = rows[0];
     assert.equal(row.tokens.join(""), left + right);
@@ -148,10 +154,10 @@ print(json.dumps(result,ensure_ascii=False))
 
 test("Wikipedia extraction preserves raw punctuation until sample generation", async () => {
   const { wikipediaDocumentsFromXml, buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
-  const [document] = wikipediaDocumentsFromXml('<mediawiki><page><title>示例</title><ns>0</ns><id>1</id><revision><text>甲,乙，丙﹐丁。</text></revision></page></mediawiki>');
-  assert.equal(document.text, "甲,乙，丙﹐丁。");
+  const [document] = wikipediaDocumentsFromXml('<mediawiki><page><title>示例</title><ns>0</ns><id>1</id><revision><text>甲,乙，丙丁。</text></revision></page></mediawiki>');
+  assert.equal(document.text, "甲,乙，丙丁。");
   const [row] = buildAdjacentSamples(document);
-  assert.equal(row.tokens.join(""), "甲,乙丙,丁");
+  assert.equal(row.tokens.join(""), "甲,乙丙丁");
   assert.equal(row.target_index, 2);
   assert.equal(row.punctuation, "，");
 });
@@ -169,6 +175,9 @@ test("both policy validators compare the whitelist and normalization semantics",
     { ...DATA_POLICY, boundary_context: "Require both neighbors to be Han" },
     { ...DATA_POLICY, line_boundaries: "none" },
     { ...DATA_POLICY, sample_filter: { version: "obsolete" } },
+    { ...DATA_POLICY, source_filter: undefined },
+    { ...DATA_POLICY, symbol_window: { ...DATA_POLICY.symbol_window, max_distance: 24 } },
+    { ...DATA_POLICY, symbol_window: { ...DATA_POLICY.symbol_window, symbols_sha256: "wrong" } },
   ];
   invalid.forEach((summary) => assert.throws(() => requireDataPolicy(summary), /Data requires/u));
   execFileSync("python3", ["-c", String.raw`

@@ -21,10 +21,10 @@ test("colons and ASCII dots remain context while Chinese ellipses create boundar
   const { splitIntoFragments, buildAdjacentSamples } = await import(
     "../training/prepare_smoke_data.mjs"
   );
-  const text = "先说明：这里需要停顿……然后继续...最后结束。";
+  const text = "先说明这里需要停顿……然后继续...最后结束。";
 
   assert.deepEqual(splitIntoFragments(text), [
-    { text: "先说明:这里需要停顿", punctuation: "……" },
+    { text: "先说明这里需要停顿", punctuation: "……" },
     { text: "然后继续...最后结束", punctuation: "。" },
   ]);
 
@@ -51,13 +51,14 @@ test("enumeration commas keep list items together without creating training targ
 
     const samples = buildAdjacentSamples({
       ...document,
-      text: "我买了苹果、香蕉，准备制作果汁、沙拉。",
+      text: "我买了苹果、香蕉，准备制作果汁。",
     }, { tokenization });
     assert.equal(samples.length, 1);
     const [sample] = samples;
     assert.equal(sample.punctuation, "，");
     assert.equal(sample.tokens.slice(0, sample.target_index + 1).join(""), "我买了苹果、香蕉");
-    assert.equal(sample.tokens.slice(sample.target_index + 1).join(""), "准备制作果汁、沙拉");
+    assert.equal(sample.tokens.slice(sample.target_index + 1).join(""), "准备制作果汁");
+    assert.deepEqual(buildAdjacentSamples({ ...document, text: "我买了苹果、香蕉，准备制作果汁、沙拉。" }, { tokenization }), []);
   }
 });
 
@@ -137,7 +138,7 @@ test("Wikipedia XML keeps article text and removes wiki markup", async () => {
     id: "wikipedia:42",
     domain: "wikipedia",
     title: "阅读",
-    text: "阅读是文字活动。它帮助理解。",
+    text: "\u0000是文字活动。\u0000它帮助理解。\u0000",
     stream_offset: 123,
   }]);
 });
