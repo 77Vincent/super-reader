@@ -1,5 +1,5 @@
 {
-  "standard": "unicode-context-v5",
+  "standard": "unicode-context-v6",
   "input_representation": "unicode-context-v1",
   "tokenization": "character",
   "proxy_punctuation": [
@@ -15,7 +15,8 @@
   "boundary_context": "Require at least one Han neighbor at normalized, whitespace-trimmed fragment edges; do not skip quotes or symbols; Han means CJK unified/compatibility ideograph blocks plus U+3007",
   "line_boundaries": "\\r\\n|[\\n\\r\\v\\f\\u001c-\\u001e\\u0085\\u2028\\u2029]",
   "sample_filter": {
-    "version": "surface-noise-v2",
+    "version": "surface-noise-v3",
+    "require_han": true,
     "action": "Discard pairs touching a flagged fragment; never reconnect across rejected fragments",
     "fragment_patterns": {
       "placeholder": "\\$P\\$|\\(I_M_G\\)",
@@ -34,7 +35,7 @@
     "empty_template_pattern": "[（(][\\s，,。；;！？!?…]*[）)]"
   },
   "symbol_window": {
-    "max_distance": 15,
+    "max_distance": 18,
     "distance": "Sum of code-point distances to nearest non-proxy symbol on each side, within the same physical line and without crossing a discard barrier; includes intervening spaces; symbols need not match",
     "symbols_file": "unicode-symbols.json",
     "symbols_sha256": "024a3a72c99787d47611fc6b75dc10b465db93c1c62f5f853c40290641abbc72",

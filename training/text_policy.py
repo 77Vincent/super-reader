@@ -105,6 +105,8 @@ def training_fragment_lines(text, *, symbol_window=None):
                     fragments[-1]['boundary_reasons'].extend(boundary_reasons or [])
                 return
             reasons = [name for name, pattern in SURFACE_PATTERNS.items() if pattern.search(raw) or pattern.search(value)]
+            if DATA_POLICY['sample_filter']['require_han'] and not HAN.search(value):
+                reasons.append('fragment_without_han')
             if WHOLE_FRAGMENT.fullmatch(raw.strip()) or WHOLE_FRAGMENT.fullmatch(value):
                 reasons.append('web_control')
             if any(left < end and right > start for left, right in empty_spans):

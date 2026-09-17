@@ -4,7 +4,7 @@ const { execFileSync } = require("node:child_process");
 
 test("symbol windows use both nearest symbols and total code-point distance", async () => {
   const { symbolEnclosures, trainingPairs, DATA_POLICY } = await import("../training/text_policy.mjs");
-  assert.equal(DATA_POLICY.symbol_window.max_distance, 15);
+  assert.equal(DATA_POLICY.symbol_window.max_distance, 18);
   const text = "集合 {空，a，aa，aaa，a…a(n个a)}";
   const first = Array.from(text).indexOf("，");
   assert.equal(symbolEnclosures(text, 14).has(first), false);
@@ -21,6 +21,9 @@ test("symbol windows use both nearest symbols and total code-point distance", as
   assert.equal(pairs("（甲 ， 乙）", 4).length, 1); // Spaces count before normalization.
   assert.equal(pairs("（甲，乙\n丙）", 64).length, 1); // Cannot look across lines.
   assert.equal(pairs("甲，乙。丙，丁", 64).length, 3);
+  const title = "參加《測驗！你比五年級還聰明嗎？》中答題。";
+  assert.equal(pairs(title, 13).length, 2);
+  assert.deepEqual([...trainingPairs(title)], []);
 });
 
 test("a rejected target remains a barrier without discarding intact neighboring targets", async () => {

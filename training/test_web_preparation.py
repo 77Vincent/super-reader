@@ -17,7 +17,8 @@ import pyarrow.parquet as pq
 
 class WebPreparationTests(unittest.TestCase):
     def test_same_targets_and_preserved_context(self):
-        texts = ["女：我们计划8:30出发，再到楼下的小超市购买苹果、香蕉。请准时到达。", "甲，；乙。丙", "价格3.14元，库存1,200件。明天再买", "甲！）乙，丙。"]
+        # Keep the time's colon and the later enumeration comma beyond the symbol window.
+        texts = ["女：我们计划8:30准时出发，再到楼下的小超市购买苹果、香蕉。请准时到达。", "甲，；乙。丙", "价格3.14元，库存1,200件。明天再买", "甲！）乙，丙。"]
         for text in texts:
             self.assertEqual([(t, i) for t, i, _ in labeled_samples(text)], adjacent_samples(text))
         first = list(labeled_samples(texts[0]))[0]

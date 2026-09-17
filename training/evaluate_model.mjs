@@ -150,7 +150,7 @@ const confidenceBucket = (p) => p < 0.5 ? "0-50%" : p < 0.9 ? "50-90%" : p < 0.9
 
 function optionsFrom(args) {
   const options = {
-    input: "training/data/processed/chinese-line-web-100m-16conv-v5-20260917-eval/validation.jsonl", "per-domain": "500", seed: "20260911",
+    input: "training/data/processed/chinese-line-web-100m-16conv-v6-20260917-eval/validation.jsonl", "per-domain": "500", seed: "20260911",
     model: "src/boundary-model-data.js",
     cases: "training/evaluation-cases.json", output: "training/artifacts/model-baseline.json",
   };

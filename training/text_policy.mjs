@@ -22,7 +22,7 @@ for (const character of PROXY_PUNCTUATION) SYMBOLS.delete(character);
 const SIGN = String.raw`[+\-−﹢﹣＋－]`;
 const NUMBER = `${SIGN}? *(?:\\p{Nd}+(?:[.．]\\p{Nd}*)?|[.．]\\p{Nd}+)(?:[eEｅＥ]${SIGN}?\\p{Nd}+)?`;
 const NUMERIC_COMMAS = new RegExp(`(?<![\\p{Nd}.．])${NUMBER} *(，) *(?=${NUMBER})`, "gu");
-const HAN = /^[\u3007\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u{20000}-\u{2fa1f}\u{30000}-\u{323af}]$/u;
+const HAN = /[\u3007\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u{20000}-\u{2fa1f}\u{30000}-\u{323af}]/u;
 const normalizeFragment = (text) => text.normalize("NFKC").replace(/\s+/gu, " ").trim();
 
 export function validBoundaryContext(left, right) {
@@ -97,6 +97,7 @@ export function* trainingFragmentLines(text, { symbolWindow = DATA_POLICY.symbol
         return;
       }
       const reasons = SURFACE_PATTERNS.filter(([, pattern]) => pattern.test(raw) || pattern.test(value)).map(([name]) => name);
+      if (DATA_POLICY.sample_filter.require_han && !HAN.test(value)) reasons.push("fragment_without_han");
       if (WHOLE_FRAGMENT.test(raw.trim()) || WHOLE_FRAGMENT.test(value)) reasons.push("web_control");
       if (emptySpans.some(([left, right]) => left < end && right > start)) reasons.push("empty_template");
       fragments.push({ text: value, punctuation, reasons, boundary_reasons: boundaryReasons });

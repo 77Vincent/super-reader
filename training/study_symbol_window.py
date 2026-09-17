@@ -11,7 +11,7 @@ import text_policy as policy
 from prepare_synthetic_data import quality_document, clean_document
 SEED=2026091720
 BOUNDS=[4,8,12,16,24,32,48,64]
-WINDOWS=[0,4,6,8,10,12,15,16,20,24,32,48,64]
+WINDOWS=[0,4,6,8,10,12,15,16,18,20,24,32,48,64]
 POOLS={'web':'full-web-yield-20260916/documents.jsonl', 'l3':'l3-study-20260916/documents.jsonl',
        'wiki':'all-local-quick-yield-20260917/wiki-documents.jsonl','clue':'chinese-line-quality-20260917/clue-documents.jsonl'}
 
@@ -122,5 +122,5 @@ def validate(out):
     (out/'final-yield.json').write_text(json.dumps({'policy':policy.DATA_POLICY,'profiles':profiles},ensure_ascii=False,indent=2)+'\n')
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--output',type=Path,default=ROOT/'training/artifacts/v5-window-study-20260917');p.add_argument('--validate',action='store_true');args=p.parse_args();args.output.mkdir(parents=True,exist_ok=True)
+    p=argparse.ArgumentParser();p.add_argument('--output',type=Path,default=ROOT/'training/artifacts/v6-window-study-20260917');p.add_argument('--validate',action='store_true');args=p.parse_args();args.output.mkdir(parents=True,exist_ok=True)
     (validate if args.validate else study)(args.output)

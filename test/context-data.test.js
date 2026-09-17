@@ -97,7 +97,7 @@ print(json.dumps([list(labeled_samples(t)) for t in json.load(sys.stdin)],ensure
   assert.deepEqual(python, js);
 });
 
-test("signed numeric separators remain context and only two non-Han neighbors reject a target", async () => {
+test("signed numeric separators remain context and the immediate-neighbor rule is preserved", async () => {
   const { buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
   const { trainingPairs } = await import("../training/text_policy.mjs");
   const pair = (left, right, punctuation = "，") => [left + right, Array.from(left).length - 1, punctuation];
@@ -110,7 +110,7 @@ test("signed numeric separators remain context and only two non-Han neighbors re
     ["输入𠮷１２，－３，完成。", [pair("输入𠮷12,-3", "完成")]],
     ["🧪数值为𝟙，-𝟚，继续。", [pair("🧪数值为1,-2", "继续")]],
     ["甲A，B乙，丙丁。", [pair("B乙", "丙丁")]],
-    ["甲，ABC；DEF，乙。", [pair("甲", "ABC"), pair("DEF", "乙")]],
+    ["甲，ABC；DEF，乙。", []],
     ["使用API ， HTTP处理。", []],
     ["得分42；64结束。", []],
     ["“甲”，（乙）。", []],
@@ -118,10 +118,10 @@ test("signed numeric separators remain context and only two non-Han neighbors re
     ["甲，（乙）。", [pair("甲", "(乙)")]],
     ["时间8:30，明天继续。", [pair("时间8:30", "明天继续")]],
     ["今天，8:30出发。", [pair("今天", "8:30出发")]],
-    ["𠮷，API。", [pair("𠮷", "API")]],
-    ["〇，API。", [pair("〇", "API")]],
+    ["𠮷，API。", []],
+    ["〇，API。", []],
     ["甲，-暂停。", [pair("甲", "-暂停")]],
-    ["ASCII,-2，下一句。", [pair("ASCII,-2", "下一句")]],
+    ["ASCII,-2，下一句。", []],
   ];
   const js = fixtures.map(([text]) => buildAdjacentSamples({ id: "boundary-context", domain: "fixture", text })
     .map((row) => [row.tokens.join(""), row.target_index, row.punctuation]));
@@ -152,6 +152,44 @@ print(json.dumps(result,ensure_ascii=False))
   assert.deepEqual(python, js);
 });
 
+test("each entire fragment requires Han without bridging over discarded fragments", async () => {
+  const { trainingPairs, trainingFragmentLines, DATA_POLICY } = await import("../training/text_policy.mjs");
+  assert.equal(DATA_POLICY.sample_filter.require_han, true);
+  const fixtures = [
+    ["陈列性景观雕塑是指以优秀的雕塑作品作为环境主体的内容。3", []],
+    ["正常甲，正常乙。3。正常丙，正常丁。", [["正常甲", "正常乙"], ["正常丙", "正常丁"]]],
+    ["前句，API，后句，继续。", [["后句", "继续"]]],
+    ["前句，-3.5，后句，继续。", [["后句", "继续"]]],
+    ["前句，[1]，后句，继续。", [["后句", "继续"]]],
+    ["OK，我们先一起了解一下。", []],
+    ["使用API，进行调用。", [["使用API", "进行调用"]]],
+    ["今天，8:30出发。", [["今天", "8:30出发"]]],
+    ["𠮷，API𠮷。", [["𠮷", "API𠮷"]]],
+    ["〇，〇API。", [["〇", "〇API"]]],
+    ["\u{30000}，API\u{30000}。", [["\u{30000}", "API\u{30000}"]]],
+    ["中文API，HTTP中文。", []], // Han inside both fragments does not replace the edge rule.
+    ["集合 {空，a，aa，aaa，a…a(n个a)}", []], // Han gate covers the old n=15 counterexample by itself.
+  ];
+  const js = fixtures.map(([text]) => [...trainingPairs(text, null, { symbolWindow: 0 })].map(({ left, right }) => [left, right]));
+  fixtures.forEach(([text, expected], index) => assert.deepEqual(js[index], expected, text));
+  const counts = {};
+  assert.deepEqual([...trainingPairs("前句，API，后句。", counts)], []);
+  assert.deepEqual(counts, { pairs: 2, fragment_without_han: 2 });
+  assert.deepEqual([...trainingFragmentLines("前句，API，后句。")][0].map(({ text, reasons }) => [text, reasons]),
+    [["前句", []], ["API", ["fragment_without_han"]], ["后句", []]]);
+  const python = JSON.parse(execFileSync("python3", ["-c", String.raw`
+import sys,json
+sys.path.insert(0,'training')
+from text_policy import training_pairs
+texts=json.load(sys.stdin)
+counts={}
+assert list(training_pairs('前句，API，后句。',counts))==[]
+assert counts=={'pairs':2,'fragment_without_han':2}
+print(json.dumps([[[t[:k+1],t[k+1:]] for t,k,_ in training_pairs(text,symbol_window=0)] for text in texts],ensure_ascii=False))
+`], { input: JSON.stringify(fixtures.map(([text]) => text)), encoding: "utf8" }));
+  assert.deepEqual(python, js);
+});
+
 test("Wikipedia extraction preserves raw punctuation until sample generation", async () => {
   const { wikipediaDocumentsFromXml, buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
   const [document] = wikipediaDocumentsFromXml('<mediawiki><page><title>示例</title><ns>0</ns><id>1</id><revision><text>甲,乙，丙丁。</text></revision></page></mediawiki>');
@@ -175,6 +213,8 @@ test("both policy validators compare the whitelist and normalization semantics",
     { ...DATA_POLICY, boundary_context: "Require both neighbors to be Han" },
     { ...DATA_POLICY, line_boundaries: "none" },
     { ...DATA_POLICY, sample_filter: { version: "obsolete" } },
+    { ...DATA_POLICY, sample_filter: { ...DATA_POLICY.sample_filter, require_han: undefined } },
+    { ...DATA_POLICY, sample_filter: { ...DATA_POLICY.sample_filter, require_han: false } },
     { ...DATA_POLICY, source_filter: undefined },
     { ...DATA_POLICY, symbol_window: { ...DATA_POLICY.symbol_window, max_distance: 24 } },
     { ...DATA_POLICY, symbol_window: { ...DATA_POLICY.symbol_window, symbols_sha256: "wrong" } },
