@@ -2,12 +2,13 @@
 // Regenerate training and evaluation labels while retaining document ownership.
 // The full-Wikipedia preparer adds Wikipedia training examples afterward.
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { createReadStream } from "node:fs";
 import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { SOURCES, buildAdjacentSamples, documentsFromSource } from "./prepare_smoke_data.mjs";
+import { SOURCES, buildAdjacentSamples, documentsFromSource, wikipediaDocumentsFromXml } from "./prepare_smoke_data.mjs";
 import { DATA_POLICY, validProxyLabel } from "./text_policy.mjs";
 
 const root = process.env.SUPER_READER_PROJECT_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -50,8 +51,53 @@ export function samplesForReferenceDocument(document, owners) {
   return { split, samples: buildAdjacentSamples(document, { tokenization: "character" }) };
 }
 
+export async function referenceWikipediaDocuments(downloaded, requiredIds) {
+  const wanted = new Set([...requiredIds].filter((id) => id.startsWith("wikipedia:")));
+  if (!wanted.size) return [];
+  const index = execFileSync("bzip2", ["-dc", downloaded.index.path], {
+    encoding: "utf8", maxBuffer: 512 * 1024 * 1024,
+  });
+  const offsets = new Set();
+  const selectedOffsets = new Set();
+  const indexedIds = new Set();
+  for (const line of index.split(/\r?\n/u)) {
+    const match = line.match(/^(\d+):(\d+):/u);
+    if (!match) continue;
+    const offset = Number(match[1]);
+    if (!Number.isSafeInteger(offset)) throw new Error("Invalid Wikipedia stream offset");
+    offsets.add(offset);
+    const id = `wikipedia:${match[2]}`;
+    if (wanted.has(id)) { selectedOffsets.add(offset); indexedIds.add(id); }
+  }
+  const missingIndex = [...wanted].filter((id) => !indexedIds.has(id));
+  if (missingIndex.length) throw new Error(`Reference Wikipedia IDs missing from index: ${missingIndex.slice(0, 10).join(", ")}`);
+  const ordered = [...offsets].sort((a, b) => a - b);
+  const documents = [];
+  const dump = await open(downloaded.primary.path, "r");
+  try {
+    const { size } = await dump.stat();
+    for (let i = 0; i < ordered.length; i += 1) {
+      const offset = ordered[i];
+      if (!selectedOffsets.has(offset)) continue;
+      const length = (ordered[i + 1] ?? size) - offset;
+      const compressed = Buffer.allocUnsafe(length);
+      const { bytesRead } = await dump.read(compressed, 0, length, offset);
+      if (bytesRead !== length) throw new Error(`Short Wikipedia dump read at byte ${offset}`);
+      const xml = execFileSync("bzip2", ["-dc"], {
+        input: compressed, encoding: "utf8", maxBuffer: 256 * 1024 * 1024,
+      });
+      // Even a document with no surviving text must retain its holdout ownership.
+      for (const document of wikipediaDocumentsFromXml(xml, offset, { includeEmpty: true })) {
+        if (wanted.delete(document.id)) documents.push(document);
+      }
+    }
+  } finally { await dump.close(); }
+  if (wanted.size) throw new Error(`Reference Wikipedia pages were not recovered: ${[...wanted].slice(0, 10).join(", ")}`);
+  return documents;
+}
+
 async function main() {
-  const options = { "reference-data-dir": "training/data/processed", "output-dir": "", "wikipedia-docs": "250000", "all-local-clue": "0" };
+  const options = { "reference-data-dir": "training/data/processed", "output-dir": "", "all-local-clue": "0" };
   for (let index = 2; index < process.argv.length; index += 2) {
     const key = process.argv[index].replace(/^--/, "");
     if (!Object.hasOwn(options, key) || process.argv[index + 1] === undefined) {
@@ -65,8 +111,6 @@ async function main() {
   const summaryBytes = await readFile(join(reference, "summary.json"));
   const previous = JSON.parse(summaryBytes);
   if (previous.tokenization !== "character") throw new Error("Expected character-tokenized reference data");
-  const wikipediaDocs = Number(options["wikipedia-docs"]);
-  if (!Number.isSafeInteger(wikipediaDocs) || wikipediaDocs < 1) throw new Error("Invalid --wikipedia-docs");
   if (!["0", "1"].includes(options["all-local-clue"])) throw new Error("--all-local-clue must be 0 or 1");
   const allLocalClue = options["all-local-clue"] === "1";
 
@@ -117,9 +161,10 @@ async function main() {
       }
       sources.push(recordedSource);
       for (const split of Object.keys(counts)) counts[split][source.domain] = 0;
-      const documents = allLocalClue && source.domain !== "wikipedia"
-        ? await localClueDocuments(source, downloaded)
-        : await documentsFromSource(source, downloaded, { wikipediaDocs, seed: previous.seed });
+      const documents = source.domain === "wikipedia"
+        ? await referenceWikipediaDocuments(downloaded, requiredIds)
+        : allLocalClue ? await localClueDocuments(source, downloaded)
+          : await documentsFromSource(source, downloaded, {});
       loadedSources.push({ source, documents });
       corpusCounts[source.domain] = { documents_read: documents.length, protected_or_duplicate_training_documents: 0 };
       for (const document of documents) {

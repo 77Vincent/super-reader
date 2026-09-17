@@ -189,7 +189,7 @@ export function cleanWikipediaMarkup(wikitext) {
   return text.trim();
 }
 
-export function wikipediaDocumentsFromXml(xml, streamOffset = 0) {
+export function wikipediaDocumentsFromXml(xml, streamOffset = 0, { includeEmpty = false } = {}) {
   const documents = [];
   const pages = String(xml).match(/<page>[\s\S]*?<\/page>/gu) || [];
 
@@ -201,7 +201,7 @@ export function wikipediaDocumentsFromXml(xml, streamOffset = 0) {
     const title = decodeXmlEntities(page.match(/<title>([\s\S]*?)<\/title>/u)?.[1] || "");
     const encodedText = page.match(/<text\b[^>]*>([\s\S]*?)<\/text>/u)?.[1] || "";
     const text = cleanWikipediaMarkup(decodeXmlEntities(encodedText));
-    if (!pageId || !text || /^#(?:REDIRECT|重定向|重新導向)/iu.test(text)) continue;
+    if (!pageId || (!text && !includeEmpty) || /^#(?:REDIRECT|重定向|重新導向)/iu.test(text)) continue;
 
     documents.push({
       id: `wikipedia:${pageId}`,

@@ -15,7 +15,7 @@ import sys
 
 ROOT=Path(__file__).resolve().parent.parent
 NAME='chinese-line-web-100m-16conv-v7-20260917'
-LAST=ROOT/'training/artifacts/web-mix-40m-192ch-16conv-20260916/candidate/training-state.pt'
+BEST_CHECKPOINT=ROOT/'training/artifacts/web-mix-20m-192ch-16conv-20260915/candidate/training-state.pt'
 LAST_MANIFEST=ROOT/'training/data/processed/web-mix-40m-192ch-16conv-20260916/manifest.json'
 OLD_LOCAL=ROOT/'training/data/processed/unicode-context-192ch-12conv-20260913-combined/manifest.json'
 OLD_EVAL=LAST_MANIFEST.parent
@@ -53,6 +53,14 @@ def history():
             manifests.add(absolute(parent));pending.append(absolute(parent))
     return sorted(manifests),sorted(registries),directories
 
+def validated_best(state):
+    """Select a completed, validated epoch rather than a later partial epoch."""
+    epoch=state.get('best_epoch',0)
+    metrics=next((row for row in state.get('history',[]) if row['epoch']==epoch),None)
+    if not state.get('best_state') or epoch<1 or metrics is None or 'selection_score' not in metrics:
+        raise ValueError('Initialization requires best_state from a completed, validated epoch')
+    return state['best_state'],metrics
+
 def freeze_initialization(run, checkpoint):
     sys.path[:0]=[str(ROOT/'training/.deps'),str(ROOT/'training')]
     import torch
@@ -62,10 +70,10 @@ def freeze_initialization(run, checkpoint):
     state=torch.load(checkpoint,map_location='cpu',weights_only=True)
     config=state['configuration'];assert (config['channels'],config['residual_blocks'])==(192,8)
     vocabulary=state['vocabulary'];assert len(vocabulary)==8192
-    # Deliberately select the final saved model_state, not the old best_state hidden in it.
-    weights={k:v.clone() for k,v in state['model_state'].items()}
-    frozen={'model_state':weights,'best_state':weights,'best_epoch':0,'vocabulary':vocabulary,
-        'configuration':config,'selection':'last saved model_state; epoch incomplete and not yet validated'}
+    best,metrics=validated_best(state)
+    weights={k:v.clone() for k,v in best.items()}
+    frozen={'model_state':weights,'best_state':weights,'best_epoch':state['best_epoch'],'vocabulary':vocabulary,
+        'configuration':config,'selection':'best_state from a completed, validated epoch'}
     torch.save(frozen,run/'initialization.pt')
     write(run/'source-vocabulary.json',vocabulary)
     model=BoundaryChooser(len(vocabulary),192,8)
@@ -88,7 +96,8 @@ def freeze_initialization(run, checkpoint):
         assert torch.isfinite(loss)
         loss.backward();torch.nn.utils.clip_grad_norm_(model.parameters(),1);optimizer.step();losses.append(loss.item())
     report={'passed':True,'source_checkpoint':str(checkpoint),'source_sha256':sha(checkpoint),
-        'selected_state':'model_state','source_progress':state['progress'],'source_best_epoch':state['best_epoch'],
+        'selected_state':'best_state','source_progress':state['progress'],'source_best_epoch':state['best_epoch'],
+        'source_best_metrics':metrics,
         'new_optimizer':'AdamW; no inherited moments','parameters':sum(p.numel() for p in model.parameters()),
         'all_parameters_equal_before_probe':True,'probe_losses':losses,'probe_updates_discarded':True,'transfer':transfer}
     write(run/'initialization-verification.json',report)
@@ -100,8 +109,8 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run-dir',type=Path,default=ROOT/'training/artifacts'/NAME)
     parser.add_argument('--target-samples',type=int,default=100_000_000)
-    parser.add_argument('--epochs',type=int,default=2)
-    parser.add_argument('--initialize-from',type=Path,default=LAST)
+    parser.add_argument('--epochs',type=int,default=1)
+    parser.add_argument('--initialize-from',type=Path,default=BEST_CHECKPOINT)
     parser.add_argument('--resume',action='store_true')
     args=parser.parse_args()
     if min(args.target_samples,args.epochs)<1:parser.error('Counts must be positive')

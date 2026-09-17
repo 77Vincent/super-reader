@@ -12,8 +12,27 @@ import pyarrow.parquet as pq
 import prepare_synthetic_data as prep
 from filter_retraining_holdouts import projected_input_signature
 from text_policy import DATA_POLICY, training_pairs
+from run_surface_retraining import validated_best
 
 class SurfaceRetrainingTests(unittest.TestCase):
+    def test_initialization_keeps_validated_best_despite_later_partial_epoch(self):
+        best={'weight':[1]};partial={'weight':[2]}
+        metrics={'epoch':1,'selection_score':0.87}
+        state={'best_state':best,'model_state':partial,'best_epoch':1,
+            'history':[metrics],'progress':{'epoch':2}}
+        weights,selected_metrics=validated_best(state)
+        self.assertIs(weights,best)
+        self.assertEqual(selected_metrics,metrics)
+
+    def test_initialization_rejects_unvalidated_or_missing_best_weights(self):
+        for state in [
+            {'model_state':{'weight':[2]},'best_epoch':1,'history':[{'epoch':1,'selection_score':0.87}]},
+            {'best_state':{'weight':[1]},'best_epoch':0,'history':[]},
+            {'best_state':{'weight':[1]},'best_epoch':1,'history':[{'epoch':2,'selection_score':0.86}]},
+        ]:
+            with self.subTest(state=state),self.assertRaisesRegex(ValueError,'completed, validated epoch'):
+                validated_best(state)
+
     def test_input_identity_ignores_old_gap_and_punctuation(self):
         self.assertEqual(projected_input_signature('甲:8.30乙丙',1),projected_input_signature('甲乙、丙',0))
         self.assertNotEqual(projected_input_signature('甲乙丙'),projected_input_signature('甲乙丁'))

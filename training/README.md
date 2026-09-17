@@ -133,14 +133,12 @@ must not be compared as if it were measured on the same holdout.
 
 ## Current rebuild: local sources plus 100 million web pairs
 
-**Paused for policy review (2026-09-17).** The v4 coordinator stopped during
-base-data preparation; model training has not started. The
-[independent policy audit](POLICY_REVIEW_20260917.md) found reproducible
-cross-line cleanup and Wikipedia template-deletion defects. The commands below
-describe the coordinator, not a recommendation to resume its frozen v4 snapshot.
-The current v7 implementation and bounded analysis are recorded in the paired loss study.
-No v7 full rebuild or training has started. Use a fresh v7 run for the next rebuild;
-do not resume the frozen v4 code as if it contained these fixes.
+**v7 preparation restarted (2026-09-17, 22:47 CST).** The latest
+[independent label audit](V7_LABEL_QUALITY_AUDIT_R2.md) reviewed 500 fresh pairs
+and found no confirmed incorrect targets in that sample. This is sampling
+evidence, not a guarantee that the full corpus is free of label noise.
+The new run rebuilds data under the audited v7 rules. Earlier v3/v4 runs stay
+stopped; their frozen snapshots do not contain all the current fixes.
 
 ```bash
 npm run model:retrain-surface
@@ -161,18 +159,20 @@ The earlier v3 preparation was stopped before model training and is preserved in
 its original directory. The new run regenerates original sources because source
 barriers and symbol windows require text that old compact samples have lost;
 filtering those old samples alone cannot reconstruct the correct context.
-Initialization explicitly selects the final saved **model_state** from
-`web-mix-40m-192ch-16conv-20260916/candidate/training-state.pt`, including its
-partial epoch. It does not silently substitute that file's inherited best_state.
-The source checkpoint hash, exact tensor-copy verification and discarded
-numerical probe are recorded in `initialization-verification.json`.
+Initialization explicitly selects the validated epoch 1 **best_state** from
+`web-mix-20m-192ch-16conv-20260915/candidate/training-state.pt`. The checkpoint
+also contains later partial-epoch weights; those are not selected. The source
+checkpoint hash, selected epoch's validation metrics, exact tensor-copy
+verification and discarded numerical probe are recorded in
+`initialization-verification.json`.
 
 The architecture remains 16 convolutions / 192 channels / 3,496,329 parameters,
-with the same 8192 vocabulary IDs. A fresh AdamW optimizer trains two new epochs
+with the same 8192 vocabulary IDs. A fresh AdamW optimizer trains one new epoch
 at learning rate 0.0003, using the previous domain weighting, batching and
 checkpoint-selection settings. Before any updates, the complete rebuilt
 validation split establishes the baseline. Each epoch uses the same complete
 validation split; the selected checkpoint receives a final full test evaluation.
+Whether to train further should be decided from the rebuilt validation results.
 
 Old document holdouts stay reserved. Revised evaluation pairs are screened
 against inherited and newly rebuilt training inputs using Han-projected input
@@ -181,6 +181,14 @@ identity independent of the target gap. New web documents use the existing
 rebuilt local holdouts, and all splits use the same v7 preparation rules.
 The final evaluation directory is
 `training/data/processed/chinese-line-web-100m-16conv-v7-20260917-eval/`.
+
+Wikipedia holdouts are retrieved by their original page IDs through the dump
+index, including documents with no surviving samples. Resampling a fixed
+number of cleaned articles can select different pages when extraction changes.
+The initial v7 attempt stopped at that recovery check before any training; its
+logs and incomplete base output are archived with a `.failed-reference-lookup-`
+suffix. The restarted run freezes the corrected lookup code and the same v7
+cleaning policy.
 
 The coordinator freezes source code and weights, records stage logs and
 `status.json`, and automatically starts training after preparation. Resuming
