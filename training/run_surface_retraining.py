@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 ROOT=Path(__file__).resolve().parent.parent
-NAME='chinese-line-web-100m-16conv-20260917'
+NAME='chinese-line-web-100m-16conv-v4-20260917'
 LAST=ROOT/'training/artifacts/web-mix-40m-192ch-16conv-20260916/candidate/training-state.pt'
 LAST_MANIFEST=ROOT/'training/data/processed/web-mix-40m-192ch-16conv-20260916/manifest.json'
 OLD_LOCAL=ROOT/'training/data/processed/unicode-context-192ch-12conv-20260913-combined/manifest.json'

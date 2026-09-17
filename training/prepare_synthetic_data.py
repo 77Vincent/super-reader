@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable, TypeVar
 
 import pyarrow.parquet as pq
-from text_policy import DATA_POLICY, PROXY_PUNCTUATION, require_data_policy, training_pairs
+from text_policy import DATA_POLICY, PROXY_PUNCTUATION, require_data_policy, training_fragment_lines, training_pairs
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -107,23 +107,9 @@ def clean_fragment(text: str) -> str:
 
 
 def split_into_fragments(text: str) -> list[str]:
-    fragments: list[str] = []
-    buffer: list[str] = []
-    original = clean_document(text)
-    for index, character in enumerate(original):
-        numeric_separator = (character == "，" and index > 0 and index + 1 < len(original)
-                             and original[index - 1].isdecimal() and original[index + 1].isdecimal())
-        if character not in PROXY_PUNCTUATION or numeric_separator:
-            buffer.append(character)
-            continue
-        cleaned = clean_fragment("".join(buffer))
-        if cleaned:
-            fragments.append(cleaned)
-        buffer.clear()
-    tail = clean_fragment("".join(buffer))
-    if tail:
-        fragments.append(tail)
-    return fragments
+    """Display fragments under the shared policy; use adjacent_samples for labels."""
+    prepared = URL_PATTERN.sub(' ', MARKDOWN_FENCE_PATTERN.sub(' ', str(text or '')))
+    return [fragment['text'] for line in training_fragment_lines(prepared) for fragment in line]
 
 
 def adjacent_samples(text: str, rejection_counts=None) -> list[tuple[str, int]]:

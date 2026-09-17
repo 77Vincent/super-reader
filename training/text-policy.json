@@ -1,5 +1,5 @@
 {
-  "standard": "unicode-context-v3",
+  "standard": "unicode-context-v4",
   "input_representation": "unicode-context-v1",
   "tokenization": "character",
   "proxy_punctuation": [
@@ -11,7 +11,8 @@
     "…"
   ],
   "normalization": "Split actual lines before whitespace normalization; identify proxies before NFKC; normalize retained fragments with NFKC; collapse whitespace to ASCII space; trim fragment ends",
-  "numeric_punctuation": "Retain comma proxies between decimal digits",
+  "numeric_punctuation": "Retain Chinese commas between decimal numbers, including signs, decimal fractions and exponents, allowing surrounding whitespace",
+  "boundary_context": "Require at least one Han neighbor at normalized, whitespace-trimmed fragment edges; do not skip quotes or symbols; Han means CJK unified/compatibility ideograph blocks plus U+3007",
   "line_boundaries": "\\r\\n|[\\n\\r\\v\\f\\u001c-\\u001e\\u0085\\u2028\\u2029]",
   "sample_filter": {
     "version": "surface-noise-v1",

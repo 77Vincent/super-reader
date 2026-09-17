@@ -91,6 +91,61 @@ print(json.dumps([list(labeled_samples(t)) for t in json.load(sys.stdin)],ensure
   assert.deepEqual(python, js);
 });
 
+test("signed numeric separators remain context and only two non-Han neighbors reject a target", async () => {
+  const { buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
+  const { trainingPairs } = await import("../training/text_policy.mjs");
+  const pair = (left, right, punctuation = "，") => [left + right, Array.from(left).length - 1, punctuation];
+  const fixtures = [
+    ["我得到(-8545，-27679)", []],
+    ["坐标为(-8545，-27679)，继续计算。", [pair("坐标为(-8545,-27679)", "继续计算")]],
+    ["读数为−1.5，+.25，－３．５，＋４，继续记录。", [pair("读数为−1.5,+.25,-3.5,+4", "继续记录")]],
+    ["数值为-1e-3，+2E+4，继续计算。", [pair("数值为-1e-3,+2E+4", "继续计算")]],
+    ["数值为 1 ， - 2 ， +3 ，继续。", [pair("数值为 1 , - 2 , +3", "继续")]],
+    ["输入𠮷１２，－３，完成。", [pair("输入𠮷12,-3", "完成")]],
+    ["🧪数值为𝟙，-𝟚，继续。", [pair("🧪数值为1,-2", "继续")]],
+    ["甲A，B乙，丙丁。", [pair("B乙", "丙丁")]],
+    ["甲，ABC；DEF，乙。", [pair("甲", "ABC"), pair("DEF", "乙")]],
+    ["使用API ， HTTP处理。", []],
+    ["得分42；64结束。", []],
+    ["“甲”，（乙）。", []],
+    ["“甲”，乙。", [pair('“甲”', "乙")]],
+    ["甲，（乙）。", [pair("甲", "(乙)")]],
+    ["时间8:30，明天继续。", [pair("时间8:30", "明天继续")]],
+    ["今天，8:30出发。", [pair("今天", "8:30出发")]],
+    ["𠮷，API。", [pair("𠮷", "API")]],
+    ["〇，API。", [pair("〇", "API")]],
+    ["甲，-暂停。", [pair("甲", "-暂停")]],
+    ["ASCII,-2，下一句。", [pair("ASCII,-2", "下一句")]],
+  ];
+  const js = fixtures.map(([text]) => buildAdjacentSamples({ id: "boundary-context", domain: "fixture", text })
+    .map((row) => [row.tokens.join(""), row.target_index, row.punctuation]));
+  fixtures.forEach(([text, expected], i) => assert.deepEqual(js[i], expected, text));
+  const counts = {};
+  const retained = Array.from(trainingPairs("甲A，B乙，丙丁。", counts));
+  assert.equal(retained.length, 1);
+  assert.deepEqual(counts, { pairs: 1, both_neighbors_non_han: 1 });
+  const python = JSON.parse(execFileSync("python3", ["-c", String.raw`
+import sys,json,types
+sys.path.insert(0,'training')
+sys.modules['pyarrow']=types.ModuleType('pyarrow')
+sys.modules['pyarrow.parquet']=types.ModuleType('pyarrow.parquet')
+from prepare_web_data import labeled_samples
+from prepare_synthetic_data import adjacent_samples, split_into_fragments
+from text_policy import training_pairs
+assert split_into_fragments('我得到(-8545，-27679)')==['我得到(-8545,-27679)']
+result=[]
+for text in json.load(sys.stdin):
+    rows=list(labeled_samples(text))
+    assert [(t,k) for t,k,_ in rows]==adjacent_samples(text)
+    result.append(rows)
+counts={}
+assert list(training_pairs('甲A，B乙，丙丁。',counts))==[('B乙丙丁',1,'，')]
+assert counts=={'pairs':1,'both_neighbors_non_han':1}
+print(json.dumps(result,ensure_ascii=False))
+`], { input: JSON.stringify(fixtures.map(([text]) => text)), encoding: "utf8" }));
+  assert.deepEqual(python, js);
+});
+
 test("Wikipedia extraction preserves raw punctuation until sample generation", async () => {
   const { wikipediaDocumentsFromXml, buildAdjacentSamples } = await import("../training/prepare_smoke_data.mjs");
   const [document] = wikipediaDocumentsFromXml('<mediawiki><page><title>示例</title><ns>0</ns><id>1</id><revision><text>甲,乙，丙﹐丁。</text></revision></page></mediawiki>');
@@ -110,6 +165,8 @@ test("both policy validators compare the whitelist and normalization semantics",
     { ...DATA_POLICY, proxy_punctuation: [...DATA_POLICY.proxy_punctuation, ","] },
     { ...DATA_POLICY, normalization: "NFKC before proxy detection" },
     { ...DATA_POLICY, numeric_punctuation: "none" },
+    { ...DATA_POLICY, boundary_context: undefined },
+    { ...DATA_POLICY, boundary_context: "Require both neighbors to be Han" },
     { ...DATA_POLICY, line_boundaries: "none" },
     { ...DATA_POLICY, sample_filter: { version: "obsolete" } },
   ];

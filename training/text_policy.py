@@ -10,10 +10,21 @@ LINE_BOUNDARIES = re.compile(DATA_POLICY['line_boundaries'])
 SURFACE_PATTERNS = {key: re.compile(value) for key, value in DATA_POLICY['sample_filter']['fragment_patterns'].items()}
 WHOLE_FRAGMENT = re.compile(DATA_POLICY['sample_filter']['whole_fragment_pattern'])
 EMPTY_TEMPLATE = re.compile(DATA_POLICY['sample_filter']['empty_template_pattern'])
+SIGN = r'[+\-−﹢﹣＋－]'
+NUMBER = SIGN + r'? *(?:\d+(?:[.．]\d*)?|[.．]\d+)(?:[eEｅＥ]' + SIGN + r'?\d+)?'
+# Consume only the left value and separator, so 1，-2，+3 protects both commas.
+# Do not restart at each digit inside a long numeric run if no separator follows.
+NUMERIC_COMMAS = re.compile(r'(?<![\d.．])' + NUMBER + r' *(，) *(?=' + NUMBER + r')')
+HAN = re.compile('[\u3007\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U0002fa1f\U00030000-\U000323af]')
 
 
 def normalized_fragment(text):
     return re.sub(r'\s+', ' ', unicodedata.normalize('NFKC', text)).strip()
+
+
+def valid_boundary_context(left, right):
+    """Reject only when BOTH immediate normalized neighbors are non-Han."""
+    return bool((left and HAN.fullmatch(left[-1])) or (right and HAN.fullmatch(right[0])))
 
 
 def training_fragment_lines(text):
@@ -21,6 +32,7 @@ def training_fragment_lines(text):
     for raw_line in LINE_BOUNDARIES.split(str(text or '')):
         line = re.sub(r'\s+', ' ', raw_line).strip()
         empty_spans = [match.span() for match in EMPTY_TEMPLATE.finditer(line)]
+        numeric_commas = {match.start(1) for match in NUMERIC_COMMAS.finditer(line)} if '，' in line else set()
         fragments = []
         start = 0
         def add(end, punctuation):
@@ -37,8 +49,7 @@ def training_fragment_lines(text):
                 reasons.append('empty_template')
             fragments.append({'text': value, 'punctuation': punctuation, 'reasons': reasons})
         for i, character in enumerate(line):
-            numeric = character == '，' and 0 < i < len(line)-1 and line[i-1].isdecimal() and line[i+1].isdecimal()
-            if character in PROXY_PUNCTUATION and not numeric:
+            if character in PROXY_PUNCTUATION and i not in numeric_commas:
                 add(i, character)
                 start = i+1
         add(len(line), '')
@@ -51,6 +62,8 @@ def training_pairs(text, rejection_counts=None):
             if not any(c.isalnum() for c in left['text']) or not any(c.isalnum() for c in right['text']):
                 continue
             reasons = set(left['reasons'] + right['reasons'])
+            if not valid_boundary_context(left['text'], right['text']):
+                reasons.add('both_neighbors_non_han')
             if reasons:
                 if rejection_counts is not None:
                     rejection_counts['pairs'] = rejection_counts.get('pairs', 0) + 1
@@ -74,6 +87,7 @@ def require_data_policy(summary):
             or set(proxies) != PROXY_PUNCTUATION
             or summary.get("normalization") != DATA_POLICY["normalization"]
             or summary.get("numeric_punctuation") != DATA_POLICY["numeric_punctuation"]
+            or summary.get("boundary_context") != DATA_POLICY["boundary_context"]
             or summary.get("line_boundaries") != DATA_POLICY["line_boundaries"]
             or summary.get("sample_filter") != DATA_POLICY["sample_filter"]):
         raise ValueError(f"Data requires {DATA_POLICY['standard']}; regenerate original documents in a fresh directory")

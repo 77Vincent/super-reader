@@ -401,11 +401,11 @@ test("both comparison modes retain non-Chinese context", async () => {
   const document = {
     id: "fixture:han-only",
     domain: "fixture",
-    text: "Synthetic 中文 20，AI 模型。",
+    text: "Synthetic 中文 20个，AI 模型。",
   };
 
   for (const tokenization of ["word", "character"]) {
     const [sample] = buildAdjacentSamples(document, { tokenization });
-    assert.equal(sample.tokens.join(""), "Synthetic 中文 20AI 模型");
+    assert.equal(sample.tokens.join(""), "Synthetic 中文 20个AI 模型");
   }
 });

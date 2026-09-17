@@ -1,9 +1,10 @@
 # Boundary model training
 
-The current data contract is **unicode-context-v3**, defined in
+The current data contract is **unicode-context-v4**, defined in
 [text-policy.json](text-policy.json). Its model input representation remains
-**unicode-context-v1**; v3 adds actual-line boundaries and conservative surface
-filters to the Chinese-only proxies. It does not change the CNN architecture
+**unicode-context-v1**; v4 protects signed numeric separators and rejects targets
+with two non-Han neighbors, in addition to the actual-line boundaries and surface
+filters introduced in v3. It does not change the CNN architecture
 or token IDs. Training, validation and test preparation share
 this contract. Older corpora are retained for provenance and cannot be silently
 mixed into a new run.
@@ -24,8 +25,17 @@ Actual line breaks are split before whitespace normalization: no pair crosses a
 source line, and a newline itself never supplies a target. After proxy detection,
 retained fragments are normalized with NFKC. Whitespace within a line
 becomes a single ASCII space and fragment edges are trimmed. A comma proxy
-between decimal digits stays intact as numeric context. Both sides must contain
-a letter or number. Corpus-specific
+between decimal numbers stays intact as numeric context, including signed values,
+decimal fractions, exponents and surrounding whitespace. This protection retains
+the separator inside the fragment: `(-8545，-27679)` becomes `(-8545,-27679)`
+after NFKC and creates no internal target. Both fragments must contain a letter
+or number. At least one of the two characters immediately adjoining the target
+must be Han; if both are non-Han, discard that pair. Check normalized fragment
+edges after trimming whitespace, without skipping quotes or other symbols.
+Thus `中文｜API` and `API｜中文` remain eligible, whereas `API｜HTTP` does not.
+This is a target-specific rejection: it does not discard either fragment from
+other valid adjacent pairs, and does not reconnect across the rejected boundary.
+Corpus-specific
 Wikipedia markup and synthetic fenced-code/URL cleanup still happen during text
 extraction, before sample generation.
 
@@ -67,16 +77,23 @@ experiment. The current rebuild does not use its paragraph selection rules.
 
 The existing dated corpora, evaluation splits and paused web-continuation job
 were prepared under v1. Changing this default does not rewrite their samples or
-alter their frozen source snapshots. Before a v3 run, regenerate train,
+alter their frozen source snapshots. Before a v4 run, regenerate train,
 validation and test from the original documents into fresh directories while
 preserving document ownership and overlap checks; dropping disallowed labels
 alone cannot restore punctuation previously removed from their inputs. Current
 training/evaluation loaders compare the proxy set, normalization, numeric
-context, line-boundary and surface-filter rules, and reject incompatible metadata. Historical jobs can continue
+context, boundary-neighbor, line-boundary and surface-filter rules, and reject incompatible metadata. Historical jobs can continue
 using their recorded v1 source snapshots. Accuracy across these label standards
 must not be compared as if it were measured on the same holdout.
 
 ## Current rebuild: local sources plus 100 million web pairs
+
+**Paused for policy review (2026-09-17).** The v4 coordinator stopped during
+base-data preparation; model training has not started. The
+[independent policy audit](POLICY_REVIEW_20260917.md) found reproducible
+cross-line cleanup and Wikipedia template-deletion defects. The commands below
+describe the coordinator, not a recommendation to resume its frozen v4 snapshot.
+Complete a small end-to-end validation of the fixes before another full rebuild.
 
 ```bash
 npm run model:retrain-surface
@@ -86,13 +103,17 @@ npm run model:retrain-surface -- --resume
 
 [run_surface_retraining.py](run_surface_retraining.py) rebuilds every cached CLUE
 entry, the full Wikipedia dump and the cached Chinese multi-style L3 source
-under v3. It then adds **100,000,000 distinct web training pairs**, sampled across
+under v4. It then adds **100,000,000 distinct web training pairs**, sampled across
 all 256 downloaded Chinese web files. This is the web target, not the total
 training count; the rebuilt older sources are additional. Existing source-level
 Chinese-text checks remain. No score gate, per-document cap or sequence-length
 cap is added. Historical training inputs are excluded from the new web sample.
 
-The run is `training/artifacts/chinese-line-web-100m-16conv-20260917/`.
+The run is `training/artifacts/chinese-line-web-100m-16conv-v4-20260917/`.
+The earlier v3 preparation was stopped before model training and is preserved in
+its original directory. The new run regenerates original sources because signed
+numeric separators also change the surrounding input text; filtering old compact
+rows alone cannot reconstruct that context.
 Initialization explicitly selects the final saved **model_state** from
 `web-mix-40m-192ch-16conv-20260916/candidate/training-state.pt`, including its
 partial epoch. It does not silently substitute that file's inherited best_state.
@@ -110,9 +131,9 @@ Old document holdouts stay reserved. Revised evaluation pairs are screened
 against inherited and newly rebuilt training inputs using Han-projected input
 identity independent of the target gap. New web documents use the existing
 96%/2%/2% train/validation/test hash partition. Web holdouts supplement the
-rebuilt local holdouts, and all splits use the same v3 preparation rules.
+rebuilt local holdouts, and all splits use the same v4 preparation rules.
 The final evaluation directory is
-`training/data/processed/chinese-line-web-100m-16conv-20260917-eval/`.
+`training/data/processed/chinese-line-web-100m-16conv-v4-20260917-eval/`.
 
 The coordinator freezes source code and weights, records stage logs and
 `status.json`, and automatically starts training after preparation. Resuming
@@ -240,7 +261,7 @@ npm run model:baseline
 ```
 
 The real defaults are the bundled `src/boundary-model-data.js` model and
-`training/data/processed/chinese-line-web-100m-16conv-20260917-eval/validation.jsonl`.
+`training/data/processed/chinese-line-web-100m-16conv-v4-20260917-eval/validation.jsonl`.
 The rebuilt holdout must exist before this command can run. `--model`,
 `--input` and `--output` are optional explicit experiment paths; they cannot bypass
 input-policy checks. The evaluator rejects mismatched model/data representations,
