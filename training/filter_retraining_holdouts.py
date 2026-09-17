@@ -5,12 +5,16 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import re
 import shutil
+import unicodedata
 from collections import Counter
 from pathlib import Path
 from text_policy import DATA_POLICY, valid_proxy_label
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(os.environ.get('SUPER_READER_PROJECT_ROOT', Path(__file__).resolve().parent.parent))
+NON_HAN = re.compile("[^\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U0002fa1f\U00030000-\U000323af]+")
 
 
 def signature(text: str, target: int) -> bytes:
@@ -28,6 +32,12 @@ def han_projection_signature(text: str, target: int) -> bytes:
     return signature(left + right, len(left) - 1)
 
 
+def projected_input_signature(text: str, target: int = 0) -> bytes:
+    text = unicodedata.normalize('NFKC', text)
+    han = NON_HAN.sub('', text)
+    return hashlib.sha256((han or text).encode()).digest()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", type=Path, required=True)
@@ -36,8 +46,9 @@ def main() -> None:
     parser.add_argument("--training-jsonl", type=Path, action="append", default=[])
     parser.add_argument("--han-projection", action="store_true",
                         help="Conservatively remove pairs seen by an inherited Han-only checkpoint")
+    parser.add_argument("--input-only", action="store_true", help="Ignore gap and punctuation; exclude any repeated Han-projected input")
     args = parser.parse_args()
-    overlap_key = han_projection_signature if args.han_projection else signature
+    overlap_key = projected_input_signature if args.input_only else (han_projection_signature if args.han_projection else signature)
     if not args.training_manifest and not args.training_jsonl:
         raise ValueError("Supply the training data used by the compared checkpoints")
     if args.output_dir.exists():
@@ -110,6 +121,7 @@ def main() -> None:
 
     args.output_dir.mkdir(parents=True)
     results = {}
+    kept_keys = set()
     for split in ("test", "validation"):
         kept = Counter()
         removed = Counter()
@@ -120,10 +132,12 @@ def main() -> None:
                     continue
                 record = json.loads(line)
                 key = overlap_key("".join(record["tokens"]), record["target_index"])
-                if key in overlaps:
+                if key in overlaps or (args.input_only and key in kept_keys):
                     removed[record["domain"]] += 1
                     continue
                 output.write(line)
+                if args.input_only:
+                    kept_keys.add(key)
                 digest.update(line)
                 kept[record["domain"]] += 1
         if not kept:
@@ -139,7 +153,7 @@ def main() -> None:
                **DATA_POLICY,
                "source_directory": str(args.data_dir.resolve()), "source_counts": input_counts,
                "source_hashes": input_hashes, "splits": results,
-               "overlap_identity": "Han projection plus projected gap" if args.han_projection else "Exact input text plus target code-point gap",
+               "overlap_identity": "Han-projected input independent of target" if args.input_only else ("Han projection plus projected gap" if args.han_projection else "Exact input text plus target code-point gap"),
                "training_manifests": manifests, "training_files": training_sources}
     (args.output_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n")
 

@@ -1,9 +1,10 @@
 # Boundary model training
 
-The current data contract is **unicode-context-v2**, defined in
+The current data contract is **unicode-context-v3**, defined in
 [text-policy.json](text-policy.json). Its model input representation remains
-**unicode-context-v1**; v2 changes the punctuation-derived supervision, not the
-CNN architecture or token IDs. Training, validation and test preparation share
+**unicode-context-v1**; v3 adds actual-line boundaries and conservative surface
+filters to the Chinese-only proxies. It does not change the CNN architecture
+or token IDs. Training, validation and test preparation share
 this contract. Older corpora are retained for provenance and cannot be silently
 mixed into a new run.
 
@@ -19,12 +20,22 @@ such as `﹐` or `｡` do not become proxies merely because normalization change
 their appearance.
 
 Other punctuation, digits, letters, quotes and symbols remain in the input.
-After proxy detection, retained fragments are normalized with NFKC. Whitespace
+Actual line breaks are split before whitespace normalization: no pair crosses a
+source line, and a newline itself never supplies a target. After proxy detection,
+retained fragments are normalized with NFKC. Whitespace within a line
 becomes a single ASCII space and fragment edges are trimmed. A comma proxy
 between decimal digits stays intact as numeric context. Both sides must contain
 a letter or number. Corpus-specific
 Wikipedia markup and synthetic fenced-code/URL cleanup still happen during text
 extraction, before sample generation.
+
+Discard pairs touching explicit placeholders (`$P$`, `(I_M_G)`), fill-in blanks,
+empty templates, Markdown heading markers, repeated invisible controls, or a
+whole fragment that is a known web control such as `更多`. Rejected fragments
+remain barriers: A / rejected / B does not become A+B. Ordinary extra spaces,
+normal parentheses, code identifiers such as `__init__`, and semantic topic
+changes are retained. There is no new score threshold or semantic prose filter;
+these rules reduce visible formatting noise but do not certify meaning or quality.
 
 ```text
 Source: 女：那可挺麻烦的，吃点儿治疗过敏的药吧。
@@ -51,22 +62,66 @@ The [2026-09-16 corpus quality audit](CORPUS_QUALITY_AUDIT.md) records a stratif
 1,000-row AI semantic review, 20,000-row automatic checks, proxy-label failure
 examples, and limits of the resulting quality estimates.
 
-[Local web prose screening](WEB_SCREENING.md) selects intact source paragraphs
-from cached web documents, records exclusions and provenance, and preserves
-holdout ownership before any new boundary samples are prepared.
+[Local web prose screening](WEB_SCREENING.md) documents an earlier screening
+experiment. The current rebuild does not use its paragraph selection rules.
 
 The existing dated corpora, evaluation splits and paused web-continuation job
 were prepared under v1. Changing this default does not rewrite their samples or
-alter their frozen source snapshots. Before a v2 run, regenerate train,
+alter their frozen source snapshots. Before a v3 run, regenerate train,
 validation and test from the original documents into fresh directories while
 preserving document ownership and overlap checks; dropping disallowed labels
 alone cannot restore punctuation previously removed from their inputs. Current
-training/evaluation loaders compare the proxy set, normalization and numeric
-context rules, and reject v1 or incompatible intermediate v2 metadata. Historical jobs can continue
+training/evaluation loaders compare the proxy set, normalization, numeric
+context, line-boundary and surface-filter rules, and reject incompatible metadata. Historical jobs can continue
 using their recorded v1 source snapshots. Accuracy across these label standards
 must not be compared as if it were measured on the same holdout.
 
-## Full local-corpus candidate
+## Current rebuild: local sources plus 100 million web pairs
+
+```bash
+npm run model:retrain-surface
+# After an interruption:
+npm run model:retrain-surface -- --resume
+```
+
+[run_surface_retraining.py](run_surface_retraining.py) rebuilds every cached CLUE
+entry, the full Wikipedia dump and the cached Chinese multi-style L3 source
+under v3. It then adds **100,000,000 distinct web training pairs**, sampled across
+all 256 downloaded Chinese web files. This is the web target, not the total
+training count; the rebuilt older sources are additional. Existing source-level
+Chinese-text checks remain. No score gate, per-document cap or sequence-length
+cap is added. Historical training inputs are excluded from the new web sample.
+
+The run is `training/artifacts/chinese-line-web-100m-16conv-20260917/`.
+Initialization explicitly selects the final saved **model_state** from
+`web-mix-40m-192ch-16conv-20260916/candidate/training-state.pt`, including its
+partial epoch. It does not silently substitute that file's inherited best_state.
+The source checkpoint hash, exact tensor-copy verification and discarded
+numerical probe are recorded in `initialization-verification.json`.
+
+The architecture remains 16 convolutions / 192 channels / 3,496,329 parameters,
+with the same 8192 vocabulary IDs. A fresh AdamW optimizer trains two new epochs
+at learning rate 0.0003, using the previous domain weighting, batching and
+checkpoint-selection settings. Before any updates, the complete rebuilt
+validation split establishes the baseline. Each epoch uses the same complete
+validation split; the selected checkpoint receives a final full test evaluation.
+
+Old document holdouts stay reserved. Revised evaluation pairs are screened
+against inherited and newly rebuilt training inputs using Han-projected input
+identity independent of the target gap. New web documents use the existing
+96%/2%/2% train/validation/test hash partition. Web holdouts supplement the
+rebuilt local holdouts, and all splits use the same v3 preparation rules.
+The final evaluation directory is
+`training/data/processed/chinese-line-web-100m-16conv-20260917-eval/`.
+
+The coordinator freezes source code and weights, records stage logs and
+`status.json`, and automatically starts training after preparation. Resuming
+truncates uncommitted shard tails before rebuilding deduplication state;
+unfinished base/audit stages restart in fresh directories. `corpus-coverage.json`
+records the final training and evaluation counts. Completion exports a separate
+candidate; promoting it to the backend is a separate action.
+
+## Historical full local-corpus candidate
 
 ```bash
 npm run model:retrain-context
@@ -184,13 +239,14 @@ splits byte-identical. `npm run model:expand-web -- --resume` resumes this run.
 npm run model:baseline
 ```
 
-The real defaults are the new run's candidate model and
-`training/data/processed/unicode-context-192ch-12conv-20260913-eval/validation.jsonl`.
-Both must have been prepared/exported before this command can run. `--model`,
+The real defaults are the bundled `src/boundary-model-data.js` model and
+`training/data/processed/chinese-line-web-100m-16conv-20260917-eval/validation.jsonl`.
+The rebuilt holdout must exist before this command can run. `--model`,
 `--input` and `--output` are optional explicit experiment paths; they cannot bypass
 input-policy checks. The evaluator rejects mismatched model/data representations,
 invalid proxy labels anywhere in the input, and recorded checksum mismatches.
-It uses the same deterministic sample of 500 examples per domain (seed 20260911).
+This browser smoke check uses a deterministic sample of 500 examples per domain
+(seed 20260911); formal training always evaluates the complete validation/test splits.
 Keep input and sample hashes fixed for within-version comparisons.
 
 The bundled model is the completed epoch-1 best checkpoint from the 16-layer

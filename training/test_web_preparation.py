@@ -23,7 +23,7 @@ class WebPreparationTests(unittest.TestCase):
         first = list(labeled_samples(texts[0]))[0]
         self.assertIn("8:30", first[0])
         self.assertIn("、", first[0])
-        self.assertEqual(first[2], ",")
+        self.assertEqual(first[2], "，")
 
     def test_projection_and_bloom(self):
         key = projected_key("甲：8:30乙、丙")
@@ -72,7 +72,7 @@ class WebPreparationTests(unittest.TestCase):
         splits = {}
         for split, text in [("validation", "旧验证文本保留原样"), ("test", "旧测试文本保留原样")]:
             path = evaluation / f"{split}.jsonl"
-            path.write_text(json.dumps({"id": split, "domain": "news", "tokens": list(text), "target_index": 2, "punctuation": ",", "tokenization": "character"}, ensure_ascii=False) + "\n")
+            path.write_text(json.dumps({"id": split, "domain": "news", "tokens": list(text), "target_index": 2, "punctuation": "，", "tokenization": "character"}, ensure_ascii=False) + "\n")
             splits[split] = {"count": 1, "per_domain": {"news": 1}, "sha256": sha(path)}
         write(evaluation / "summary.json", {**DATA_POLICY, "splits": splits})
         write(evaluation / "holdout-document-hashes.json", [document_signature(by_split["test"][0])])

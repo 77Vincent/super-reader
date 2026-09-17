@@ -20,7 +20,7 @@ from text_policy import DATA_POLICY, PROXY_PUNCTUATION, require_data_policy, tra
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = SCRIPT_DIR.parent
+PROJECT_DIR = Path(os.environ.get('SUPER_READER_PROJECT_ROOT', SCRIPT_DIR.parent))
 DEFAULT_BASE_MANIFEST = (
     SCRIPT_DIR / "data" / "processed" / "wiki-full-sharded-128" / "manifest.json"
 )
@@ -434,6 +434,10 @@ def combine_statistics(
     ):
         result[key] = result.get(key, 0) + synthetic.get(key, 0)
     result["quality_documents_filtered"] = synthetic["quality_documents_filtered"]
+    result["surface_rejected"] = {
+        name: base.get("surface_rejected", {}).get(name, 0) + synthetic.get("surface_rejected", {}).get(name, 0)
+        for name in set(base.get("surface_rejected", {})) | set(synthetic.get("surface_rejected", {}))
+    }
     result["domain_samples"].update(synthetic["domain_samples"])
     result["position_histogram"] = [
         left + right
@@ -515,6 +519,16 @@ def main() -> None:
         }
         write_json_atomic(state_path, state)
 
+    # Discard writes after the last committed checkpoint before rebuilding deduplication.
+    for index, size in enumerate(state["shard_sizes"]):
+        path = output_dir / f"synthetic-train-{index:03d}.jsonl.part"
+        if not path.exists() and size:
+            raise ValueError(f"Missing committed shard: {path}")
+        path.touch(exist_ok=True)
+        with path.open('r+b') as handle:
+            if path.stat().st_size < size:
+                raise ValueError(f"Truncated committed shard: {path}")
+            handle.truncate(size)
     bloom = BloomFilter()
     restored = seed_bloom(base_manifest, bloom, output_dir, options.synthetic_shards)
     if restored != state["statistics"]["samples"]:
@@ -615,7 +629,10 @@ def main() -> None:
     for index in range(options.synthetic_shards):
         part = output_dir / f"synthetic-train-{index:03d}.jsonl.part"
         final = output_dir / f"synthetic-train-{index:03d}.jsonl"
-        os.replace(part, final)
+        if not final.exists():
+            os.link(part, final)
+        if not os.path.samefile(part, final):
+            raise ValueError(f"Published shard differs from committed output: {final}")
         synthetic_shards.append({
             "path": project_relative(final),
             "bytes": final.stat().st_size,

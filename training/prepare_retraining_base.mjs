@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { SOURCES, buildAdjacentSamples, documentsFromSource } from "./prepare_smoke_data.mjs";
 import { DATA_POLICY, validProxyLabel } from "./text_policy.mjs";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const root = process.env.SUPER_READER_PROJECT_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const raw = join(root, "training/data/raw");
 export const LOCAL_CLUE_ENTRIES = {
   news: ["train.json", "dev.json", "test.json", "test1.0.json"],
@@ -101,6 +101,7 @@ async function main() {
   const holdoutHashes = new Set();
   const trainingHashes = new Set();
   const corpusCounts = {};
+  const surfaceRejected = {};
   try {
     for (const source of SOURCES) {
       const recordedSource = previous.sources.find(({ domain }) => domain === source.domain);
@@ -141,7 +142,7 @@ async function main() {
           }
           trainingHashes.add(fingerprint);
         }
-        const samples = buildAdjacentSamples(document, { tokenization: "character" });
+        const samples = buildAdjacentSamples(document, { tokenization: "character", rejectionCounts: surfaceRejected });
         if (samples.some(({ punctuation }) => !validProxyLabel(punctuation))) throw new Error("Invalid proxy target generated");
         if (samples.length) await handles[split].write(samples.map((sample) => JSON.stringify(sample)).join("\n") + "\n");
         counts[split][source.domain] += samples.length;
@@ -191,6 +192,7 @@ async function main() {
     ...DATA_POLICY,
     all_local_clue_entries: allLocalClue ? LOCAL_CLUE_ENTRIES : null,
     corpus_counts: corpusCounts,
+    surface_rejected: surfaceRejected,
     reference_directory: reference,
     reference_summary_sha256: createHash("sha256").update(summaryBytes).digest("hex"),
     reference_split_sha256: referenceHashes,

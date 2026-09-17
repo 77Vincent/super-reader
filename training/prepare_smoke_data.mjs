@@ -432,7 +432,7 @@ function filterAndDeduplicate(documentsByDomain) {
   for (const [domain, documents] of documentsByDomain) {
     const accepted = [];
     for (const document of documents) {
-      const text = cleanDocument(document.text);
+      const text = String(document.text || "").trim();
       if (splitIntoFragments(text).length < 2) continue;
 
       const fingerprint = hashText(cleanFragment(text));

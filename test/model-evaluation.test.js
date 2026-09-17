@@ -30,7 +30,7 @@ test("evaluation uses regenerated list fragments and records the Unicode context
     ...contextSummary, splits: { validation: { sha256: fixture.sha256 } },
   }));
   const result = await loadEvaluationSamples(fixture.input, 1);
-  assert.equal(result.standard, "unicode-context-v2");
+  assert.equal(result.standard, "unicode-context-v3");
   assert.deepEqual(result.proxyPunctuation, ["，", "。", "；", "！", "？", "…"]);
   assert.equal(result.inputSha256, fixture.sha256);
   assert.match(result.summarySha256, /^[a-f0-9]{64}$/u);
@@ -53,7 +53,7 @@ test("evaluation rejects missing or legacy metadata even when rows have no enume
     { ...contextSummary, numeric_punctuation: "none" }]) {
     const fixture = evaluationFixture(t, records, summary);
     await assert.rejects(loadEvaluationSamples(fixture.input),
-      summary === undefined ? /Missing evaluation metadata/u : /Data requires unicode-context-v2/u);
+      summary === undefined ? /Missing evaluation metadata/u : /Data requires unicode-context-v3/u);
   }
 });
 
@@ -89,7 +89,7 @@ test("default evaluation selects the corrected holdout even when a legacy generi
     tokens: ["甲", "乙"], target_index: 0, punctuation: "，",
   }];
   const { directory } = evaluationFixture(t, records, contextSummary);
-  const dataDirectory = join(directory, "training/data/processed/unicode-context-192ch-12conv-20260913-eval");
+  const dataDirectory = join(directory, "training/data/processed/chinese-line-web-100m-16conv-20260917-eval");
   mkdirSync(dataDirectory, { recursive: true });
   for (const name of ["validation.jsonl", "summary.json"]) {
     copyFileSync(join(directory, name), join(dataDirectory, name));
@@ -104,18 +104,14 @@ test("default evaluation selects the corrected holdout even when a legacy generi
     mkdirSync(dirname(destination), { recursive: true });
     copyFileSync(join(__dirname, "..", name), destination);
   }
-  const candidate = join(directory, "training/artifacts/unicode-context-192ch-12conv-20260913/candidate/boundary-model-data.js");
-  mkdirSync(dirname(candidate), { recursive: true });
-  writeFileSync(candidate, readFileSync(join(directory, "src/boundary-model-data.js"), "utf8")
-    .replace('"tokenization":"character"', '"inputRepresentation":"unicode-context-v1","tokenization":"character"'));
   writeFileSync(join(directory, "training/evaluation-cases.json"), "[]");
   execFileSync(process.execPath, [join(directory, "training/evaluate_model.mjs")], {
     cwd: directory, stdio: "pipe", timeout: 30000,
   });
   const report = JSON.parse(readFileSync(join(directory, "training/artifacts/model-baseline.json"), "utf8"));
-  assert.equal(report.evaluation.standard, "unicode-context-v2");
+  assert.equal(report.evaluation.standard, "unicode-context-v3");
   assert.deepEqual(report.evaluation.proxyPunctuation, ["，", "。", "；", "！", "？", "…"]);
-  assert.equal(report.evaluation.input, "training/data/processed/unicode-context-192ch-12conv-20260913-eval/validation.jsonl");
+  assert.equal(report.evaluation.input, "training/data/processed/chinese-line-web-100m-16conv-20260917-eval/validation.jsonl");
   assert.equal(report.overall.count, 1);
   assert.equal(report.overall.accuracy, 1);
   assert.equal(Object.hasOwn(report.overall, "balanceOnlyAccuracy"), false);

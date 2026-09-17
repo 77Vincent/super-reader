@@ -19,7 +19,7 @@ import sys
 import time
 import unicodedata
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(os.environ.get('SUPER_READER_PROJECT_ROOT', Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(ROOT / "training/.deps"))
 import pyarrow.parquet as pq
 from prepare_synthetic_data import clean_document, clean_fragment, quality_document, document_signature

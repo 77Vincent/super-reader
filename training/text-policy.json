@@ -2,7 +2,14 @@
   "standard": "unicode-context-v3",
   "input_representation": "unicode-context-v1",
   "tokenization": "character",
-  "proxy_punctuation": ["，", "。", "；", "！", "？", "…"],
+  "proxy_punctuation": [
+    "，",
+    "。",
+    "；",
+    "！",
+    "？",
+    "…"
+  ],
   "normalization": "Split actual lines before whitespace normalization; identify proxies before NFKC; normalize retained fragments with NFKC; collapse whitespace to ASCII space; trim fragment ends",
   "numeric_punctuation": "Retain comma proxies between decimal digits",
   "line_boundaries": "\\r\\n|[\\n\\r\\v\\f\\u001c-\\u001e\\u0085\\u2028\\u2029]",
@@ -11,7 +18,7 @@
     "action": "Discard pairs touching a flagged fragment; never reconnect across rejected fragments",
     "fragment_patterns": {
       "placeholder": "\\$P\\$|\\(I_M_G\\)",
-      "fill_in_blank": "(?:^|[^A-Za-z0-9_])_{2,}(?=$|[^A-Za-z0-9_])|(?:^|\\s)_(?=\\s|$)|□{2,}",
+      "fill_in_blank": "(?:^|[^A-Za-z0-9_])_{2,}(?=$|[^A-Za-z0-9_])|(?:^|[^A-Za-z0-9_])_(?=\\s|$)|□{2,}|_{3,}",
       "markdown_heading": "^\\s{0,3}#{1,6}(?:\\s|$)",
       "invisible_controls": "[\\u0000-\\u0008\\u000e-\\u001b\\u007f]|[\\u200b-\\u200f\\u2060\\ufeff]{2,}"
     },

@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import {
   mkdir,
+  link,
   open,
   readFile,
   rename,
@@ -23,7 +24,7 @@ import {
 } from "./prepare_smoke_data.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const PROJECT_DIR = dirname(SCRIPT_DIR);
+const PROJECT_DIR = process.env.SUPER_READER_PROJECT_ROOT || dirname(SCRIPT_DIR);
 const DEFAULT_SOURCE_DIR = join(SCRIPT_DIR, "data", "processed");
 const DEFAULT_OUTPUT_DIR = join(SCRIPT_DIR, "data", "processed", "wiki-full-sharded-128");
 const RAW_DIR = join(SCRIPT_DIR, "data", "raw");
@@ -422,7 +423,8 @@ async function main() {
           state.statistics.holdout_documents_filtered += 1;
           continue;
         }
-        const candidates = buildAdjacentSamples(document, { tokenization: "character" });
+        state.statistics.surface_rejected ||= {};
+        const candidates = buildAdjacentSamples(document, { tokenization: "character", rejectionCounts: state.statistics.surface_rejected });
         const samples = cappedDocumentSamples(candidates, options.maxSamplesPerDocument);
         state.statistics.document_sample_cap_filtered += candidates.length - samples.length;
         if (samples.length > 0) state.statistics.documents_with_samples += 1;
@@ -457,7 +459,13 @@ async function main() {
   for (let index = 0; index < options.shards; index += 1) {
     const partPath = shardPartPath(options.outputDir, index);
     const finalPath = partPath.slice(0, -".part".length);
-    await rename(partPath, finalPath);
+    try { await link(partPath, finalPath); } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+    }
+    const [partStat, finalStat] = await Promise.all([stat(partPath), stat(finalPath)]);
+    if (partStat.ino !== finalStat.ino || partStat.dev !== finalStat.dev) {
+      throw new Error(`Published shard differs from committed output: ${finalPath}`);
+    }
     shards.push({
       path: relative(PROJECT_DIR, finalPath),
       bytes: state.shard_sizes[index],
