@@ -1,0 +1,18 @@
+# 发布前替换为正式地址；部署到子路径时也需写入完整路径，并保留末尾斜杠。
+baseURL = 'https://example.org/'
+locale = 'zh-CN'
+defaultContentLanguage = 'zh-cn'
+title = '切分阅读 Super Reader'
+enableRobotsTXT = true
+disableKinds = ['taxonomy', 'term', 'RSS']
+
+[params]
+  description = '切分阅读 Super Reader 是一款中文阅读辅助 Chrome 扩展，使用本地神经网络为网页长句添加分块标记，让中文长句更容易读。'
+  repositoryURL = 'https://github.com/77Vincent/super-reader'
+  chromeWebStoreURL = ''
+
+[outputs]
+  home = ['HTML']
+
+[module.hugoVersion]
+  min = '0.158.0'

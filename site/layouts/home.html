@@ -1,0 +1,18 @@
+{{ define "main" }}
+  <section class="hero" aria-labelledby="page-title">
+    <p class="eyebrow">中文视觉分块阅读 · Chrome 扩展</p>
+    <h1 id="page-title">{{ .Title }}</h1>
+    <p class="intro">为长句添加恰当的分隔，让阅读有停顿，也有重点。</p>
+    <div class="actions">
+      {{ with site.Params.chromeWebStoreURL }}
+        <a class="button" href="{{ . }}">添加到 Chrome</a>
+      {{ else }}
+        <a class="button" href="{{ site.Params.repositoryURL }}">查看项目与安装方法</a>
+      {{ end }}
+      <a href="#usage">了解如何使用 <span aria-hidden="true">→</span></a>
+    </div>
+  </section>
+  <div class="prose">
+    {{ .Content }}
+  </div>
+{{ end }}

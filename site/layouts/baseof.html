@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="{{ site.Language.Locale }}">
+<head>
+  {{ partial "head.html" . }}
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+  <header class="site-header container">
+    <a class="brand" href="{{ site.Home.RelPermalink }}">
+      <img src="{{ "favicon.png" | relURL }}" width="32" height="32" alt="">
+      <span>切分阅读 <span class="brand-en">Super Reader</span></span>
+    </a>
+    <nav aria-label="主导航">
+      <a href="{{ site.Home.RelPermalink }}#features">功能</a>
+      <a href="{{ site.Home.RelPermalink }}#usage">使用方法</a>
+    </nav>
+  </header>
+  <main id="main" class="container" tabindex="-1">
+    {{ block "main" . }}{{ end }}
+  </main>
+  <footer class="site-footer container">
+    <span>切分阅读 · Super Reader</span>
+    <a href="{{ site.Params.repositoryURL }}">GitHub</a>
+  </footer>
+</body>
+</html>

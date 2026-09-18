@@ -1,0 +1,26 @@
+{{- $title := printf "%s | %s" .Title site.Title -}}
+{{- if .IsHome -}}
+  {{- $title = printf "%s · 中文阅读辅助 Chrome 扩展" site.Title -}}
+{{- else if eq .Kind "404" -}}
+  {{- $title = printf "页面未找到 | %s" site.Title -}}
+{{- end -}}
+{{- $description := .Description | default site.Params.description -}}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ $title }}</title>
+<meta name="description" content="{{ $description }}">
+{{ if eq .Kind "404" }}
+  <meta name="robots" content="noindex">
+{{ else }}
+  <link rel="canonical" href="{{ .Permalink }}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="{{ site.Title }}">
+  <meta property="og:title" content="{{ $title }}">
+  <meta property="og:description" content="{{ $description }}">
+  <meta property="og:url" content="{{ .Permalink }}">
+  <meta property="og:locale" content="{{ replace site.Language.Locale "-" "_" }}">
+{{ end }}
+<link rel="icon" type="image/png" href="{{ "favicon.png" | relURL }}">
+{{ with resources.Get "css/main.css" | minify | fingerprint }}
+  <link rel="stylesheet" href="{{ .RelPermalink }}" integrity="{{ .Data.Integrity }}">
+{{ end }}
