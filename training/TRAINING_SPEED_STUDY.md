@@ -5,6 +5,8 @@
 描述当时的实验；已冻结的历史快照、权重和当前运行中的 MPS 快照保持原样。
 小批次、少步数的任务可能因初始化和调度开销而在 GPU 上更慢，此次统一设备
 是维护选择，不代表所有规模都能提速。
+小型 smoke 对照结束后，进一步删除临时 CPU/MPS 测速、优化器重放和
+输入形状对照脚本，仅保留结果、日志及历史快照，不再维护实验训练入口。
 后续的[小型 smoke 实测](SMALL_SMOKE_SPEED_STUDY.md)确认了这个区别，并记录
 首次长 MPS 任务的内存上限故障与检查点恢复机制。下面的 0.25 内存配额是
 首次接入的历史设置；新运行版本采用 0.4 配额、相应软水位及工作进程刷新。
@@ -103,20 +105,23 @@ CPU 训练步骤计时中，前向及损失占 37.7%，反向占 58.4%，优化�
    不能把它算成稳定训练吞吐的数倍提升。
 3. 精简完整验证集的内存表示，缓存字符 ID，减少重复 JSON 解析和 Python 对象。
    不减少验证或测试样本。GPU 接入后再测这部分开销是否成为主要限制。
-4. 保留 CPU 合并矩阵乘法作为回退方案。当前没有证据支持增加到 8 个 CPU 线程。
+4. 研究时曾考虑保留 CPU 合并矩阵乘法作为回退方案；后续确定统一 Metal，
+   此建议不再采用。当前没有证据支持增加到 8 个 CPU 线程。
 
 本轮没有改变 batch size、降低精度、截断长句、减少验证集或改动损失函数来换速度。
 也没有实测 MLX、其他 PyTorch 版本、远程 GPU 或混合精度，因此不为它们给出速度承诺。
 
-## 复现材料
+## 保留的实验记录
 
 目录：`training/artifacts/training-speed-study-20260918/`（本地忽略的实验产物）。
 
-- `benchmark.py`：固定输入准备、设备／实现吞吐、梯度一致性和 CPU 剖析。
 - `fixture.json` / `fixture.pt`：来源、输入形状和冻结的模型／优化器状态。
 - `throughput-summary.json`、各次运行的 JSON 和日志。
-- `replay.py` / `replay.json`：连续优化器更新及预测一致性。
-- `edge_shapes.py` / `edge-shapes.json`：极短和最大长度压力检查。
+- `replay.json`：连续优化器更新及预测一致性。
+- `edge-shapes.json`：极短和最大长度压力检查。
+
+原 `benchmark.py`、`replay.py`、`edge_shapes.py` 已删除。这些记录用于保留
+当时的实验结论，不再附带 CPU 专用训练代码。
 
 ## 正式接入：2026-09-18
 
@@ -156,12 +161,6 @@ CPU 收到 SIGTERM 保存 → MPS 续训 → 完整 fixture validation/test →
 迁移检查记录：正式运行目录下的 `mps-integration-verification.json`。
 - `cpu-phases.json` / `cpu-operators.txt`：步骤与算子耗时。
 
-复现示例（会与正在运行的正式任务竞争资源）。本地基准脚本读取当时冻结的
-`chinese-line-web-100m-16conv-v7-20260917/source/training`，以保留原 CPU
-基线的含义；这些仅为历史实验，不是当前训练入口。
-
-```bash
-python3 training/artifacts/training-speed-study-20260918/benchmark.py run \
-  --device mps --implementation conv1d --threads 1 --name mps-recheck
-python3 training/artifacts/training-speed-study-20260918/replay.py
-```
+原 CPU 基准读取当时冻结的
+`chinese-line-web-100m-16conv-v7-20260917/source/training`。历史快照作为
+训练来源记录保留；当前维护的训练入口只使用 Metal。

@@ -186,6 +186,11 @@ MPS simplifies maintenance rather than promising speedups at every batch size.
 The [small-smoke comparison](SMALL_SMOKE_SPEED_STUDY.md) measures that tradeoff:
 CPU wins the 32-example case and the smaller model; MPS wins the production
 model's 4,096-example case when including process startup and evaluation.
+The measured CPU savings were only 0.6–0.8 seconds for the small cases, so we
+keep a single Metal training implementation. Temporary CPU/MPS benchmark
+drivers and their copied trainer have been removed; measurements and reports
+remain as historical evidence. Numerical reference tests use the same model
+implementation and do not introduce a second CPU training path.
 
 New MPS runtimes use a 0.4 memory fraction with a 0.24 low watermark. After
 completed batches, persistent driver usage above 60% of the hard limit triggers
