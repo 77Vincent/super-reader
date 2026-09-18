@@ -1,0 +1,54 @@
+title = '切分阅读 Super Reader'
+description = '切分阅读 Super Reader 是一款中文阅读辅助 Chrome 扩展，使用本地神经网络为网页长句添加分块标记，让中文长句更容易读。'
+repositoryURL = 'https://github.com/77Vincent/super-reader'
+chromeWebStoreURL = ''
+footer = '切分阅读 · Super Reader'
+mainSections = []
+math = false
+
+[doks]
+  colorMode = 'auto'
+  colorModeToggler = true
+  navbarSticky = true
+  containerBreakpoint = 'lg'
+  # The landing page loads only Bootstrap's mobile menu component in custom.js.
+  bootstrapJavascript = false
+  navBarButton = false
+  flexSearch = false
+  alert = false
+  sectionSwitcher = false
+  sectionNav = []
+  toTopButton = false
+  breadcrumbTrail = false
+  headlineHash = false
+  scrollSpy = false
+  multilingualMode = false
+  docsVersioning = false
+  headerBar = false
+  backgroundDots = false
+  aiButtons = false
+  sectionFooter = false
+  relatedPosts = false
+  editPage = false
+  lastMod = false
+
+[inline_svg]
+  iconSetDir = 'tabler-icons'
+  iconSetVariant = 'outline'
+
+[seo.title]
+  separator = '|'
+
+[seo.description]
+  summaryFallback = false
+  siteParamsFallback = true
+
+[seo.schemas]
+  type = 'Organization'
+  name = 'Super Reader'
+  logo = 'favicon.png'
+  sameAs = ['https://github.com/77Vincent/super-reader']
+  article = []
+  newsArticle = []
+  blogPosting = []
+  product = []

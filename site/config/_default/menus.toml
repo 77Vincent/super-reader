@@ -1,0 +1,24 @@
+[[main]]
+  name = '功能'
+  url = './#features'
+  weight = 10
+
+[[main]]
+  name = '使用方法'
+  url = './#usage'
+  weight = 20
+
+[[main]]
+  name = '常见问题'
+  url = './#faq'
+  weight = 30
+
+[[main]]
+  name = 'GitHub'
+  url = 'https://github.com/77Vincent/super-reader'
+  weight = 40
+
+[[footer]]
+  name = 'GitHub'
+  url = 'https://github.com/77Vincent/super-reader'
+  weight = 10

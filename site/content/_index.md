@@ -1,6 +1,10 @@
 +++
 title = '让中文长句更容易读'
 description = '切分阅读 Super Reader 是一款中文阅读辅助 Chrome 扩展，使用本地神经网络为网页长句添加分块标记，让中文长句更容易读。'
+lead = '为长句添加恰当的分隔，让阅读有停顿，也有重点。'
+
+[seo]
+title = '切分阅读 Super Reader · 中文阅读辅助 Chrome 扩展'
 +++
 
 ## 为长句添加阅读停顿 {#features}

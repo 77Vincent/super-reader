@@ -1,18 +1,28 @@
 {{ define "main" }}
-  <section class="hero" aria-labelledby="page-title">
-    <p class="eyebrow">中文视觉分块阅读 · Chrome 扩展</p>
-    <h1 id="page-title">{{ .Title }}</h1>
-    <p class="intro">为长句添加恰当的分隔，让阅读有停顿，也有重点。</p>
-    <div class="actions">
-      {{ with site.Params.chromeWebStoreURL }}
-        <a class="button" href="{{ . }}">添加到 Chrome</a>
-      {{ else }}
-        <a class="button" href="{{ site.Params.repositoryURL }}">查看项目与安装方法</a>
-      {{ end }}
-      <a href="#usage">了解如何使用 <span aria-hidden="true">→</span></a>
+<main id="main-content">
+  <section class="section container-fluid pt-5 pb-4" aria-labelledby="page-title">
+    <div class="row justify-content-center text-center">
+      <div class="col-lg-14 col-xl-12">
+        <p class="text-body-secondary mb-3">中文视觉分块阅读 · Chrome 扩展</p>
+        <h1 id="page-title">{{ .Title }}</h1>
+        <p class="lead mt-4">{{ .Params.lead }}</p>
+        <div class="d-flex flex-wrap justify-content-center align-items-center gap-4 mt-4">
+          {{ with site.Params.chromeWebStoreURL }}
+            <a class="btn btn-primary btn-cta rounded-pill btn-lg" href="{{ . }}">添加到 Chrome</a>
+          {{ else }}
+            <a class="btn btn-primary btn-cta rounded-pill btn-lg" href="{{ site.Params.repositoryURL }}">查看项目与安装方法</a>
+          {{ end }}
+          <a href="#usage">了解如何使用 <span aria-hidden="true">→</span></a>
+        </div>
+      </div>
     </div>
   </section>
-  <div class="prose">
-    {{ .Content }}
-  </div>
+  <section class="section container-fluid pt-0 pb-5">
+    <div class="row justify-content-center">
+      <div class="col-lg-12 col-xl-10 portal-content">
+        {{ .Content }}
+      </div>
+    </div>
+  </section>
+</main>
 {{ end }}
