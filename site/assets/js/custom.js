@@ -8,3 +8,16 @@ menu?.addEventListener('click', (event) => {
     Offcanvas.getInstance(menu)?.hide();
   }
 });
+
+// Static examples only: toggle prepared markers without loading a model.
+document.querySelectorAll('[data-reader-demo]').forEach((demo) => {
+  const button = demo.querySelector('[data-reader-demo-toggle]');
+  const markers = demo.querySelectorAll('.reader-demo-divider');
+  button.addEventListener('click', () => {
+    const enabled = button.getAttribute('aria-pressed') !== 'true';
+    markers.forEach((marker) => { marker.hidden = !enabled; });
+    button.setAttribute('aria-pressed', String(enabled));
+    button.textContent = enabled ? '隐藏分隔线' : '显示分隔线';
+  });
+  button.hidden = false;
+});

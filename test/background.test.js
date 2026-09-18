@@ -40,7 +40,8 @@ function createBackground(saved = {}) {
   function injectPage(id) {
     let listener;
     const page = { reads: 0, clears: 0, marker: null, process: async () => [[]] };
-    const context = vm.createContext({ setTimeout, clearTimeout, chrome: { runtime: {
+    const context = vm.createContext({ setTimeout, clearTimeout,
+      document: { querySelector: () => null }, chrome: { runtime: {
       getURL: (path) => path,
       onMessage: { addListener: (callback) => { listener = callback; } },
       sendMessage: (request) => publish(request, id),

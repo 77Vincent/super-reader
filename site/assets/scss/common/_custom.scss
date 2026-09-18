@@ -17,6 +17,24 @@
   }
 }
 
+.reader-demo-divider::before {
+  display: inline-block;
+  width: 0;
+  height: 1em;
+  margin: 0 0.08em;
+  border-inline-start: 3px solid #ff1744;
+  vertical-align: -0.15em;
+  content: "";
+}
+
+.reader-demo-divider[hidden] {
+  display: none !important;
+}
+
+.reader-demo-text > :last-child {
+  margin-bottom: 0;
+}
+
 @media (max-width: 575.98px) {
   .navbar-brand {
     font-size: 1rem;

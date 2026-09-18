@@ -25,7 +25,9 @@ globalThis.SuperReader.createReaderAdapter = function createChromeReaderAdapter(
       chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (message?.type === "SUPER_READER_PING") sendResponse(reader.status());
         if (message?.type !== "SUPER_READER_APPLY_SETTING" || typeof message.enabled !== "boolean") return;
-        sendResponse(reader.toggle(message.enabled));
+        // A demonstration page can opt out so its own marker toggle stays independent.
+        const optedOut = document.querySelector('meta[name="super-reader"][content="off"]');
+        sendResponse(reader.toggle(message.enabled && !optedOut));
       });
     },
   };

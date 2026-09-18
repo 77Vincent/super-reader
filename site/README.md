@@ -6,6 +6,10 @@
 
 配置参考官方 Doks starter，其 MIT 许可保留在 `LICENSE-Doks.txt`。
 
+首页的切分示例是静态演示，不加载模型或运行推理。在 `content/_index.md` 的 `reader-demo` shortcode 内用 `｜` 指定示意断点；构建时生成分隔线，按钮只控制这些标记的显示和隐藏。没有 JavaScript 时仍显示静态示例。
+
+首页用 `<meta name="super-reader" content="off">` 让本项目的扩展跳过这个页面，避免真实扩展影响演示开关。已安装旧版开发扩展时，重新加载扩展及页面后该规则生效。
+
 ## 环境与本地预览
 
 - Hugo **Extended 0.158.0 或更新版本**（Doks 使用 SCSS）。

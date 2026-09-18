@@ -10,7 +10,7 @@ const drainPromises = () => new Promise((resolve) => setImmediate(resolve));
 // Run the reader without extension APIs; optionally connect the Chrome adapter.
 // Exercise the real DOM modules, reader, startup, and adapter together.
 // Layout geometry and inference responses are supplied by this harness.
-function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
+function createPage(text = sampleText, tag = "p", useChromeAdapter = false, optedOut = false) {
   let document;
   let reader;
   const requests = [];
@@ -96,6 +96,10 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false) {
   html.append(body);
   document = {
     body, documentElement: html,
+    querySelector(selector) {
+      assert.equal(selector, 'meta[name="super-reader"][content="off"]');
+      return optedOut ? {} : null;
+    },
     defaultView: Object.assign(new EventTarget(), {
       visualViewport: Object.assign(new EventTarget(), { offsetLeft: 0, offsetTop: 0, width: 800, height: 600 }),
       MutationObserver: class {
@@ -243,6 +247,15 @@ test("the page is inert until toggled, then renders and restores its original te
   assert.equal(page.click().enabled, false);
   assert.equal(page.markers().length, 0);
   assert.equal(page.paragraph.childNodes.length, 1);
+  assert.equal(page.paragraph.textContent, sampleText);
+});
+
+test("the Chrome adapter leaves a demo page's own markers and controls independent", async () => {
+  const page = createPage(sampleText, "p", true, true);
+  assert.equal(page.applySetting(true).enabled, false);
+  await page.finish();
+  assert.equal(page.requests.length, 0);
+  assert.equal(page.markers().length, 0);
   assert.equal(page.paragraph.textContent, sampleText);
 });
 
@@ -452,7 +465,7 @@ test("Chrome translates state commands and publishing only delivers the supplied
   const commands = [];
   const messages = [];
   const state = { enabled: true, busy: true, error: null };
-  const context = vm.createContext({ chrome: { runtime: {
+  const context = vm.createContext({ document: { querySelector: () => null }, chrome: { runtime: {
     getURL: (path) => path,
     onMessage: { addListener(callback) { listener = callback; } },
     async sendMessage(message) { messages.push(message); return {}; },
