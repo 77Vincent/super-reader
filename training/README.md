@@ -174,6 +174,38 @@ validation split establishes the baseline. Each epoch uses the same complete
 validation split; the selected checkpoint receives a final full test evaluation.
 Whether to train further should be decided from the rebuilt validation results.
 
+The [2026-09-18 training speed study](TRAINING_SPEED_STUDY.md) compares CPU and
+MPS implementations on identical batches and checks numerical agreement.
+The sharded trainer supports `--device mps --threads 1`: FP32 native Conv1d on
+Apple GPU, with the same parameter names/shapes, batching, loss and full
+evaluation. Checkpoints store CPU tensors, including AdamW moments, so the
+current batch position can resume across CPU and MPS. CPU remains available.
+
+To migrate an existing frozen CPU run, first send SIGTERM to its coordinator
+and wait for `status.json` to report `stopped`, then run once:
+
+```bash
+npm run model:retrain-surface -- --resume --refresh-training-code --device mps
+```
+
+This preserves the original preparation snapshot and creates a separately
+hashed training runtime under `training-runtimes/`, with a copy of the last CPU
+checkpoint. `training-runtime.json` records the chosen runtime and device.
+Subsequent interruptions use the ordinary `--resume` command above; it reuses
+that frozen MPS runtime automatically. To return to CPU after a graceful stop,
+repeat the migration command with `--device cpu`. Neither migration resets the
+optimizer, changes sample order, nor restarts the epoch. CPU and GPU floating
+point results need not be bit-identical.
+
+Hardware checks (MPS tests skip on other machines):
+
+```bash
+PYTHONPATH=training/.deps:training DEBUG=0 python3 -m unittest training/test_training_device.py -v
+```
+
+These cover gradients, evaluation, optimizer save/resume, CPU-to-MPS continuation
+through full fixture validation/test, browser export and frozen-runtime integrity.
+
 Old document holdouts stay reserved. Revised evaluation pairs are screened
 against inherited and newly rebuilt training inputs using Han-projected input
 identity independent of the target gap. New web documents use the existing

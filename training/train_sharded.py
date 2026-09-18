@@ -23,6 +23,7 @@ from text_policy import DATA_POLICY, require_data_policy, valid_proxy_label
 from train_smoke import (
     BoundaryChooser,
     TrainingStopRequested,
+    batch_to_device,
     batching_statistics,
     center_baseline,
     clone_state,
@@ -80,6 +81,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=2026090405)
     parser.add_argument("--threads", type=int, default=min(5, os.cpu_count() or 1))
     parser.add_argument("--interop-threads", type=int, default=1)
+    parser.add_argument("--device", choices=("cpu", "mps"), default="cpu")
+    parser.add_argument("--mps-memory-fraction", type=float, default=0.25)
     return parser.parse_args()
 
 
@@ -305,6 +308,23 @@ def main() -> None:
         raise ValueError("--gradient-clip cannot be negative")
     configure_cpu(args.threads, args.interop_threads)
     seed_everything(args.seed)
+    device = torch.device(args.device)
+    if device.type == "mps":
+        if not torch.backends.mps.is_available():
+            raise RuntimeError("MPS requested but unavailable; refusing a silent CPU fallback")
+        if not 0 < args.mps_memory_fraction <= 1:
+            raise ValueError("--mps-memory-fraction must be in (0, 1]")
+        torch.mps.set_per_process_memory_fraction(args.mps_memory_fraction)
+    execution = {
+        "device": device.type,
+        "dtype": "float32",
+        "convolution": "native_conv1d" if device.type == "mps" else "three_tap_linear",
+        "framework_version": str(torch.__version__),
+        "intra_op_threads": torch.get_num_threads(),
+        "inter_op_threads": torch.get_num_interop_threads(),
+        "mps_memory_fraction": args.mps_memory_fraction if device.type == "mps" else None,
+    }
+    print("training execution: " + json.dumps(execution), flush=True)
 
     manifest_path = args.manifest.resolve()
     data_dir = args.data_dir.resolve()
@@ -390,6 +410,7 @@ def main() -> None:
     if resume_state is None and args.initialize_from:
         initialization = expanded_initialization(model, args.initialize_from.resolve(), vocabulary)
         print(f"expanded initialization: {json.dumps(initialization)}", flush=True)
+    model.to(device)
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=args.learning_rate,
@@ -455,6 +476,9 @@ def main() -> None:
         save_training_state(state_path, {
             "format_version": 2,
             "configuration": configuration,
+            # Execution device may change on resume; data and training
+            # configuration above must still match exactly.
+            "execution": execution,
             "data_identity": data_identity,
             "vocabulary": vocabulary,
             "model_state": model.state_dict(),
@@ -535,6 +559,7 @@ def main() -> None:
                 ),
                 start=first_batch,
             ):
+                batch = batch_to_device(batch, device)
                 optimizer.zero_grad(set_to_none=True)
                 logits = model(batch["token_ids"], batch["token_mask"], batch["gap_mask"])
                 losses = F.cross_entropy(logits, batch["targets"], reduction="none")
@@ -554,9 +579,12 @@ def main() -> None:
                 seen_weight += batch["sample_weight_sum"]
                 seen_examples += len(batch["records"])
                 if batch_index == first_batch or (batch_index + 1) % 500 == 0:
+                    elapsed = time.perf_counter() - epoch_started
+                    session_samples = seen_examples - (resumed_examples if epoch == start_epoch else 0)
                     print(
                         f"epoch={epoch:02d} shard={shard_position + 1}/{len(shards)} "
-                        f"batch={batch_index + 1}/{len(batches)} samples={seen_examples}",
+                        f"batch={batch_index + 1}/{len(batches)} samples={seen_examples} "
+                        f"session_seconds={elapsed:.1f} samples_s={session_samples / elapsed:.0f}",
                         flush=True,
                     )
                 if stop["requested"]:
@@ -723,10 +751,7 @@ def main() -> None:
         },
         "training_backend": {
             "framework": "PyTorch",
-            "framework_version": torch.__version__,
-            "device": "cpu",
-            "intra_op_threads": torch.get_num_threads(),
-            "inter_op_threads": torch.get_num_interop_threads(),
+            **execution,
             "sharded_streaming": True,
             "resumable_checkpoint": str(state_path),
         },

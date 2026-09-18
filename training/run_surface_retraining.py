@@ -24,6 +24,8 @@ FILES=['training/'+name for name in (
     'prepare_full_wikipedia_data.mjs','prepare_synthetic_data.py','run_prepare_synthetic.py',
     'prepare_web_data.py','filter_retraining_holdouts.py','text_policy.py','text_policy.mjs',
     'text-policy.json','unicode-symbols.json','run_sharded.py','run_smoke.py','train_sharded.py','train_smoke.py','export_browser_model.py')]
+TRAINING_FILES={'training/'+name for name in (
+    'run_sharded.py','run_smoke.py','train_sharded.py','train_smoke.py','export_browser_model.py')}
 
 def read(path): return json.loads(Path(path).read_text())
 def write(path,value):
@@ -35,6 +37,46 @@ def sha(path):
         for b in iter(lambda:f.read(8*1024*1024),b''): h.update(b)
     return h.hexdigest()
 def absolute(path): return (ROOT/path).resolve()
+
+def training_runtime(run, snapshot, *, refresh=False, device=None):
+    """Version training code independently of immutable preparation inputs.
+
+    Caller holds the coordinator lock. The old checkpoint is copied before any
+    new trainer can overwrite it, and ordinary resumes reuse this frozen code.
+    """
+    pointer=run/'training-runtime.json'
+    previous=read(pointer) if pointer.exists() else None
+    if refresh:
+        checkpoint=run/'candidate/training-state.pt'
+        if not checkpoint.exists():raise ValueError('Runtime migration requires a saved training checkpoint')
+        version=run/'training-runtimes'/datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+        source=version/'source'
+        for name in FILES:
+            destination=source/name;destination.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(ROOT/name if name in TRAINING_FILES else snapshot/name,destination)
+        for name in ['data','.deps']:
+            (source/'training'/name).symlink_to(ROOT/'training'/name,target_is_directory=True)
+        backup=version/'before-migration.pt';shutil.copy2(checkpoint,backup)
+        runtime={'created_at':datetime.now(timezone.utc).isoformat(),'source':str(source),
+            'device':device or (previous['device'] if previous else 'cpu'),
+            'source_hashes':{name:sha(source/name) for name in FILES},
+            'checkpoint_before_migration':str(backup),'checkpoint_sha256':sha(backup),
+            'previous_runtime':previous}
+        write(version/'runtime.json',runtime)
+        write(pointer,runtime)
+    runtime=read(pointer) if pointer.exists() else None
+    if runtime is None:
+        if device not in (None,'cpu'):
+            raise ValueError('Use --resume --refresh-training-code --device mps to migrate the frozen trainer')
+        return snapshot,[]
+    if device is not None and device!=runtime['device']:
+        raise ValueError('Use --refresh-training-code when changing the recorded execution device')
+    source=Path(runtime['source'])
+    for name,digest in runtime['source_hashes'].items():
+        if sha(source/name)!=digest:raise ValueError(f'Frozen training runtime changed: {name}')
+        if name not in TRAINING_FILES and sha(source/name)!=sha(snapshot/name):
+            raise ValueError(f'Training runtime changed preparation policy or code: {name}')
+    return source,['--device',runtime['device'],'--mps-memory-fraction','0.25']
 
 def history():
     """Every inherited training source, including older label/tokenization generations."""
@@ -112,8 +154,12 @@ def main():
     parser.add_argument('--epochs',type=int,default=1)
     parser.add_argument('--initialize-from',type=Path,default=BEST_CHECKPOINT)
     parser.add_argument('--resume',action='store_true')
+    parser.add_argument('--device',choices=['cpu','mps'])
+    parser.add_argument('--refresh-training-code',action='store_true',
+        help='Freeze a new training runtime and back up the checkpoint; preserve original preparation snapshot')
     args=parser.parse_args()
     if min(args.target_samples,args.epochs)<1:parser.error('Counts must be positive')
+    if args.refresh_training_code and not args.resume:parser.error('--refresh-training-code requires --resume')
     run=args.run_dir.resolve();run.mkdir(parents=True,exist_ok=True)
     lock=(run/'.run.lock').open('a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     plan_path=run/'run.json';snapshot=run/'source'
@@ -146,6 +192,8 @@ def main():
                         (run/'source-vocabulary.json',plan['vocabulary_sha256'])]+[(snapshot/name,value) for name,value in plan['source_hashes'].items()]+[(Path(name),value) for name,value in plan['historical_manifests'].items()]+[(Path(name),value) for name,value in plan['holdout_registries'].items()]:
         if sha(path)!=digest:raise ValueError(f'Frozen input changed: {path}')
     completed_path=run/'completed-stages.json';completed=read(completed_path) if completed_path.exists() else {}
+    if args.refresh_training_code and 'training' in completed:
+        raise ValueError('Cannot migrate a completed training run')
     child=None;stopped=False
     def status(stage,**kwargs):
         value={'stage':stage,'updated_at':datetime.now(timezone.utc).isoformat(),'coordinator_pid':os.getpid(),**kwargs}
@@ -233,11 +281,17 @@ def main():
             'wikipedia_blocks':read(paths['wiki']/'manifest.json')['blocks']})
         candidate=run/'candidate';checkpoint=candidate/'training-state.pt'
         if checkpoint.exists() and not args.resume:raise FileExistsError('Use --resume for an existing training checkpoint')
-        cmd=[sys.executable,script('run_sharded.py'),'--manifest',str(paths['web']/'manifest.json'),'--data-dir',str(evaluation),'--artifact-dir',str(candidate),
-            '--epochs',str(args.epochs),'--channels','192','--residual-blocks','8','--learning-rate','0.0003','--domain-weight-power','0.65','--selection-macro-weight','0.5','--gradient-clip','1.0','--batch-size','512','--max-tokens-per-batch','8192','--checkpoint-shards','4','--threads','5','--interop-threads','1']
+        runtime,device_args=training_runtime(run,snapshot,refresh=args.refresh_training_code,device=args.device)
+        def training_script(name):return str(runtime/'training'/name)
+        if device_args:
+            # Pin the verified FP32 path, independent of the launching shell.
+            env.update(PYTORCH_ENABLE_MPS_FALLBACK='0',PYTORCH_MPS_FAST_MATH='0',PYTORCH_MPS_PREFER_METAL='0')
+        threads='1' if device_args and device_args[1]=='mps' else '5'
+        cmd=[sys.executable,training_script('run_sharded.py'),'--manifest',str(paths['web']/'manifest.json'),'--data-dir',str(evaluation),'--artifact-dir',str(candidate),
+            '--epochs',str(args.epochs),'--channels','192','--residual-blocks','8','--learning-rate','0.0003','--domain-weight-power','0.65','--selection-macro-weight','0.5','--gradient-clip','1.0','--batch-size','512','--max-tokens-per-batch','8192','--checkpoint-shards','4','--threads',threads,'--interop-threads','1',*device_args]
         cmd+=['--resume'] if checkpoint.exists() else ['--initialize-from',str(run/'initialization.pt')]
         execute('training',cmd)
-        execute('export',[sys.executable,script('export_browser_model.py'),'--artifact-dir',str(candidate),'--output',str(candidate/'boundary-model-data.js')])
+        execute('export',[sys.executable,training_script('export_browser_model.py'),'--artifact-dir',str(candidate),'--output',str(candidate/'boundary-model-data.js')])
         status('complete',training_samples=manifest['statistics']['samples'],metrics=str(candidate/'smoke-metrics.json'))
     except InterruptedError as e:status('stopped',error=str(e))
     except BaseException as e:

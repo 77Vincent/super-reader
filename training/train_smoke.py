@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import hashlib
 import json
 import math
@@ -207,7 +206,7 @@ def iterate_batches(
 
 
 class ThreeTapConv1d(nn.Module):
-    """Kernel-3 convolution expressed as three CPU-efficient matrix products."""
+    """Equivalent kernel-3 convolution paths for CPU and MPS."""
 
     def __init__(self, channels: int):
         super().__init__()
@@ -218,6 +217,13 @@ class ThreeTapConv1d(nn.Module):
         nn.init.uniform_(self.bias, -bound, bound)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        if inputs.device.type == "mps":
+            # Same [out, in, 3] weights and padding as the CPU implementation.
+            # Avoid noncontiguous tap-weight matmuls: PyTorch 2.8 MPS can
+            # produce incorrect results for that path (see speed study).
+            return F.conv1d(
+                inputs.transpose(1, 2), self.weight, self.bias, padding=1,
+            ).transpose(1, 2)
         center = F.linear(inputs, self.weight[:, :, 1], self.bias)
         left = F.pad(
             F.linear(inputs[:, :-1], self.weight[:, :, 0]),
@@ -282,6 +288,14 @@ class TrainingStopRequested(Exception):
     """Raised at a safe batch boundary after an interrupt request."""
 
 
+def batch_to_device(batch: dict[str, Any], device: torch.device) -> dict[str, Any]:
+    """Move tensors only; source records and scalar accounting stay on CPU."""
+    return {
+        key: value.to(device) if isinstance(value, torch.Tensor) else value
+        for key, value in batch.items()
+    }
+
+
 def evaluate(
     model: BoundaryChooser,
     records: list[dict[str, Any]],
@@ -310,13 +324,14 @@ def evaluate(
         ):
             if should_stop is not None and should_stop():
                 raise TrainingStopRequested
+            batch = batch_to_device(batch, next(model.parameters()).device)
             logits = model(batch["token_ids"], batch["token_mask"], batch["gap_mask"])
             loss = F.cross_entropy(logits, batch["targets"])
             predictions_tensor = logits.argmax(dim=1)
             target_logits = logits.gather(1, batch["targets"].unsqueeze(1))
             ranks = 1 + (logits > target_logits).sum(dim=1)
-            predictions = predictions_tensor.numpy()
-            targets = batch["targets"].numpy()
+            predictions = predictions_tensor.cpu().numpy()
+            targets = batch["targets"].cpu().numpy()
 
             count = len(targets)
             total_loss += loss.item() * count
@@ -455,10 +470,11 @@ def predict_record(
         seed=0,
     ))
     model.eval()
+    batch = batch_to_device(batch, next(model.parameters()).device)
     with torch.inference_mode():
         logits = model(batch["token_ids"], batch["token_mask"], batch["gap_mask"])
     valid_count = len(record["tokens"]) - 1
-    valid_logits = logits.numpy()[0, :valid_count]
+    valid_logits = logits.cpu().numpy()[0, :valid_count]
     shifted = valid_logits - valid_logits.max()
     probabilities = np.exp(shifted) / np.exp(shifted).sum()
     prediction = int(valid_logits.argmax())
@@ -483,7 +499,7 @@ def predict_record(
 
 
 def clone_state(model: BoundaryChooser) -> dict[str, torch.Tensor]:
-    return copy.deepcopy(model.state_dict())
+    return {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
 
 
 def restore_state(model: BoundaryChooser, state: dict[str, torch.Tensor]) -> None:
@@ -540,11 +556,24 @@ def resume_configuration(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def cpu_state(value: Any) -> Any:
+    """Keep checkpoints portable, including nested AdamW moment tensors."""
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu()
+    if isinstance(value, dict):
+        return {key: cpu_state(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [cpu_state(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(cpu_state(item) for item in value)
+    return value
+
+
 def save_training_state(path: Path, state: dict[str, Any]) -> None:
     """Atomically save all state needed to continue at the next safe batch."""
     temporary_path = path.with_name(f"{path.name}.part")
     try:
-        torch.save(state, temporary_path)
+        torch.save(cpu_state(state), temporary_path)
         os.replace(temporary_path, path)
     finally:
         temporary_path.unlink(missing_ok=True)
