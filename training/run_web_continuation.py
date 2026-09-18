@@ -86,7 +86,7 @@ def main():
               "new_evaluation": "Keep complete validation/test splits byte-identical" if args.freeze_evaluation else "Whole documents split 96/2/2; retain all resulting validation/test samples",
               "history_exclusion": "All inherited training manifests plus frozen holdouts; projected input deduplication",
               "training": {"learning_rate": 0.0003, "domain_weight_power": 0.65, "selection_macro_weight": 0.5,
-                           "gradient_clip": 1.0, "batch_size": 512, "max_tokens_per_batch": 8192, "threads": 5},
+                           "gradient_clip": 1.0, "batch_size": 512, "max_tokens_per_batch": 8192, "threads": 1, "device": "mps"},
               "backend_bundle_sha256_at_start": sha(ROOT / "src/boundary-model-data.js")})
     plan = read(plan_path)
     if (plan["epochs"], plan["new_train_samples"], plan["data"]) != (args.epochs, args.target_samples, str(data)):
@@ -168,7 +168,7 @@ def main():
             "--data-dir", str(data), "--artifact-dir", str(candidate), "--epochs", str(args.epochs),
             "--channels", "192", "--residual-blocks", "8", "--learning-rate", "0.0003", "--domain-weight-power", "0.65",
             "--selection-macro-weight", "0.5", "--gradient-clip", "1.0", "--batch-size", "512", "--max-tokens-per-batch", "8192",
-            "--checkpoint-shards", "4", "--threads", "5", "--interop-threads", "1"]
+            "--checkpoint-shards", "4", "--threads", "1", "--interop-threads", "1", "--device", "mps"]
         command += ["--resume"] if checkpoint.exists() else ["--initialize-from", str(run / "initialization.pt")]
         execute("training", command)
         state = torch.load(checkpoint, map_location="cpu", weights_only=True)

@@ -309,22 +309,6 @@ test("production data defaults to all samples and weighted training loss", () =>
   assert.match(training, /batch\["sample_weight_sum"\]/u);
 });
 
-test("CPU training uses benchmarked threads and equivalent three-tap matrix products", () => {
-  const { readFileSync } = require("node:fs");
-  const training = readFileSync("training/train_smoke.py", "utf8");
-
-  assert.match(training, /torch\.set_num_threads\(threads\)/u);
-  assert.match(training, /default=min\(5, os\.cpu_count\(\) or 1\)/u);
-  assert.match(training, /class ThreeTapConv1d/u);
-  assert.match(training, /self\.weight\[:, :, 0\]/u);
-  assert.match(training, /self\.weight\[:, :, 1\]/u);
-  assert.match(training, /self\.weight\[:, :, 2\]/u);
-  assert.match(training, /foreach=True/u);
-  assert.match(training, /--channels", type=int, default=64/u);
-  assert.match(training, /--residual-blocks/u);
-  assert.match(training, /default=4/u);
-});
-
 test("training saves atomic resumable state at safe interrupt boundaries", () => {
   const { readFileSync } = require("node:fs");
   const training = readFileSync("training/train_smoke.py", "utf8");

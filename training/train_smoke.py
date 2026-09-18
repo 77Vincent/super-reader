@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train the residual boundary chooser on a multithreaded CPU."""
+"""Train the residual boundary chooser on Apple Metal (MPS)."""
 
 from __future__ import annotations
 
@@ -54,8 +54,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--threads",
         type=int,
-        default=min(5, os.cpu_count() or 1),
-        help="PyTorch intra-op CPU threads; five is fastest on the benchmarked M5 Pro",
+        default=1,
+        help="CPU threads for host-side operations; model training uses MPS",
     )
     parser.add_argument(
         "--interop-threads",
@@ -63,6 +63,8 @@ def parse_arguments() -> argparse.Namespace:
         default=1,
         help="Parallel operators per training process",
     )
+    parser.add_argument("--device", choices=("mps",), default="mps")
+    parser.add_argument("--mps-memory-fraction", type=float, default=0.4)
     return parser.parse_args()
 
 
@@ -75,11 +77,53 @@ def seed_everything(seed: int) -> None:
 def configure_cpu(threads: int, interop_threads: int) -> None:
     if threads < 1 or interop_threads < 1:
         raise ValueError("CPU thread counts must be positive")
-    # Set these before constructing tensors or running any operators. More than
-    # five intra-op threads slow this short-convolution workload on the M5 Pro.
+    # Host-side operations and CPU reference inference still need thread limits.
     torch.set_num_threads(threads)
     torch.set_num_interop_threads(interop_threads)
     torch.set_flush_denormal(True)
+
+
+def configure_mps(memory_fraction: float = 0.4) -> torch.device:
+    """Require the verified FP32 Metal backend for every training entry point."""
+    if not 0 < memory_fraction <= 1:
+        raise ValueError("--mps-memory-fraction must be in (0, 1]")
+    for name in ("PYTORCH_ENABLE_MPS_FALLBACK", "PYTORCH_MPS_FAST_MATH", "PYTORCH_MPS_PREFER_METAL"):
+        os.environ[name] = "0"
+    # Set both before allocator initialization: the default low watermark (1.4)
+    # otherwise stays above a reduced per-process high watermark.
+    os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = str(memory_fraction)
+    os.environ["PYTORCH_MPS_LOW_WATERMARK_RATIO"] = str(memory_fraction * 0.6)
+    if not torch.backends.mps.is_available():
+        raise RuntimeError("Training requires Apple Metal (MPS); CPU training is not supported")
+    torch.mps.set_per_process_memory_fraction(memory_fraction)
+    return torch.device("mps")
+
+
+def training_execution(memory_fraction: float) -> dict[str, Any]:
+    return {
+        "device": "mps",
+        "dtype": "float32",
+        "convolution": "native_conv1d",
+        "framework_version": str(torch.__version__),
+        "intra_op_threads": torch.get_num_threads(),
+        "inter_op_threads": torch.get_num_interop_threads(),
+        "mps_memory_fraction": memory_fraction,
+        "mps_low_watermark_ratio": memory_fraction * 0.6,
+    }
+
+
+def mps_memory_restart_needed(memory_fraction: float) -> bool:
+    """Leave headroom for the next batch; framework graph caches need process exit.
+
+    empty_cache releases free allocator blocks, not MPSGraph's shape cache.
+    Call only after a completed optimizer step and save that exact next position
+    before requesting a fresh worker from the coordinator.
+    """
+    threshold = torch.mps.recommended_max_memory() * memory_fraction * 0.6
+    if torch.mps.driver_allocated_memory() < threshold:
+        return False
+    torch.mps.empty_cache()
+    return torch.mps.driver_allocated_memory() >= threshold
 
 
 def read_json_lines(path: Path) -> list[dict[str, Any]]:
@@ -205,8 +249,8 @@ def iterate_batches(
         }
 
 
-class ThreeTapConv1d(nn.Module):
-    """Equivalent kernel-3 convolution paths for CPU and MPS."""
+class BoundaryConv1d(nn.Module):
+    """Native kernel-3 convolution over [batch, position, channel] inputs."""
 
     def __init__(self, channels: int):
         super().__init__()
@@ -217,31 +261,19 @@ class ThreeTapConv1d(nn.Module):
         nn.init.uniform_(self.bias, -bound, bound)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        if inputs.device.type == "mps":
-            # Same [out, in, 3] weights and padding as the CPU implementation.
-            # Avoid noncontiguous tap-weight matmuls: PyTorch 2.8 MPS can
-            # produce incorrect results for that path (see speed study).
-            return F.conv1d(
-                inputs.transpose(1, 2), self.weight, self.bias, padding=1,
-            ).transpose(1, 2)
-        center = F.linear(inputs, self.weight[:, :, 1], self.bias)
-        left = F.pad(
-            F.linear(inputs[:, :-1], self.weight[:, :, 0]),
-            (0, 0, 1, 0),
-        )
-        right = F.pad(
-            F.linear(inputs[:, 1:], self.weight[:, :, 2]),
-            (0, 0, 0, 1),
-        )
-        return center + left + right
+        # Preserve checkpoint names/shapes; avoid the noncontiguous tap-weight
+        # matmuls that produced incorrect results on PyTorch 2.8 MPS.
+        return F.conv1d(
+            inputs.transpose(1, 2), self.weight, self.bias, padding=1,
+        ).transpose(1, 2)
 
 
 class ResidualConvBlock(nn.Module):
     def __init__(self, channels: int):
         super().__init__()
         self.normalization = nn.LayerNorm(channels)
-        self.first = ThreeTapConv1d(channels)
-        self.second = ThreeTapConv1d(channels)
+        self.first = BoundaryConv1d(channels)
+        self.second = BoundaryConv1d(channels)
         self.residual_scale = nn.Parameter(torch.tensor([0.1]))
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
@@ -595,6 +627,9 @@ def main() -> None:
     if args.channels < 1 or args.residual_blocks < 1:
         raise ValueError("--channels and --residual-blocks must be positive")
     configure_cpu(args.threads, args.interop_threads)
+    device = configure_mps(args.mps_memory_fraction)
+    execution = training_execution(args.mps_memory_fraction)
+    print("training execution: " + json.dumps(execution), flush=True)
     seed_everything(args.seed)
     summary_path = args.data_dir / "summary.json"
     data_summary = (
@@ -640,7 +675,7 @@ def main() -> None:
         len(vocabulary),
         args.channels,
         args.residual_blocks,
-    )
+    ).to(device)
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=args.learning_rate,
@@ -713,6 +748,7 @@ def main() -> None:
         save_training_state(training_state_path, {
             "format_version": 1,
             "configuration": current_configuration,
+            "execution": execution,
             "data_identity": current_data_identity,
             "vocabulary": vocabulary,
             "model_state": model.state_dict(),
@@ -771,6 +807,7 @@ def main() -> None:
             ),
             start=epoch_start_batch,
         ):
+            batch = batch_to_device(batch, device)
             optimizer.zero_grad(set_to_none=True)
             logits = model(batch["token_ids"], batch["token_mask"], batch["gap_mask"])
             per_sample_loss = F.cross_entropy(logits, batch["targets"], reduction="none")
@@ -918,15 +955,9 @@ def main() -> None:
         },
         "training_backend": {
             "framework": "PyTorch",
-            "framework_version": torch.__version__,
-            "device": "cpu",
-            "intra_op_threads": torch.get_num_threads(),
-            "inter_op_threads": torch.get_num_interop_threads(),
+            **execution,
             "logical_cpu_count": os.cpu_count(),
             "gelu_approximation": "tanh",
-            "convolution_implementation": (
-                "equivalent three-tap left/center/right matrix products"
-            ),
             "optimizer_foreach": True,
             "resumable_checkpoint": str(training_state_path),
         },
@@ -950,8 +981,7 @@ def main() -> None:
             "maximum_examples_per_batch": args.batch_size,
             "maximum_tokens_per_batch": args.max_tokens_per_batch,
             "strategy": (
-                "power-of-two length buckets with per-batch dynamic padding; "
-                "batch cap benchmarked for CPU throughput"
+                "power-of-two length buckets with per-batch dynamic padding"
             ),
             "splits": {
                 split: batching_statistics(items, args.batch_size, args.max_tokens_per_batch)

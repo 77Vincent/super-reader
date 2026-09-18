@@ -44,6 +44,7 @@ def training_runtime(run, snapshot, *, refresh=False, device=None):
     Caller holds the coordinator lock. The old checkpoint is copied before any
     new trainer can overwrite it, and ordinary resumes reuse this frozen code.
     """
+    if device not in (None,'mps'):raise ValueError('CPU training is retired; only MPS is supported')
     pointer=run/'training-runtime.json'
     previous=read(pointer) if pointer.exists() else None
     if refresh:
@@ -58,7 +59,7 @@ def training_runtime(run, snapshot, *, refresh=False, device=None):
             (source/'training'/name).symlink_to(ROOT/'training'/name,target_is_directory=True)
         backup=version/'before-migration.pt';shutil.copy2(checkpoint,backup)
         runtime={'created_at':datetime.now(timezone.utc).isoformat(),'source':str(source),
-            'device':device or (previous['device'] if previous else 'cpu'),
+            'device':'mps','mps_memory_fraction':0.4,
             'source_hashes':{name:sha(source/name) for name in FILES},
             'checkpoint_before_migration':str(backup),'checkpoint_sha256':sha(backup),
             'previous_runtime':previous}
@@ -66,17 +67,17 @@ def training_runtime(run, snapshot, *, refresh=False, device=None):
         write(pointer,runtime)
     runtime=read(pointer) if pointer.exists() else None
     if runtime is None:
-        if device not in (None,'cpu'):
-            raise ValueError('Use --resume --refresh-training-code --device mps to migrate the frozen trainer')
-        return snapshot,[]
-    if device is not None and device!=runtime['device']:
-        raise ValueError('Use --refresh-training-code when changing the recorded execution device')
+        if read(run/'run.json').get('training',{}).get('device')!='mps':
+            raise ValueError('Frozen CPU training is retired; use --resume --refresh-training-code to migrate to MPS')
+        return snapshot,['--device','mps','--mps-memory-fraction','0.4']
+    if runtime['device']!='mps':
+        raise ValueError('Frozen CPU training is retired; use --resume --refresh-training-code to migrate to MPS')
     source=Path(runtime['source'])
     for name,digest in runtime['source_hashes'].items():
         if sha(source/name)!=digest:raise ValueError(f'Frozen training runtime changed: {name}')
         if name not in TRAINING_FILES and sha(source/name)!=sha(snapshot/name):
             raise ValueError(f'Training runtime changed preparation policy or code: {name}')
-    return source,['--device',runtime['device'],'--mps-memory-fraction','0.25']
+    return source,['--device',runtime['device'],'--mps-memory-fraction',str(runtime.get('mps_memory_fraction',0.25))]
 
 def history():
     """Every inherited training source, including older label/tokenization generations."""
@@ -106,9 +107,10 @@ def validated_best(state):
 def freeze_initialization(run, checkpoint):
     sys.path[:0]=[str(ROOT/'training/.deps'),str(ROOT/'training')]
     import torch
-    from train_smoke import BoundaryChooser, configure_cpu
+    from train_smoke import BoundaryChooser, configure_cpu, configure_mps
     from train_sharded import expanded_initialization
-    configure_cpu(2,1)
+    configure_cpu(1,1)
+    device=configure_mps()
     state=torch.load(checkpoint,map_location='cpu',weights_only=True)
     config=state['configuration'];assert (config['channels'],config['residual_blocks'])==(192,8)
     vocabulary=state['vocabulary'];assert len(vocabulary)==8192
@@ -121,6 +123,7 @@ def freeze_initialization(run, checkpoint):
     model=BoundaryChooser(len(vocabulary),192,8)
     transfer=expanded_initialization(model,run/'initialization.pt',vocabulary)
     assert all(torch.equal(value,weights[key]) for key,value in model.state_dict().items())
+    model.to(device)
     # A tiny numerical check of the selected weights; probe updates are discarded.
     from text_policy import training_pairs
     pairs=list(training_pairs('天气预报来了。今天下雨，我们留在家里。\n大家一起商量。明天放晴，大家出去散步。'))
@@ -129,12 +132,13 @@ def freeze_initialization(run, checkpoint):
     tokens=torch.zeros((len(pairs),length),dtype=torch.long);mask=torch.zeros_like(tokens,dtype=torch.bool)
     for i,(text,_,_) in enumerate(pairs):
         tokens[i,:len(text)]=torch.tensor([vocabulary.get(c,1) for c in text]);mask[i,:len(text)]=True
+    tokens=tokens.to(device);mask=mask.to(device)
     optimizer=torch.optim.AdamW(model.parameters(),lr=.0003,weight_decay=1e-4,foreach=True)
     assert not optimizer.state
     losses=[]
     for _ in range(2):
         optimizer.zero_grad(set_to_none=True)
-        loss=torch.nn.functional.cross_entropy(model(tokens,mask,mask[:,1:]),torch.tensor([k for _,k,_ in pairs]))
+        loss=torch.nn.functional.cross_entropy(model(tokens,mask,mask[:,1:]),torch.tensor([k for _,k,_ in pairs],device=device))
         assert torch.isfinite(loss)
         loss.backward();torch.nn.utils.clip_grad_norm_(model.parameters(),1);optimizer.step();losses.append(loss.item())
     report={'passed':True,'source_checkpoint':str(checkpoint),'source_sha256':sha(checkpoint),
@@ -154,7 +158,7 @@ def main():
     parser.add_argument('--epochs',type=int,default=1)
     parser.add_argument('--initialize-from',type=Path,default=BEST_CHECKPOINT)
     parser.add_argument('--resume',action='store_true')
-    parser.add_argument('--device',choices=['cpu','mps'])
+    parser.add_argument('--device',choices=['mps'],default='mps')
     parser.add_argument('--refresh-training-code',action='store_true',
         help='Freeze a new training runtime and back up the checkpoint; preserve original preparation snapshot')
     args=parser.parse_args()
@@ -183,7 +187,7 @@ def main():
             'historical_manifests':{str(p):sha(p) for p in manifests},
             'holdout_registries':{str(p):sha(p) for p in registries},'old_evaluation_directories':[str(p) for p in directories],
             'paths':{k:str(v) for k,v in paths.items()},'architecture':{'channels':192,'residual_blocks':8,'vocabulary':8192},
-            'training':{'learning_rate':.0003,'threads':5,'batch_size':512,'max_tokens_per_batch':8192,'domain_weight_power':.65,'selection_macro_weight':.5},
+            'training':{'device':'mps','learning_rate':.0003,'threads':1,'batch_size':512,'max_tokens_per_batch':8192,'domain_weight_power':.65,'selection_macro_weight':.5},
             'backend_sha256':sha(ROOT/'src/boundary-model-data.js')})
     plan=read(plan_path)
     if (args.target_samples,args.epochs)!=(plan['web_train_samples'],plan['epochs']):raise ValueError('Resume with recorded settings')
@@ -217,11 +221,20 @@ def main():
             output.rename(output.with_name(output.name+'.interrupted-'+datetime.now().strftime('%Y%m%dT%H%M%S')))
         for name,digest in plan['source_hashes'].items():
             if sha(snapshot/name)!=digest:raise ValueError(f'Frozen code changed: {name}')
-        with (run/(stage+'.log')).open('ab') as log:
-            child=subprocess.Popen(command,cwd=ROOT,env=env,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT)
-            status(stage,child_pid=child.pid,log=str(run/(stage+'.log')))
-            code=child.wait()
-        if stopped:raise InterruptedError('Graceful stop requested')
+        previous_refresh=None
+        while True:
+            with (run/(stage+'.log')).open('ab') as log:
+                child=subprocess.Popen(command,cwd=ROOT,env=env,stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT)
+                status(stage,child_pid=child.pid,log=str(run/(stage+'.log')))
+                code=child.wait()
+            if stopped:raise InterruptedError('Graceful stop requested')
+            if stage!='training' or code!=75:break
+            checkpoint=run/'candidate/training-state.pt'
+            stamp=checkpoint.stat().st_mtime_ns
+            if stamp==previous_refresh:raise RuntimeError('Worker refresh did not advance its checkpoint')
+            previous_refresh=stamp
+            status('refreshing-training-worker',reason='MPS memory pressure; resume saved next batch')
+            if '--resume' not in command:command=[*command,'--resume']
         if code:raise RuntimeError(f'{stage} exited {code}; inspect its log')
         if output:
             marker='manifest.json' if stage in {'prepare-wikipedia','prepare-synthetic','prepare-web'} else 'summary.json'
@@ -283,12 +296,10 @@ def main():
         if checkpoint.exists() and not args.resume:raise FileExistsError('Use --resume for an existing training checkpoint')
         runtime,device_args=training_runtime(run,snapshot,refresh=args.refresh_training_code,device=args.device)
         def training_script(name):return str(runtime/'training'/name)
-        if device_args:
-            # Pin the verified FP32 path, independent of the launching shell.
-            env.update(PYTORCH_ENABLE_MPS_FALLBACK='0',PYTORCH_MPS_FAST_MATH='0',PYTORCH_MPS_PREFER_METAL='0')
-        threads='1' if device_args and device_args[1]=='mps' else '5'
+        # Pin the verified FP32 path, including when resuming older MPS snapshots.
+        env.update(PYTORCH_ENABLE_MPS_FALLBACK='0',PYTORCH_MPS_FAST_MATH='0',PYTORCH_MPS_PREFER_METAL='0')
         cmd=[sys.executable,training_script('run_sharded.py'),'--manifest',str(paths['web']/'manifest.json'),'--data-dir',str(evaluation),'--artifact-dir',str(candidate),
-            '--epochs',str(args.epochs),'--channels','192','--residual-blocks','8','--learning-rate','0.0003','--domain-weight-power','0.65','--selection-macro-weight','0.5','--gradient-clip','1.0','--batch-size','512','--max-tokens-per-batch','8192','--checkpoint-shards','4','--threads',threads,'--interop-threads','1',*device_args]
+            '--epochs',str(args.epochs),'--channels','192','--residual-blocks','8','--learning-rate','0.0003','--domain-weight-power','0.65','--selection-macro-weight','0.5','--gradient-clip','1.0','--batch-size','512','--max-tokens-per-batch','8192','--checkpoint-shards','4','--threads','1','--interop-threads','1',*device_args]
         cmd+=['--resume'] if checkpoint.exists() else ['--initialize-from',str(run/'initialization.pt')]
         execute('training',cmd)
         execute('export',[sys.executable,training_script('export_browser_model.py'),'--artifact-dir',str(candidate),'--output',str(candidate/'boundary-model-data.js')])

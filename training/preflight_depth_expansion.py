@@ -23,9 +23,10 @@ def main():
     import torch
     from torch.nn import functional as F
     from train_sharded import expanded_initialization
-    from train_smoke import BoundaryChooser, configure_cpu, save_browser_compatible_checkpoint
+    from train_smoke import BoundaryChooser, configure_cpu, configure_mps, save_browser_compatible_checkpoint
     from text_policy import DATA_POLICY
     configure_cpu(2, 1)
+    device = configure_mps()
     torch.manual_seed(2026090405)
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     assert checkpoint["best_epoch"] == 2
@@ -57,10 +58,14 @@ def main():
         expected = old(ids, token_mask, gap_mask)
         actual = model(ids, token_mask, gap_mask)
     assert torch.equal(expected, actual), "Identity expansion changed initial logits"
+    model.to(device)
+    ids = ids.to(device)
+    token_mask = token_mask.to(device)
+    gap_mask = gap_mask.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.0003, weight_decay=1e-4, foreach=True)
     assert not optimizer.state
     original = {i: model.blocks[i].first.weight.detach().clone() for i in (6, 7)}
-    targets = torch.tensor([len(text) // 2 - 1 for text in texts])
+    targets = torch.tensor([len(text) // 2 - 1 for text in texts], device=device)
     gradient_audit = []
     for step in range(2):
         optimizer.zero_grad(set_to_none=True)
@@ -97,9 +102,9 @@ def main():
     references = []
     with torch.inference_mode():
         for text in texts:
-            tokens = torch.tensor([[vocabulary.get(c, vocabulary["<unk>"]) for c in text]])
+            tokens = torch.tensor([[vocabulary.get(c, vocabulary["<unk>"]) for c in text]], device=device)
             logits = model(tokens, torch.ones_like(tokens, dtype=torch.bool),
-                           torch.ones((1, len(text) - 1), dtype=torch.bool))[0].tolist()
+                           torch.ones((1, len(text) - 1), dtype=torch.bool, device=device))[0].cpu().tolist()
             references.append({"tokens": list(text), "scores": logits})
     reference_path = folder / "reference.json"
     reference_path.write_text(json.dumps(references, ensure_ascii=False))

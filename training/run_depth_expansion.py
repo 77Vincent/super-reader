@@ -126,7 +126,7 @@ def main():
                    "--channels", "192", "--residual-blocks", "8", "--learning-rate", "0.0003",
                    "--domain-weight-power", "0.65", "--selection-macro-weight", "0.5", "--gradient-clip", "1.0",
                    "--batch-size", "512", "--max-tokens-per-batch", "8192", "--checkpoint-shards", "4",
-                   "--threads", "5", "--interop-threads", "1"]
+                   "--threads", "1", "--interop-threads", "1", "--device", "mps"]
         command += ["--resume"] if state.exists() else ["--initialize-from", str(run / "initialization.pt")]
         execute("training", command)
         # A normal trainer return can also represent a graceful interruption.

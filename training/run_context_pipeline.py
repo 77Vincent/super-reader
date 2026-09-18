@@ -124,7 +124,7 @@ def run_pipeline(run, resume):
                    '--data-dir', str(evaluation), '--artifact-dir', str(candidate), '--epochs', '2',
                    '--channels', '192', '--residual-blocks', '6', '--learning-rate', '0.0003',
                    '--domain-weight-power', '0.65', '--selection-macro-weight', '0.5', '--gradient-clip', '1.0',
-                   '--batch-size', '512', '--max-tokens-per-batch', '8192', '--threads', '5', '--interop-threads', '1']
+                   '--batch-size', '512', '--max-tokens-per-batch', '8192', '--threads', '1', '--interop-threads', '1', '--device', 'mps']
         state = candidate / 'training-state.pt'
         if state.exists():
             if not resume:

@@ -1,5 +1,14 @@
 # 训练提速研究：2026-09-18
 
+维护状态：用户确定今后只用 Metal 后，当前源码已移除 CPU 训练模式和专用
+三次矩阵乘法分支，所有训练入口默认要求 MPS。以下 CPU 对照和首次迁移记录
+描述当时的实验；已冻结的历史快照、权重和当前运行中的 MPS 快照保持原样。
+小批次、少步数的任务可能因初始化和调度开销而在 GPU 上更慢，此次统一设备
+是维护选择，不代表所有规模都能提速。
+后续的[小型 smoke 实测](SMALL_SMOKE_SPEED_STUDY.md)确认了这个区别，并记录
+首次长 MPS 任务的内存上限故障与检查点恢复机制。下面的 0.25 内存配额是
+首次接入的历史设置；新运行版本采用 0.4 配额、相应软水位及工作进程刷新。
+
 优先考虑 **PyTorch MPS GPU + 等价原生 Conv1d**。在同一份真实数据、权重、
 AdamW 状态和批次顺序下，小基准的稳定吞吐约为 CPU 的 **5.2 倍**。
 CPU 合并矩阵乘法约提高 **34%**；单纯增加 CPU 线程没有明显收益。
@@ -147,7 +156,9 @@ CPU 收到 SIGTERM 保存 → MPS 续训 → 完整 fixture validation/test →
 迁移检查记录：正式运行目录下的 `mps-integration-verification.json`。
 - `cpu-phases.json` / `cpu-operators.txt`：步骤与算子耗时。
 
-复现示例（会与正在运行的正式任务竞争资源）：
+复现示例（会与正在运行的正式任务竞争资源）。本地基准脚本读取当时冻结的
+`chinese-line-web-100m-16conv-v7-20260917/source/training`，以保留原 CPU
+基线的含义；这些仅为历史实验，不是当前训练入口。
 
 ```bash
 python3 training/artifacts/training-speed-study-20260918/benchmark.py run \

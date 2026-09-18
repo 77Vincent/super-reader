@@ -37,7 +37,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--max-tokens-per-batch", type=int, default=4096)
     parser.add_argument("--learning-rate", type=float, default=3e-3)
     parser.add_argument("--seed", type=int, default=2026090405)
-    parser.add_argument("--threads", type=int, default=5)
+    parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--interop-threads", type=int, default=1)
     return parser.parse_args()
 
@@ -73,7 +73,7 @@ class SharedPairBoundaryChooser(nn.Module):
         return logits.masked_fill(~gap_mask, -1e9)
 
 
-class ValidThreeTapConv1d(nn.Module):
+class ValidConv1d(nn.Module):
     """The current kernel-3 convolution without outer padding."""
 
     def __init__(self, channels: int):
@@ -87,11 +87,7 @@ class ValidThreeTapConv1d(nn.Module):
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         if inputs.shape[1] < 3:
             raise ValueError("valid kernel-3 convolution needs at least three positions")
-        return (
-            F.linear(inputs[:, :-2], self.weight[:, :, 0])
-            + F.linear(inputs[:, 1:-1], self.weight[:, :, 1], self.bias)
-            + F.linear(inputs[:, 2:], self.weight[:, :, 2])
-        )
+        return F.conv1d(inputs.transpose(1,2),self.weight,self.bias).transpose(1,2)
 
 
 class ValidResidualConvBlock(nn.Module):
@@ -100,8 +96,8 @@ class ValidResidualConvBlock(nn.Module):
     def __init__(self, channels: int):
         super().__init__()
         self.normalization = nn.LayerNorm(channels)
-        self.first = ValidThreeTapConv1d(channels)
-        self.second = ValidThreeTapConv1d(channels)
+        self.first = ValidConv1d(channels)
+        self.second = ValidConv1d(channels)
         self.residual_scale = nn.Parameter(torch.tensor([0.1]))
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
@@ -181,7 +177,7 @@ def train_model(
     args: argparse.Namespace,
 ) -> dict[str, Any]:
     base.seed_everything(args.seed)
-    model = factory()
+    model = factory().to(base.configure_mps())
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=args.learning_rate,
@@ -207,6 +203,7 @@ def train_model(
             shuffle=True,
             seed=args.seed + epoch,
         ):
+            batch = base.batch_to_device(batch, next(model.parameters()).device)
             optimizer.zero_grad(set_to_none=True)
             logits = model(batch["token_ids"], batch["token_mask"], batch["gap_mask"])
             losses = F.cross_entropy(logits, batch["targets"], reduction="none")
@@ -278,6 +275,7 @@ def main() -> None:
     if args.epochs < 1 or args.channels < 1 or args.residual_blocks < 1:
         raise ValueError("epochs, channels, and residual blocks must be positive")
     base.configure_cpu(args.threads, args.interop_threads)
+    base.configure_mps()
     base.seed_everything(args.seed)
 
     raw_records = {
@@ -313,6 +311,7 @@ def main() -> None:
     candidate = by_name["cmpres_candidate_window"]
     output = {
         "experiment": "controlled_boundary_encoder_comparison",
+        "training_backend": base.training_execution(0.4),
         "data_dir": str(args.data_dir),
         "data_sizes": {split: len(items) for split, items in records.items()},
         "seed": args.seed,

@@ -28,15 +28,18 @@ from train_smoke import (
     center_baseline,
     clone_state,
     configure_cpu,
+    configure_mps,
     evaluate,
     iterate_batches,
     make_batch_indices,
+    mps_memory_restart_needed,
     predict_record,
     random_baseline,
     restore_state,
     save_browser_compatible_checkpoint,
     save_training_state,
     seed_everything,
+    training_execution,
 )
 
 
@@ -79,10 +82,10 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--selection-macro-weight", type=float, default=0.0)
     parser.add_argument("--gradient-clip", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=2026090405)
-    parser.add_argument("--threads", type=int, default=min(5, os.cpu_count() or 1))
+    parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--interop-threads", type=int, default=1)
-    parser.add_argument("--device", choices=("cpu", "mps"), default="cpu")
-    parser.add_argument("--mps-memory-fraction", type=float, default=0.25)
+    parser.add_argument("--device", choices=("mps",), default="mps")
+    parser.add_argument("--mps-memory-fraction", type=float, default=0.4)
     return parser.parse_args()
 
 
@@ -307,23 +310,9 @@ def main() -> None:
     if args.gradient_clip < 0:
         raise ValueError("--gradient-clip cannot be negative")
     configure_cpu(args.threads, args.interop_threads)
+    device = configure_mps(args.mps_memory_fraction)
     seed_everything(args.seed)
-    device = torch.device(args.device)
-    if device.type == "mps":
-        if not torch.backends.mps.is_available():
-            raise RuntimeError("MPS requested but unavailable; refusing a silent CPU fallback")
-        if not 0 < args.mps_memory_fraction <= 1:
-            raise ValueError("--mps-memory-fraction must be in (0, 1]")
-        torch.mps.set_per_process_memory_fraction(args.mps_memory_fraction)
-    execution = {
-        "device": device.type,
-        "dtype": "float32",
-        "convolution": "native_conv1d" if device.type == "mps" else "three_tap_linear",
-        "framework_version": str(torch.__version__),
-        "intra_op_threads": torch.get_num_threads(),
-        "inter_op_threads": torch.get_num_interop_threads(),
-        "mps_memory_fraction": args.mps_memory_fraction if device.type == "mps" else None,
-    }
+    execution = training_execution(args.mps_memory_fraction)
     print("training execution: " + json.dumps(execution), flush=True)
 
     manifest_path = args.manifest.resolve()
@@ -363,9 +352,6 @@ def main() -> None:
         shards = shards[: args.max_shards]
     if not shards or any(not path.exists() for path in shards):
         raise FileNotFoundError("One or more training shards are missing")
-    training_weight_mean = combined_weight_mean(shards, weights, domain_weights)
-    print(f"combined training weight mean: {training_weight_mean:.6f}", flush=True)
-
     artifact_dir.mkdir(parents=True, exist_ok=True)
     state_path = artifact_dir / "training-state.pt"
     browser_checkpoint_path = artifact_dir / "boundary-smoke.safetensors"
@@ -401,6 +387,17 @@ def main() -> None:
         if resume_state["data_identity"] != data_identity:
             raise ValueError("Resume checkpoint was created from different data")
         vocabulary = resume_state["vocabulary"]
+
+    # Reuse only after validating both configuration and data identity. Avoid a
+    # full corpus scan on every worker refresh needed to release Metal graphs.
+    training_weight_mean = (
+        resume_state["training_weight_mean"]
+        if resume_state is not None and "training_weight_mean" in resume_state
+        else combined_weight_mean(shards, weights, domain_weights)
+    )
+    if not math.isfinite(training_weight_mean) or training_weight_mean <= 0:
+        raise ValueError("Invalid saved training weight mean")
+    print(f"combined training weight mean: {training_weight_mean:.6f}", flush=True)
 
     validation_records = read_evaluation_records(data_dir / "validation.jsonl", vocabulary)
     if args.validation_limit > 0:
@@ -476,9 +473,10 @@ def main() -> None:
         save_training_state(state_path, {
             "format_version": 2,
             "configuration": configuration,
-            # Execution device may change on resume; data and training
-            # configuration above must still match exactly.
+            # Historical checkpoints are device-independent; data and training
+            # configuration above must still match exactly on MPS resume.
             "execution": execution,
+            "training_weight_mean": training_weight_mean,
             "data_identity": data_identity,
             "vocabulary": vocabulary,
             "model_state": model.state_dict(),
@@ -578,13 +576,16 @@ def main() -> None:
                 running_loss += loss.item() * batch["sample_weight_sum"]
                 seen_weight += batch["sample_weight_sum"]
                 seen_examples += len(batch["records"])
+                # Free the completed batch's graph before checking driver usage.
+                del logits, losses, weighted, loss
                 if batch_index == first_batch or (batch_index + 1) % 500 == 0:
                     elapsed = time.perf_counter() - epoch_started
                     session_samples = seen_examples - (resumed_examples if epoch == start_epoch else 0)
                     print(
                         f"epoch={epoch:02d} shard={shard_position + 1}/{len(shards)} "
                         f"batch={batch_index + 1}/{len(batches)} samples={seen_examples} "
-                        f"session_seconds={elapsed:.1f} samples_s={session_samples / elapsed:.0f}",
+                        f"session_seconds={elapsed:.1f} samples_s={session_samples / elapsed:.0f} "
+                        f"mps_driver_mib={torch.mps.driver_allocated_memory() / 2**20:.0f}",
                         flush=True,
                     )
                 if stop["requested"]:
@@ -604,8 +605,15 @@ def main() -> None:
                         flush=True,
                     )
                     return
+                if mps_memory_restart_needed(args.mps_memory_fraction):
+                    seconds = previous_seconds + time.perf_counter() - epoch_started
+                    persist(epoch, shard_position, batch_index + 1, running_loss,
+                            seen_weight, seen_examples, seconds)
+                    print("MPS memory pressure; saved next batch, requesting worker refresh (exit 75)", flush=True)
+                    raise SystemExit(75)
             del records, batches
             gc.collect()
+            torch.mps.empty_cache()
             if (shard_position + 1) % args.checkpoint_shards == 0:
                 seconds = previous_seconds + time.perf_counter() - epoch_started
                 persist(

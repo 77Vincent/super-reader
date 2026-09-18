@@ -176,10 +176,28 @@ Whether to train further should be decided from the rebuilt validation results.
 
 The [2026-09-18 training speed study](TRAINING_SPEED_STUDY.md) compares CPU and
 MPS implementations on identical batches and checks numerical agreement.
-The sharded trainer supports `--device mps --threads 1`: FP32 native Conv1d on
-Apple GPU, with the same parameter names/shapes, batching, loss and full
-evaluation. Checkpoints store CPU tensors, including AdamW moments, so the
-current batch position can resume across CPU and MPS. CPU remains available.
+All maintained training entry points now require **Apple Metal (MPS)** by
+default, using FP32 native Conv1d and one host CPU thread. CPU training mode and
+its optimized three-tap convolution branch have been removed. `--device cpu`
+is rejected; a machine without MPS reports an error before training. This also
+applies to smoke training and the boundary-encoder comparison. Small workloads
+can still be slower on GPU once startup/dispatch overhead is included; requiring
+MPS simplifies maintenance rather than promising speedups at every batch size.
+The [small-smoke comparison](SMALL_SMOKE_SPEED_STUDY.md) measures that tradeoff:
+CPU wins the 32-example case and the smaller model; MPS wins the production
+model's 4,096-example case when including process startup and evaluation.
+
+New MPS runtimes use a 0.4 memory fraction with a 0.24 low watermark. After
+completed batches, persistent driver usage above 60% of the hard limit triggers
+an atomic checkpoint and exit 75. The surface coordinator then starts a fresh
+worker with `--resume`, preserving weights, AdamW, batch order and progress.
+Completed shards also release free allocator cache. This addresses the first
+long MPS run's memory-limit failure without reducing training/evaluation data.
+
+Parameter names/shapes, batching, loss and full evaluation are unchanged.
+Checkpoints store CPU tensors, including AdamW moments, and historical CPU
+checkpoints can still resume on MPS. CPU data processing, checkpoint I/O,
+reference inference and browser inference remain supported.
 
 To migrate an existing frozen CPU run, first send SIGTERM to its coordinator
 and wait for `status.json` to report `stopped`, then run once:
@@ -192,10 +210,14 @@ This preserves the original preparation snapshot and creates a separately
 hashed training runtime under `training-runtimes/`, with a copy of the last CPU
 checkpoint. `training-runtime.json` records the chosen runtime and device.
 Subsequent interruptions use the ordinary `--resume` command above; it reuses
-that frozen MPS runtime automatically. To return to CPU after a graceful stop,
-repeat the migration command with `--device cpu`. Neither migration resets the
-optimizer, changes sample order, nor restarts the epoch. CPU and GPU floating
-point results need not be bit-identical.
+that frozen MPS runtime automatically. Migration preserves the optimizer,
+sample order and epoch position. Original historical snapshots remain immutable
+for provenance, and an active run keeps its frozen MPS code. They are not updated
+in place during this cleanup. Older CPU snapshots require an explicit MPS
+migration instead of being silently launched by the current surface coordinator.
+Historical depth/web runners also explicitly request MPS; pre-MPS snapshots
+cannot run through those commands without a deliberate runtime migration.
+CPU and GPU floating point results need not be bit-identical.
 
 Hardware checks (MPS tests skip on other machines):
 
@@ -203,8 +225,10 @@ Hardware checks (MPS tests skip on other machines):
 PYTHONPATH=training/.deps:training DEBUG=0 python3 -m unittest training/test_training_device.py -v
 ```
 
-These cover gradients, evaluation, optimizer save/resume, CPU-to-MPS continuation
-through full fixture validation/test, browser export and frozen-runtime integrity.
+These cover gradients, evaluation, portable optimizer save/resume, MPS-only
+entry points, complete fixture validation/test, smoke and comparison training,
+browser export and frozen-runtime integrity. The obsolete Node assertion for
+CPU-specific convolution code is replaced by these behavioral Python checks.
 
 Old document holdouts stay reserved. Revised evaluation pairs are screened
 against inherited and newly rebuilt training inputs using Han-projected input

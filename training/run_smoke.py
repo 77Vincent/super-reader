@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the pinned local training dependencies, then run CPU training."""
+"""Install the pinned local training dependencies, then run Metal training."""
 
 from __future__ import annotations
 
