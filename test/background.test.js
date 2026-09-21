@@ -561,7 +561,7 @@ test("the inference service sends a whole viewport once and validates the data i
   assert.deepEqual(urls, ["./inference-worker.js"]);
 });
 
-test("the actual worker defaults to recursive softmax at 75% on the demo text nodes", () => {
+test("the actual worker defaults to recursive softmax at 50% on the demo text nodes", () => {
   let response;
   const inputs = [];
   const context = vm.createContext({ atob, btoa, console, Intl });
@@ -584,12 +584,12 @@ test("the actual worker defaults to recursive softmax at 75% on the demo text no
     "使用神经网络，在长句中找到符合人类习惯的断句点，把长句切成更短的语意块提升阅读效率。",
     "即便是完全符合语法的通顺的但没有任何标点断句的句子模型依然能够找到恰当的切分点。",
   ];
-  context.onmessage({ data: { id: 75, texts } });
+  context.onmessage({ data: { id: 50, texts } });
   assert.equal(response.error, undefined);
-  assert.equal(response.id, 75);
+  assert.equal(response.id, 50);
   assert.deepEqual(Array.from(response.offsetsByText, (cuts) => Array.from(cuts)),
-    [[25, 31], [], [11, 35], [10, 13]]);
-  assert.equal(inputs.length, 6, "six cuts use only the six original clause model calls");
+    [[25, 31, 50], [], [11, 35], [10, 13, 20, 27]]);
+  assert.equal(inputs.length, 6, "nine cuts use only the six original clause model calls");
   assert.equal(inputs.reduce((n, tokens) => n + tokens.length, 0), 122);
 });
 

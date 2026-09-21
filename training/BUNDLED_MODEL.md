@@ -24,7 +24,7 @@ validation and test data use the v7 cleaning policy. The separate expansion to
 | Test accuracy | 88.3654% |
 
 Accuracy measures recovery of the single hidden punctuation boundary in each
-sample. It does not measure precision at the backend's 75% confidence threshold
+sample. It does not measure precision at the backend's 50% confidence threshold
 or the accuracy of recursive cuts. On these same full datasets, epoch 1 scored
 88.0176% validation accuracy and 88.1614% test accuracy; epoch 2 improves these by
 0.2122 and 0.2040 percentage points. Selection uses validation results, not test
@@ -58,16 +58,20 @@ Maximum raw-logit difference is 0.00134278 (on a logit of magnitude about 1,172)
 maximum softmax probability difference is 0.00000298. Tests check absolute-plus-relative
 float32 tolerances, probabilities and selected gaps. The Worker tests run the
 actual production Worker scripts in a JavaScript VM, including the demo's recursive
-75% behavior, mixed Unicode, long strings and ordered results.
+50% behavior, mixed Unicode, long strings and ordered results.
 
 Backend rules are unchanged by this promotion, but model-dependent snapshots
-change. At the default 75% threshold, `我一直在思考明天早上的早餐吃什么`
+change. At the 75% threshold used during promotion, `我一直在思考明天早上的早餐吃什么`
 stays intact: its best gap after `思考` has 53.74% confidence. The warning example
 now begins `在没有人｜被人特别留意的情况下，` while still avoiding cuts next
 to `（切勿模仿）`. These are observed outputs, not human-labeled quality targets;
 short or awkward fragments remain possible despite aggregate validation improvement.
 The old model's confidence precision/recall figures have not been remeasured for
 this checkpoint.
+
+On 2026-09-21, the backend default threshold was lowered to strictly above 50%.
+The breakfast example now splits as `我一直在思考｜明天早上的早餐吃什么`.
+The weights and other splitting rules remain the same.
 
 ## Backend preprocessing
 
@@ -90,7 +94,7 @@ this checkpoint.
    supplementary Han and treats spaces as non-Han. Dedicated number-interior,
    numeric-attachment, quantity-phrase and quote/bracket attachment rules have been removed.
 5. Cache the original window logits. For each fragment above 12 visual units,
-   compute softmax over its internal gaps and allow probabilities strictly above 75%.
+   compute softmax over its internal gaps and allow probabilities strictly above 50%.
    Rank eligible gaps by raw model logit, breaking ties by the earlier gap.
    Recurse into both children using the same logits and a new child softmax;
    removing protected gaps never renormalizes probabilities. An uncertain

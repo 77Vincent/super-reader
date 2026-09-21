@@ -30,10 +30,10 @@ test("confidence is stable unweighted softmax and invalid logits fail closed", (
   }
 });
 
-test("default 75% gate leaves uncertain long clauses intact and zero disables abstention", () => {
+test("default 50% gate leaves uncertain long clauses intact and zero disables abstention", () => {
   let calls = 0;
   const chunker = withScores((tokens) => { calls++; return tokens.slice(1).map(() => 0); });
-  assert.equal(chunker.MIN_SPLIT_CONFIDENCE, .75);
+  assert.equal(chunker.MIN_SPLIT_CONFIDENCE, .5);
   assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter: null })), [text]);
   assert.equal(calls, 1, "long input still receives a score");
   const baseline = Array.from(chunker.chunkText(text, { segmenter: null, minConfidence: 0 }));
@@ -46,7 +46,7 @@ test("default 75% gate leaves uncertain long clauses intact and zero disables ab
 
 test("threshold is strict and configurable and does not use a per-gap sigmoid", () => {
   const chunker = withScores((tokens) => tokens.slice(1).map((_, i) => i === 7 || i === 15 ? 1000 : -1000));
-  assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter: null, minConfidence: .5 })), [text]);
+  assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter: null })), [text]);
   assert.equal(chunker.chunkText(text, { segmenter: null, minConfidence: .49 }).length, 3);
   for (const invalid of [-.1, 1.1, NaN, Infinity, "90"]) {
     assert.throws(() => chunker.chunkText(text, { minConfidence: invalid }), /between 0 and 1/u);
@@ -188,13 +188,14 @@ test("punctuation separates independent confidence distributions and preserves U
   for (const offset of cuts) assert.doesNotMatch(input[offset], /[\uDC00-\uDFFF]/u);
 });
 
-test("bundled model uses the 75% default and honors a stricter explicit threshold", () => {
-  const uncertain = "我一直在思考明天早上的早餐吃什么";
+test("bundled model uses the 50% default and honors a stricter explicit threshold", () => {
+  const marginal = "我一直在思考明天早上的早餐吃什么";
   const moderate = "在没有人被人特别留意的情况下";
-  assert.deepEqual(realChunker.process([uncertain, moderate]), [[], [4]]);
+  assert.deepEqual(realChunker.process([marginal, moderate]), [[6], [4]]);
+  assert.deepEqual(realChunker.process([marginal, moderate], { minConfidence: .75 }), [[], [4]]);
   assert.deepEqual(realChunker.process([moderate], { minConfidence: .9 }), [[]]);
-  assert.deepEqual(realChunker.process([uncertain, moderate], { minConfidence: 0 }), [[6], [4]]);
-  const tokens = realChunker.tokenizeContext(uncertain);
+  assert.deepEqual(realChunker.process([marginal, moderate], { minConfidence: 0 }), [[6], [4]]);
+  const tokens = realChunker.tokenizeContext(marginal);
   const probabilities = realChunker.gapProbabilities(backend.scoreTokens(tokens.map((t) => t.segment)));
   assert.equal(probabilities.indexOf(Math.max(...probabilities)), 5);
   assert.ok(probabilities[5] > .5 && probabilities[5] < .75);

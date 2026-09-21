@@ -425,7 +425,7 @@ original text and UTF-16 offsets are preserved. Model cuts require immediately a
 Han characters on both sides in the original text, plus browser word protection.
 The default [recursive softmax](RECURSIVE_SOFTMAX.md) caches original window logits
 and recomputes softmax over each child's internal gaps. Only probabilities strictly
-above 75% are eligible, with raw-logit ranking. An uncertain longer clause stays intact.
+above 50% are eligible, with raw-logit ranking. An uncertain longer clause stays intact.
 The [confidence audit](CONFIDENCE_THRESHOLD.md) measures original-input predictions
 for the previous, pre-web model; its precision figures do not describe this new
 checkpoint or establish the accuracy of recursive child decisions.
