@@ -190,10 +190,10 @@ test("punctuation separates independent confidence distributions and preserves U
 
 test("bundled model uses the 75% default and honors a stricter explicit threshold", () => {
   const uncertain = "我一直在思考明天早上的早餐吃什么";
-  const moderate = "而是帮助大脑更快地识别信息结构。";
-  assert.deepEqual(realChunker.process([uncertain, moderate]), [[], [6]]);
+  const moderate = "在没有人被人特别留意的情况下";
+  assert.deepEqual(realChunker.process([uncertain, moderate]), [[], [4]]);
   assert.deepEqual(realChunker.process([moderate], { minConfidence: .9 }), [[]]);
-  assert.deepEqual(realChunker.process([uncertain, moderate], { minConfidence: 0 }), [[6], [6]]);
+  assert.deepEqual(realChunker.process([uncertain, moderate], { minConfidence: 0 }), [[6], [4]]);
   const tokens = realChunker.tokenizeContext(uncertain);
   const probabilities = realChunker.gapProbabilities(backend.scoreTokens(tokens.map((t) => t.segment)));
   assert.equal(probabilities.indexOf(Math.max(...probabilities)), 5);

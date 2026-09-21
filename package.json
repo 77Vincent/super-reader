@@ -12,13 +12,14 @@
     "full:model": "python3 training/run_sharded.py --epochs 3 --channels 128 --residual-blocks 4 --initialize-from training/artifacts/data-scale-wiki-250k-8conv-64ch-6ep/training-state.pt",
     "synthetic:data": "python3 training/run_prepare_synthetic.py",
     "synthetic:model": "python3 training/run_sharded.py --manifest training/data/processed/wiki-full-plus-ultra-5m/manifest.json --artifact-dir training/artifacts/wiki-ultra-domain-weighted-128ch-2ep --epochs 2 --channels 128 --residual-blocks 4 --learning-rate 0.0003 --domain-weight-power 0.65 --selection-macro-weight 0.5 --gradient-clip 1.0 --initialize-from training/artifacts/wiki-full-128ch-8conv-3ep/training-state.pt",
-    "model:export": "python3 training/export_browser_model.py --artifact-dir training/artifacts/web-mix-20m-192ch-16conv-20260915/epoch-1-backend",
+    "model:export": "python3 training/export_browser_model.py --artifact-dir training/artifacts/chinese-line-web-100m-16conv-v7-20260917/epoch-2-backend",
     "smoke:compare": "python3 training/run_tokenization_comparison.py",
     "model:retrain-context": "python3 training/run_context_pipeline.py",
     "model:retrain-surface": "python3 training/run_surface_retraining.py",
     "model:download-web": "python3 training/download_ultrafineweb.py",
     "model:continue-depth": "python3 training/run_depth_expansion.py",
     "model:continue-web": "python3 training/run_web_continuation.py",
-    "model:expand-web": "python3 training/run_web_continuation.py --run-dir training/artifacts/web-mix-40m-192ch-16conv-20260916 --data-dir training/data/processed/web-mix-40m-192ch-16conv-20260916 --base-manifest training/data/processed/web-mix-20m-192ch-16conv-20260915/manifest.json --evaluation training/data/processed/web-mix-20m-192ch-16conv-20260915 --initialize-from training/artifacts/web-mix-20m-192ch-16conv-20260915/epoch-1-expansion/selected-state.pt --target-samples 20000000 --freeze-evaluation"
+    "model:expand-web": "python3 training/run_web_continuation.py --run-dir training/artifacts/web-mix-40m-192ch-16conv-20260916 --data-dir training/data/processed/web-mix-40m-192ch-16conv-20260916 --base-manifest training/data/processed/web-mix-20m-192ch-16conv-20260915/manifest.json --evaluation training/data/processed/web-mix-20m-192ch-16conv-20260915 --initialize-from training/artifacts/web-mix-20m-192ch-16conv-20260915/epoch-1-expansion/selected-state.pt --target-samples 20000000 --freeze-evaluation",
+    "model:expand-web-v7": "python3 training/run_web_continuation.py --run-dir training/artifacts/chinese-line-web-200m-16conv-v7-20260920 --data-dir training/data/processed/chinese-line-web-200m-16conv-v7-20260920 --base-manifest training/data/processed/chinese-line-web-100m-16conv-v7-20260917-web/manifest.json --evaluation training/data/processed/chinese-line-web-100m-16conv-v7-20260917-eval --initialize-from training/artifacts/chinese-line-web-100m-16conv-v7-20260917/candidate/training-state.pt --target-samples 100000000 --shards 1024 --freeze-evaluation --epochs 1"
   }
 }

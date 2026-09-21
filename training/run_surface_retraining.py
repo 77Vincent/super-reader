@@ -12,6 +12,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 
 ROOT=Path(__file__).resolve().parent.parent
 NAME='chinese-line-web-100m-16conv-v7-20260917'
@@ -37,6 +38,52 @@ def sha(path):
         for b in iter(lambda:f.read(8*1024*1024),b''): h.update(b)
     return h.hexdigest()
 def absolute(path): return (ROOT/path).resolve()
+
+def extend_training_epochs(run, plan, completed, target_epochs, *, resume):
+    """Archive a completed run before extending its total epoch budget.
+
+    Caller holds the coordinator lock. The atomic plan update is authoritative;
+    stale completion markers are also invalidated on retry after interruption.
+    """
+    previous_epochs=plan['epochs']
+    if target_epochs<previous_epochs:raise ValueError('Cannot reduce the recorded epoch target')
+    if target_epochs>previous_epochs:
+        if not resume:raise ValueError('Extending training requires --resume')
+        if not {'training','export'}.issubset(completed):
+            raise ValueError('Finish the recorded training and evaluation before extending epochs')
+        import torch
+        candidate=run/'candidate'
+        state=torch.load(candidate/'training-state.pt',map_location='cpu',weights_only=True)
+        progress=state['progress']
+        if (progress['epoch'],progress['shard'],progress['next_batch'])!=(previous_epochs+1,0,0):
+            raise ValueError('Extension requires a completed epoch checkpoint')
+        if not state.get('optimizer_state',{}).get('state'):
+            raise ValueError('Extension requires saved optimizer state')
+        archive=run/'completed-epochs'/f'epoch-{previous_epochs}'
+        archive.parent.mkdir(exist_ok=True)
+        if not archive.exists():
+            with tempfile.TemporaryDirectory(dir=archive.parent,prefix='.archive-') as temporary:
+                snapshot=Path(temporary)/'snapshot';snapshot.mkdir()
+                shutil.copytree(candidate,snapshot/'candidate')
+                for name in ['run.json','completed-stages.json','status.json','training-runtime.json']:
+                    if (run/name).exists():shutil.copy2(run/name,snapshot/name)
+                snapshot.rename(archive)
+        for source in candidate.iterdir():
+            if source.is_file() and sha(source)!=sha(archive/'candidate'/source.name):
+                raise ValueError(f'Completed epoch archive differs: {source.name}')
+        updated={**plan,'epochs':target_epochs,'epoch_extensions':[
+            *plan.get('epoch_extensions',[]),
+            {'from_epochs':previous_epochs,'to_epochs':target_epochs,
+             'created_at':datetime.now(timezone.utc).isoformat(),'archive':str(archive),
+             'checkpoint_sha256':sha(candidate/'training-state.pt')}]}
+        write(run/'run.json',updated);plan.update(updated)
+    if 'training' in completed:
+        command=completed['training']['command']
+        completed_epochs=int(command[command.index('--epochs')+1])
+        if completed_epochs>target_epochs:raise ValueError('Completed training exceeds the requested epoch target')
+        if completed_epochs<target_epochs:
+            completed.pop('training');completed.pop('export',None)
+            write(run/'completed-stages.json',completed)
 
 def training_runtime(run, snapshot, *, refresh=False, device=None):
     """Version training code independently of immutable preparation inputs.
@@ -155,14 +202,15 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run-dir',type=Path,default=ROOT/'training/artifacts'/NAME)
     parser.add_argument('--target-samples',type=int,default=100_000_000)
-    parser.add_argument('--epochs',type=int,default=1)
+    parser.add_argument('--epochs',type=int,
+        help='Total epochs; defaults to the recorded target on resume, otherwise 1')
     parser.add_argument('--initialize-from',type=Path,default=BEST_CHECKPOINT)
     parser.add_argument('--resume',action='store_true')
     parser.add_argument('--device',choices=['mps'],default='mps')
     parser.add_argument('--refresh-training-code',action='store_true',
         help='Freeze a new training runtime and back up the checkpoint; preserve original preparation snapshot')
     args=parser.parse_args()
-    if min(args.target_samples,args.epochs)<1:parser.error('Counts must be positive')
+    if args.target_samples<1 or (args.epochs is not None and args.epochs<1):parser.error('Counts must be positive')
     if args.refresh_training_code and not args.resume:parser.error('--refresh-training-code requires --resume')
     run=args.run_dir.resolve();run.mkdir(parents=True,exist_ok=True)
     lock=(run/'.run.lock').open('a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -170,6 +218,7 @@ def main():
     data=ROOT/'training/data/processed'
     paths={name:data/(run.name+'-'+name) for name in ['base','base-eval','wiki','local','local-eval','web','eval']}
     if not plan_path.exists():
+        if args.epochs is None:args.epochs=1
         if shutil.disk_usage(ROOT).free<60*1024**3:raise RuntimeError('Need at least 60 GiB free for this bounded rebuild')
         os.environ['DEBUG']='0'
         initial=freeze_initialization(run,args.initialize_from.resolve())
@@ -190,7 +239,10 @@ def main():
             'training':{'device':'mps','learning_rate':.0003,'threads':1,'batch_size':512,'max_tokens_per_batch':8192,'domain_weight_power':.65,'selection_macro_weight':.5},
             'backend_sha256':sha(ROOT/'src/boundary-model-data.js')})
     plan=read(plan_path)
-    if (args.target_samples,args.epochs)!=(plan['web_train_samples'],plan['epochs']):raise ValueError('Resume with recorded settings')
+    if args.epochs is None:args.epochs=plan['epochs']
+    if args.target_samples!=plan['web_train_samples']:raise ValueError('Resume with recorded data settings')
+    if args.epochs<plan['epochs']:raise ValueError('Cannot reduce the recorded epoch target')
+    if args.epochs>plan['epochs'] and not args.resume:raise ValueError('Extending training requires --resume')
     if {k:str(v) for k,v in paths.items()}!=plan['paths']:raise ValueError('Output paths changed')
     for path,digest in [(run/'initialization.pt',plan['initialization_sha256']),
                         (run/'source-vocabulary.json',plan['vocabulary_sha256'])]+[(snapshot/name,value) for name,value in plan['source_hashes'].items()]+[(Path(name),value) for name,value in plan['historical_manifests'].items()]+[(Path(name),value) for name,value in plan['holdout_registries'].items()]:
@@ -295,6 +347,7 @@ def main():
         candidate=run/'candidate';checkpoint=candidate/'training-state.pt'
         if checkpoint.exists() and not args.resume:raise FileExistsError('Use --resume for an existing training checkpoint')
         runtime,device_args=training_runtime(run,snapshot,refresh=args.refresh_training_code,device=args.device)
+        extend_training_epochs(run,plan,completed,args.epochs,resume=args.resume)
         def training_script(name):return str(runtime/'training'/name)
         # Pin the verified FP32 path, including when resuming older MPS snapshots.
         env.update(PYTORCH_ENABLE_MPS_FALLBACK='0',PYTORCH_MPS_FAST_MATH='0',PYTORCH_MPS_PREFER_METAL='0')

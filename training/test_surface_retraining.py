@@ -12,9 +12,64 @@ import pyarrow.parquet as pq
 import prepare_synthetic_data as prep
 from filter_retraining_holdouts import projected_input_signature
 from text_policy import DATA_POLICY, training_pairs
-from run_surface_retraining import validated_best
+from run_surface_retraining import validated_best, extend_training_epochs
 
 class SurfaceRetrainingTests(unittest.TestCase):
+    def completed_epoch_fixture(self,run):
+        import torch
+        candidate=run/'candidate';candidate.mkdir()
+        torch.save({'progress':{'epoch':2,'shard':0,'next_batch':0},
+            'model_state':{'weight':torch.tensor([1.0])},
+            'optimizer_state':{'state':{0:{'step':torch.tensor(12)}}}},candidate/'training-state.pt')
+        (candidate/'smoke-metrics.json').write_text('{"accuracy": 0.88}')
+        plan={'epochs':1,'web_train_samples':100_000_000}
+        completed={'prepare-web':{'outputs':{'manifest':'unchanged'}},
+            'training':{'command':['python','train.py','--epochs','1']},'export':{}}
+        (run/'run.json').write_text(json.dumps(plan))
+        (run/'completed-stages.json').write_text(json.dumps(completed))
+        return plan,completed
+
+    def test_extend_archives_epoch_without_changing_checkpoint_or_preparation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            run=Path(folder);plan,completed=self.completed_epoch_fixture(run)
+            before=(run/'candidate/training-state.pt').read_bytes()
+            extend_training_epochs(run,plan,completed,2,resume=True)
+            self.assertEqual(plan['epochs'],2)
+            self.assertEqual(set(completed),{'prepare-web'})
+            archive=run/'completed-epochs/epoch-1'
+            self.assertEqual((archive/'candidate/training-state.pt').read_bytes(),before)
+            self.assertEqual((run/'candidate/training-state.pt').read_bytes(),before)
+            self.assertEqual(json.loads((archive/'run.json').read_text())['epochs'],1)
+            self.assertEqual((archive/'candidate/smoke-metrics.json').read_bytes(),
+                             (run/'candidate/smoke-metrics.json').read_bytes())
+            extend_training_epochs(run,plan,completed,2,resume=True)
+            self.assertEqual(len(plan['epoch_extensions']),1)
+
+    def test_extension_retry_invalidates_stale_completed_stages(self):
+        with tempfile.TemporaryDirectory() as folder:
+            run=Path(folder);plan,completed=self.completed_epoch_fixture(run)
+            original=json.loads((run/'completed-stages.json').read_text())
+            extend_training_epochs(run,plan,completed,2,resume=True)
+            # Simulate interruption after publishing the plan but before clearing stages.
+            (run/'completed-stages.json').write_text(json.dumps(original))
+            extend_training_epochs(run,plan,original,2,resume=True)
+            self.assertEqual(set(original),{'prepare-web'})
+            self.assertEqual(len(plan['epoch_extensions']),1)
+
+    def test_extension_rejects_unsafe_changes_without_mutating_plan(self):
+        with tempfile.TemporaryDirectory() as folder:
+            run=Path(folder);plan,completed=self.completed_epoch_fixture(run)
+            original=(run/'run.json').read_bytes()
+            with self.assertRaisesRegex(ValueError,'--resume'):
+                extend_training_epochs(run,plan,completed,2,resume=False)
+            with self.assertRaisesRegex(ValueError,'reduce'):
+                extend_training_epochs(run,plan,completed,0,resume=True)
+            completed.pop('export')
+            with self.assertRaisesRegex(ValueError,'Finish'):
+                extend_training_epochs(run,plan,completed,2,resume=True)
+            self.assertEqual((run/'run.json').read_bytes(),original)
+            self.assertFalse((run/'completed-epochs').exists())
+
     def test_initialization_keeps_validated_best_despite_later_partial_epoch(self):
         best={'weight':[1]};partial={'weight':[2]}
         metrics={'epoch':1,'selection_score':0.87}

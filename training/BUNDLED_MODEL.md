@@ -1,10 +1,10 @@
 # Bundled boundary model
 
-`src/boundary-model-data.js` contains the completed **epoch 1 best_state** from
-`web-mix-20m-192ch-16conv-20260915`, exported on 2026-09-16. This continuation
-starts from the previous 16-layer best weights and adds 20 million Ultra-FineWeb
-training pairs to the existing corpus. It is the latest completed, validated best
-checkpoint; the separate 40-million-web-pair expansion is still training epoch 1.
+`src/boundary-model-data.js` contains the completed **epoch 2 best_state** from
+`chinese-line-web-100m-16conv-v7-20260917`, exported on 2026-09-21. It is the
+best completed checkpoint by the run's validation selection score. Training,
+validation and test data use the v7 cleaning policy. The separate expansion to
+200 million web training pairs is still training and has not replaced this model.
 
 | Property | Value |
 | --- | ---: |
@@ -14,77 +14,72 @@ checkpoint; the separate 40-million-web-pair expansion is still training epoch 1
 | Parameters | 3,496,329 |
 | Structural gap receptive field | Up to 34 tokens, 17 on each side |
 | Vocabulary entries | 8,192 |
-| Training examples per epoch | 94,121,940 |
-| Full validation examples | 1,158,011 |
-| Validation accuracy | 87.4859% |
-| Mean domain validation accuracy | 86.5490% |
-| Validation selection score | 87.0174% |
-| Test accuracy | Not evaluated for this interim export |
+| Training examples per epoch | 146,266,210 |
+| Web / other training examples | 100,000,000 / 46,266,210 |
+| Full validation examples | 2,522,347 |
+| Validation accuracy | 88.2298% |
+| Mean domain validation accuracy | 88.1696% |
+| Validation selection score | 88.1997% |
+| Full test examples | 2,569,996 |
+| Test accuracy | 88.3654% |
 
-Accuracy measures recovery of hidden punctuation boundaries. On this same full
-validation set, the previous bundled model scored 86.3990%; the gain is 1.0869
-percentage points. Its previously reported 89.1495% used only the original
-727,578 validation examples, so that number is not directly comparable with the
-expanded set. The new set adds 430,433 held-out web examples, and its SHA-256 is
-`46b6643fbe5511eacd67e4200b4fa55fbdf3b49c8bb71119270a582bbeedc43d`.
-
-Checkpoint SHA-256:
-`681666f1105f91e32e5d4fc2b9b7e5a2090cb794ef137d01c700b3e9f7d553c4`
+Accuracy measures recovery of the single hidden punctuation boundary in each
+sample. It does not measure precision at the backend's 75% confidence threshold
+or the accuracy of recursive cuts. On these same full datasets, epoch 1 scored
+88.0176% validation accuracy and 88.1614% test accuracy; epoch 2 improves these by
+0.2122 and 0.2040 percentage points. Selection uses validation results, not test
+results. These aggregate gains do not imply every domain or sentence improves.
+Older bundled-model figures used different data and cleaning policies and are
+not directly comparable.
 
 The frozen release artifacts are in
-`training/artifacts/web-mix-20m-192ch-16conv-20260915/epoch-1-backend/`.
-`source-training-state.pt` preserves the stopped 20-million run's checkpoint;
-`selected-state.pt` is the frozen selection also used to initialize the expanded
-run, with SHA-256
-`0dc993a820dc151ef8bc0bf2232722179a253fec443e8a5a11411cc172f191d2`.
-The export checks every parameter against the source's `best_state`, rather than
-using its partially trained epoch-2 `model_state`. `smoke-metrics.json` records
-the source hashes, data identity and validation results; `export_selected.py`
-records the selection and reference-generation procedure.
+`training/artifacts/chinese-line-web-100m-16conv-v7-20260917/epoch-2-backend/`.
+`training-state.pt` preserves the completed source checkpoint. Its SHA-256 is
+`eaa1fecea56261d85a55664eb2e2ceefa18d00cd270d2d3ed90ea741eb33df5c`.
+`verify_release.py` checks every exported parameter against `best_state`, accounting
+for the convolution export layout, and generates independent PyTorch Metal (MPS)
+float32 references. `release-verification.json` records the hashes and data identity;
+`smoke-metrics.json` contains the full validation and test results despite its
+historical filename.
+
+Exported safetensors SHA-256:
+`264eb00ba804f80997272750036f10226dd1ffd5ca89ab7d6faacdc0745fd255`.
 
 `npm run model:export` reproduces the bundle from these local release artifacts.
-The script is 18,740,840 bytes, with SHA-256
-`ad6f0f8daa93cba44cded73facbf645622599d39ff83d763d77281e62b5cdaeb`.
-A clean checkout includes the exported model and
-test references; runtime and ordinary model tests require no training artifacts or PyTorch.
+The script is 18,740,854 bytes, with SHA-256
+`7d7417038f73f3c0689089e26d77db1082fbb6f0c5d22043dc01870ed8d8c803`.
+A clean checkout includes the exported model and test references; runtime and
+ordinary model tests require no training artifacts or PyTorch.
 
-`test/model-backend-reference.json` contains 11 independent PyTorch float32 cases,
-including times, numbers, Latin text, quotes, supplementary Han, emoji and a
-two-character input. JavaScript selects the same best gap in all cases.
-Maximum logit difference is 0.00003815; maximum softmax probability difference is
-0.00000202. Tests check absolute-plus-relative float32 tolerances, probabilities
-and selected gaps.
-
-An isolated headless Chrome 152 check loads the production inference service and
-Worker. Six inputs cover short-clause gating, long clauses, enumeration items,
-times, normalized numbers, emoji and supplementary Han. Cold and warm Worker
-results match Node, with valid UTF-16 offsets and original text preserved. The
-first service request, including model loading, took 332 ms while training was
-running, within the service's 5-second timeout. This is a smoke measurement, not
-a general latency guarantee; details are in `chrome-worker-verification.json`
-in the frozen release directory.
+`test/model-backend-reference.json` contains 11 independent PyTorch Metal float32
+cases, including times, numbers, Latin text, quotes, supplementary Han, emoji and
+a two-character input. JavaScript selects the same best gap in all cases.
+Maximum raw-logit difference is 0.00134278 (on a logit of magnitude about 1,172);
+maximum softmax probability difference is 0.00000298. Tests check absolute-plus-relative
+float32 tolerances, probabilities and selected gaps. The Worker tests run the
+actual production Worker scripts in a JavaScript VM, including the demo's recursive
+75% behavior, mixed Unicode, long strings and ordered results.
 
 Backend rules are unchanged by this promotion, but model-dependent snapshots
 change. At the default 75% threshold, `我一直在思考明天早上的早餐吃什么`
-stays intact: its best gap after `思考` has 53.21% confidence. The warning example
-now begins `在｜没有人｜被人特别留意的情况下，` while still avoiding cuts next
-to `（切勿模仿）`. With abstention disabled, the driving example becomes
-`驾驶员会出于本能进行｜向左打方向盘等避险动作，`.
-These are observed outputs, not human-labeled quality targets; short or awkward
-fragments remain possible despite aggregate validation improvement. Tests for
-bracket protection check bracket-adjacent cuts rather than requiring the entire
-input to have no cuts. The old model's confidence precision/recall figures have
-not been remeasured for this checkpoint.
+stays intact: its best gap after `思考` has 53.74% confidence. The warning example
+now begins `在没有人｜被人特别留意的情况下，` while still avoiding cuts next
+to `（切勿模仿）`. These are observed outputs, not human-labeled quality targets;
+short or awkward fragments remain possible despite aggregate validation improvement.
+The old model's confidence precision/recall figures have not been remeasured for
+this checkpoint.
 
 ## Backend preprocessing
 
 1. Classify proxy punctuation after NFKC normalization, preserving original text
    and UTF-16 offsets.
-2. Pre-split on the proxy punctuation in `text-policy.json`: commas, periods,
+2. Pre-split on the backend punctuation rules: commas, periods,
    exclamation/question marks, semicolons and ellipses. Also pre-split on enumeration
    commas (`、`, including NFKC-equivalent forms) as a backend rule. Periods and
    commas between digits remain inside numbers. Other punctuation and whitespace
-   stay in the clause; enumeration commas remain excluded from training proxy labels.
+   stay in the clause. Training v7 identifies its Chinese proxy punctuation before
+   NFKC normalization; the runtime uses its own broader punctuation rules and does
+   not read `text-policy.json`. This promotion does not change either policy.
 3. Leave clauses of at most 12 visual units intact. A Han character, numeric
    expression or Latin word contributes one unit; this is not a 12-token cap.
    Enumeration items follow this same threshold, with no additional list protection.
@@ -121,6 +116,6 @@ child decisions.
 
 The completed [architecture smoke](CNN_TRANSFORMER_EXPERIMENT.md) was a separate
 experiment; its scripts and generated artifacts have been removed. The current
-40-million-web-pair continuation uses its own frozen training/export sources, so
+200-million-web-pair continuation uses its own frozen training/export sources, so
 this backend release does not change that run. Completing an epoch does not
 automatically replace this bundle.

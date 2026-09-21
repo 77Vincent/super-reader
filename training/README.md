@@ -144,7 +144,14 @@ stopped; their frozen snapshots do not contain all the current fixes.
 npm run model:retrain-surface
 # After an interruption:
 npm run model:retrain-surface -- --resume
+# After the first epoch and its evaluation finish, continue through epoch 2:
+npm run model:retrain-surface -- --resume --epochs 2
 ```
+
+`--epochs` is the total epoch target. Extending a completed run archives its
+checkpoint, exports and metrics under `completed-epochs/epoch-N/`, then resumes
+the same weights and optimizer on the same data. Subsequent `--resume` commands
+reuse the extended target without needing `--epochs` again.
 
 [run_surface_retraining.py](run_surface_retraining.py) rebuilds every cached CLUE
 entry, the full Wikipedia dump and the cached Chinese multi-style L3 source
@@ -355,6 +362,25 @@ currently released model until explicitly promoted.
 
 ## Web data continuation
 
+The current v7 expansion (2026-09-20) retains all **146,266,210** existing
+training pairs and adds **100,000,000** distinct web pairs: **200 million web /
+246,266,210 total**. The audited cleaning policy, 16-layer / 192-channel model,
+8,192-character vocabulary and complete validation/test files stay fixed.
+It warm-starts from the completed v7 **best epoch 2**, initializes a new AdamW
+optimizer for the changed corpus, and trains one new epoch before evaluation.
+Initialization is evaluated on the full validation split and remains eligible
+for best-checkpoint selection. Artifacts are separate from the 100m web run.
+
+```bash
+npm run model:expand-web-v7
+# Resume preparation or training after an interruption:
+npm run model:expand-web-v7 -- --resume
+```
+
+The added pairs use 1,024 shards. The coordinator automatically resumes saved
+batches when Metal requests a worker refresh, and honors explicit stop signals.
+The following smaller runs are historical configurations.
+
 `npm run model:continue-web` prepares 20 million new training pairs across all
 256 downloaded Chinese web files, combines them with the existing 74,121,940
 pairs, and continues the best 16-layer epoch-1 weights for two epochs. It keeps
@@ -386,10 +412,11 @@ This browser smoke check uses a deterministic sample of 500 examples per domain
 (seed 20260911); formal training always evaluates the complete validation/test splits.
 Keep input and sample hashes fixed for within-version comparisons.
 
-The bundled model is the completed epoch-1 best checkpoint from the 16-layer
-web continuation run (`web-mix-20m-192ch-16conv-20260915`), trained on 94,121,940
-pairs including 20 million web pairs;
-see [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for its provenance and validation results.
+The bundled model is the completed epoch-2 best checkpoint from the 16-layer
+v7 run (`chinese-line-web-100m-16conv-v7-20260917`), trained on 146,266,210
+pairs including 100 million web pairs. Full validation accuracy is 88.2298%
+and test accuracy is 88.3654%; the separate 200-million-web-pair run is still training.
+See [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for its provenance and validation results.
 The backend first splits clauses using normalized proxy punctuation and enumeration
 commas. All resulting clauses, including enumeration items, follow the same rule:
 leave at most 12 visual units intact and send longer clauses with their

@@ -21,7 +21,7 @@ BEST = ROOT / "training/artifacts/unicode-context-192ch-16conv-20260914/epoch-1-
 BASE = ROOT / "training/data/processed/unicode-context-192ch-12conv-20260913-combined/manifest.json"
 EVAL = ROOT / "training/data/processed/unicode-context-192ch-12conv-20260913-eval"
 RAW = ROOT / "training/data/raw/ultra-fineweb-zh"
-SOURCES = ["training/" + name for name in ("prepare_web_data.py", "prepare_synthetic_data.py", "run_sharded.py",
+SOURCES = ["training/" + name for name in ("run_web_continuation.py", "prepare_web_data.py", "prepare_synthetic_data.py", "run_sharded.py",
     "run_smoke.py", "train_sharded.py", "train_smoke.py", "text_policy.py", "text-policy.json", "unicode-symbols.json", "export_browser_model.py")]
 
 
@@ -43,11 +43,36 @@ def write(path, value):
     temporary.replace(path)
 
 
+def run_with_recovery(stage, command, *, run_once, checkpoint, should_stop, on_refresh):
+    """Refresh a Metal worker only after it has saved an advanced checkpoint."""
+    while True:
+        if should_stop():
+            raise InterruptedError("Stopped between stages")
+        previous_stamp = checkpoint.stat().st_mtime_ns if checkpoint.exists() else None
+        code = run_once(command)
+        if should_stop():
+            raise InterruptedError("Graceful stop requested")
+        if stage != "training" or code != 75:
+            if code:
+                raise RuntimeError(f"{stage} exited {code}; inspect its log")
+            return
+        if not checkpoint.exists() or checkpoint.stat().st_mtime_ns == previous_stamp:
+            raise RuntimeError("Worker refresh did not advance its checkpoint")
+        on_refresh()
+        command = list(command)
+        if "--initialize-from" in command:
+            index = command.index("--initialize-from")
+            del command[index:index + 2]
+        if "--resume" not in command:
+            command.append("--resume")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", type=Path, default=RUN)
     parser.add_argument("--data-dir", type=Path, default=DATA)
     parser.add_argument("--target-samples", type=int, default=20_000_000, help="Additional training pairs")
+    parser.add_argument("--shards", type=int, default=128, help="Number of additional training shards")
     parser.add_argument("--base-manifest", type=Path, default=BASE)
     parser.add_argument("--evaluation", type=Path, default=EVAL)
     parser.add_argument("--initialize-from", type=Path, default=BEST)
@@ -55,7 +80,7 @@ def main():
     parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
-    if min(args.target_samples, args.epochs) < 1:
+    if min(args.target_samples, args.epochs, args.shards) < 1:
         parser.error("Counts must be positive")
     run, data = args.run_dir.resolve(), args.data_dir.resolve()
     base, evaluation, initialization = args.base_manifest.resolve(), args.evaluation.resolve(), args.initialize_from.resolve()
@@ -77,6 +102,7 @@ def main():
             if not link.exists():
                 link.symlink_to(ROOT / "training" / name, target_is_directory=True)
         write(plan_path, {"created_at": datetime.now(timezone.utc).isoformat(), "new_train_samples": args.target_samples,
+              "additional_shards": args.shards,
               "epochs": args.epochs, "data": str(data), "base_manifest": str(base), "base_sha256": sha(base),
               "old_evaluation": str(evaluation), "old_evaluation_summary_sha256": sha(evaluation / "summary.json"),
               "freeze_evaluation": args.freeze_evaluation,
@@ -91,6 +117,8 @@ def main():
     plan = read(plan_path)
     if (plan["epochs"], plan["new_train_samples"], plan["data"]) != (args.epochs, args.target_samples, str(data)):
         raise ValueError("Resume with the original data directory, target and epoch count")
+    if plan.get("additional_shards", 128) != args.shards:
+        raise ValueError("Resume with the original additional shard count")
     if (plan["base_manifest"], plan["old_evaluation"], plan.get("freeze_evaluation", False)) != (str(base), str(evaluation), args.freeze_evaluation):
         raise ValueError("Resume with the original base corpus and holdout mode")
     for path, expected in [(run / "initialization.pt", plan["initialization_sha256"]), (base, plan["base_sha256"]),
@@ -114,25 +142,25 @@ def main():
         value = {"stage": stage, "updated_at": datetime.now(timezone.utc).isoformat(), "coordinator_pid": os.getpid(), **details}
         write(run / "status.json", value)
         print(json.dumps(value), flush=True)
-    environment = dict(os.environ, DEBUG="0", PYTHONUNBUFFERED="1", PYTHONPATH=str(ROOT / "training/.deps"))
+    environment = dict(os.environ, DEBUG="0", PYTHONUNBUFFERED="1", PYTHONPATH=str(ROOT / "training/.deps"),
+                       SUPER_READER_PROJECT_ROOT=str(ROOT), PYTORCH_ENABLE_MPS_FALLBACK="0",
+                       PYTORCH_MPS_FAST_MATH="0", PYTORCH_MPS_PREFER_METAL="0")
     def execute(stage, command):
-        nonlocal child
-        if stopped:
-            raise InterruptedError("Stopped between stages")
-        with (run / f"{stage}.log").open("ab") as log:
-            child = subprocess.Popen(command, cwd=snapshot, env=environment, stdin=subprocess.DEVNULL,
-                                     stdout=log, stderr=subprocess.STDOUT)
-            status(stage, child_pid=child.pid, command=command, log=str(run / f"{stage}.log"))
-            code = child.wait()
-        if stopped:
-            raise InterruptedError("Graceful stop requested")
-        if code:
-            raise RuntimeError(f"{stage} exited {code}; inspect its log")
+        def run_once(current_command):
+            nonlocal child
+            with (run / f"{stage}.log").open("ab") as log:
+                child = subprocess.Popen(current_command, cwd=snapshot, env=environment, stdin=subprocess.DEVNULL,
+                                         stdout=log, stderr=subprocess.STDOUT)
+                status(stage, child_pid=child.pid, command=current_command, log=str(run / f"{stage}.log"))
+                return child.wait()
+        run_with_recovery(stage, command, run_once=run_once, checkpoint=run / "candidate/training-state.pt",
+                          should_stop=lambda: stopped,
+                          on_refresh=lambda: status("refreshing-training-worker", reason="MPS memory pressure; resume saved next batch"))
     keep_awake = subprocess.Popen(["/usr/bin/caffeinate", "-is", "-w", str(os.getpid())], stdin=subprocess.DEVNULL)
     try:
         preparation = [sys.executable, str(snapshot / "training/prepare_web_data.py"),
             "--base-manifest", str(base), "--evaluation", str(evaluation), "--raw-dir", str(RAW),
-            "--output-dir", str(data), "--target-samples", str(args.target_samples)]
+            "--output-dir", str(data), "--target-samples", str(args.target_samples), "--shards", str(args.shards)]
         if args.freeze_evaluation:
             preparation += ["--freeze-evaluation"]
         execute("prepare", preparation)
@@ -168,7 +196,8 @@ def main():
             "--data-dir", str(data), "--artifact-dir", str(candidate), "--epochs", str(args.epochs),
             "--channels", "192", "--residual-blocks", "8", "--learning-rate", "0.0003", "--domain-weight-power", "0.65",
             "--selection-macro-weight", "0.5", "--gradient-clip", "1.0", "--batch-size", "512", "--max-tokens-per-batch", "8192",
-            "--checkpoint-shards", "4", "--threads", "1", "--interop-threads", "1", "--device", "mps"]
+            "--checkpoint-shards", "4", "--threads", "1", "--interop-threads", "1", "--device", "mps",
+            "--mps-memory-fraction", "0.4"]
         command += ["--resume"] if checkpoint.exists() else ["--initialize-from", str(run / "initialization.pt")]
         execute("training", command)
         state = torch.load(checkpoint, map_location="cpu", weights_only=True)
