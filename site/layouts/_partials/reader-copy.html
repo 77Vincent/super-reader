@@ -1,0 +1,5 @@
+{{- /* Literal markers share the demo's visual divider, without model inference. */ -}}
+{{- $chunks := split . "｜" -}}
+{{- range $index, $chunk := $chunks -}}
+  <span class="reader-copy-chunk">{{ $chunk }}{{ if lt $index (sub (len $chunks) 1) }}<span class="reader-divider" aria-hidden="true"></span>{{ end }}</span>
+{{- end -}}

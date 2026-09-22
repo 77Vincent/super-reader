@@ -12,7 +12,7 @@ menu?.addEventListener('click', (event) => {
 // Static examples only: toggle prepared markers without loading a model.
 document.querySelectorAll('[data-reader-demo]').forEach((demo) => {
   const button = demo.querySelector('[data-reader-demo-toggle]');
-  const markers = demo.querySelectorAll('.reader-demo-divider');
+  const markers = demo.querySelectorAll('.reader-divider');
   button.addEventListener('click', () => {
     const enabled = button.getAttribute('aria-pressed') !== 'true';
     markers.forEach((marker) => { marker.hidden = !enabled; });

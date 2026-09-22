@@ -17,7 +17,27 @@
   }
 }
 
-.reader-demo-divider::before {
+.portal-slogans {
+  display: grid;
+  gap: clamp(2rem, 4vw, 3.5rem);
+  padding-block: 0.5rem 1.5rem;
+}
+
+.portal-slogan {
+  margin: 0;
+  color: var(--bs-heading-color);
+  font-size: clamp(1.5rem, 3vw, 2.5rem);
+  font-weight: 700;
+  line-height: 1.5;
+  text-wrap: balance;
+}
+
+.reader-copy-chunk {
+  display: inline-block;
+  max-inline-size: 100%;
+}
+
+.reader-divider::before {
   display: inline-block;
   width: 0;
   height: 1em;
@@ -27,7 +47,7 @@
   content: "";
 }
 
-.reader-demo-divider[hidden] {
+.reader-divider[hidden] {
   display: none !important;
 }
 

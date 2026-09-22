@@ -6,6 +6,6 @@
   </div>
   <div id="{{ $id }}" class="reader-demo-text">
     {{- $content := .Page.RenderString (dict "display" "block") .Inner -}}
-    {{- replace $content "｜" `<span class="reader-demo-divider" aria-hidden="true"></span>` | safeHTML -}}
+    {{- replace $content "｜" `<span class="reader-divider" aria-hidden="true"></span>` | safeHTML -}}
   </div>
 </div>
