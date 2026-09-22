@@ -1,9 +1,9 @@
 {
-  "name": "super-reader-site",
+  "name": "haodu-site",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Super Reader product site, built with Hugo and Doks",
+  "description": "好读 product site, built with Hugo and Doks",
   "scripts": {
     "dev": "hugo server --bind 127.0.0.1 --disableFastRender --noHTTPCache",
     "build": "hugo --cleanDestinationDir --minify --gc"

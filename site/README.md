@@ -1,4 +1,4 @@
-# Super Reader 静态入口页
+# 好读静态入口页
 
 独立的 Hugo + [Doks](https://github.com/thuliteio/doks) 项目。仅保留产品首页和 404 页面，不生成 docs、blog、分类、标签、RSS 或搜索索引。内容在构建时生成静态 HTML，主题的 JavaScript 用于明暗切换、移动端导航等交互。
 
@@ -8,7 +8,7 @@
 
 首页的切分示例是静态演示，不加载模型或运行推理。在 `content/_index.md` 的 `reader-demo` shortcode 内用 `｜` 指定示意断点；构建时生成分隔线，按钮只控制这些标记的显示和隐藏。没有 JavaScript 时仍显示静态示例。
 
-首页副标题 `lead` 和三句宣传文案 `slogans` 也用 `｜` 指定固定断点，构建时由 `layouts/_partials/reader-copy.html` 转为与演示相同的红色分隔线，不显示字面量竖线，也不运行模型。每个语意块优先保持完整，分隔线随前一块一起换行，避免单独落在行首。演示按钮只控制演示段落，副标题和宣传文案始终显示分隔线。
+首页主标题 `headline`、副标题 `lead` 和三句宣传文案 `slogans` 也用 `｜` 指定固定断点，构建时由 `layouts/_partials/reader-copy.html` 转为与演示相同的红色分隔线，不显示字面量竖线，也不运行模型。每个语意块优先保持完整，分隔线随前一块一起换行，避免单独落在行首。演示按钮只控制演示段落，标题和宣传文案始终显示分隔线。`title` 和 `seo.title` 保留不带分隔标记的纯文本，供页面元信息使用。
 
 `slogans` 列表每项是一句完整文案。首页模板将它们放在演示下方的独立区块，逐行以大字显示，并适配窄屏换行；无需在正文中使用 Markdown 标题来控制外观。
 
@@ -43,8 +43,10 @@ npm --prefix site run build
 ## 发布前配置
 
 - `config/_default/hugo.toml` 的 `baseURL`：把 `https://example.org/` 替换为正式地址，包含协议、部署子路径（如有）和末尾斜杠。
-- `config/_default/params.toml` 的 `chromeWebStoreURL`：填写商店详情页链接。为空时，首页安装按钮指向 GitHub。
+- `config/_default/params.toml` 的 `chromeWebStoreURL`、`edgeAddonsURL`：分别填写好读的 Chrome、Edge 商店详情页链接。尚未上架时保持为空，首页按钮指向 GitHub 的项目与安装说明。
 - `content/_index.md`：维护首页标题、SEO 标题、描述和正文。
+
+首页始终只有一个安装入口，由少量本地 JavaScript 根据浏览器调整文案与链接：桌面 Chrome 使用 Chrome 商店；桌面 Edge 优先使用 Edge 商店，未配置时使用 Chrome 商店（Edge 支持从其他商店安装扩展）。没有可用商店链接、移动端或未识别的浏览器显示安装说明。识别优先使用 `userAgentData.brands`，再使用 User-Agent，不发送检测请求。禁用 JavaScript 时仍有可用链接，按 Chrome 商店、Edge 商店、项目说明的顺序选择。
 
 也可以在构建时指定地址：
 

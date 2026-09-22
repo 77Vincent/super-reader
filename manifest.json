@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Super Reader - 中文视觉分块阅读",
+  "name": "好读 - 中文视觉分块阅读",
   "version": "0.1.0",
   "minimum_chrome_version": "109",
   "description": "将中文长句按词义边界切成短语块，并用细竖向分隔线辅助阅读。",
@@ -13,7 +13,7 @@
     "128": "icons/on-128.png"
   },
   "action": {
-    "default_title": "Super Reader",
+    "default_title": "好读",
     "default_icon": {
       "16": "icons/off-16.png",
       "32": "icons/off-32.png"

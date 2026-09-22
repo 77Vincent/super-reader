@@ -1,6 +1,6 @@
 # 发布前替换为正式地址；子路径也要包含在内，并保留末尾斜杠。
 baseURL = 'https://example.org/'
-title = '切分阅读 Super Reader'
+title = '好读'
 locale = 'zh-CN'
 defaultContentLanguage = 'zh-cn'
 enableRobotsTXT = true

@@ -14,7 +14,7 @@ const settingsReady = chrome.storage.local.get({ enabled: false }).then((saved) 
 
 function updateAction(tabId, error) {
   // Busy is a click lock, not a visual state.
-  const title = error || (enabled ? "Super Reader（点击关闭）" : "Super Reader（点击开启）");
+  const title = error || (enabled ? "好读（点击关闭）" : "好读（点击开启）");
   const icon = enabled ? "on" : "off";
   return Promise.all([
     chrome.action.setIcon({ tabId, path: {

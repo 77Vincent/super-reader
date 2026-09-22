@@ -1,8 +1,9 @@
-title = '切分阅读 Super Reader'
-description = '切分阅读 Super Reader 是一款中文阅读辅助 Chrome 扩展，使用本地神经网络为网页长句添加分块标记，让中文长句更容易读。'
+title = '好读'
+description = '好读是一款中文阅读辅助浏览器扩展，使用本地神经网络为网页长句添加分隔线，让中文更好读。支持 Chrome 和 Edge。'
 repositoryURL = 'https://github.com/77Vincent/super-reader'
 chromeWebStoreURL = ''
-footer = '切分阅读 · Super Reader'
+edgeAddonsURL = ''
+footer = '好读'
 mainSections = []
 math = false
 
@@ -45,7 +46,7 @@ math = false
 
 [seo.schemas]
   type = 'Organization'
-  name = 'Super Reader'
+  name = '好读'
   logo = 'favicon.png'
   sameAs = ['https://github.com/77Vincent/super-reader']
   article = []

@@ -1,4 +1,4 @@
-# Super Reader
+# 好读
 
 用于梳理核心流程的最小 Chrome 中文阅读辅助扩展。只有一个全局工具栏开关，保存在本地，刷新页面或重启浏览器后仍保留。页面在获得焦点时应用开关，后台标签页不会因开关变化而收到消息或开始处理。直接加载源码即可运行，不需要安装依赖或构建。
 
@@ -151,7 +151,7 @@ writer 记录每次切分后的文本值及文本、标记节点的顺序。下�
 ## 安装和验证
 
 1. 在 `chrome://extensions/` 开启开发者模式，加载本目录。
-2. 打开普通网页，点击 Super Reader 工具栏按钮或按 Shift + Option + R（macOS）。开启时显示彩色 S 图标，关闭时显示灰色版本，不显示 `ON` 标签。处理中保持相同外观和标题，点击不响应、不排队；`ERR` 表示失败，悬停可看错误。图标通过 [Chrome action API](https://developer.chrome.com/docs/extensions/reference/api/action#icon) 切换。
+2. 打开普通网页，点击好读工具栏按钮或按 Shift + Option + R（macOS）。开启时显示彩色 S 图标，关闭时显示灰色版本，不显示 `ON` 标签。处理中保持相同外观和标题，点击不响应、不排队；`ERR` 表示失败，悬停可看错误。图标通过 [Chrome action API](https://developer.chrome.com/docs/extensions/reference/api/action#icon) 切换。
 3. 切到其他普通网页会沿用全局开关；切回已处理页面不会重复处理。刷新当前页面也会沿用开关。
 4. 处理完成后再次点击全局关闭。后台标签页不会收到通知，下次聚焦时才清理。使用本地文件时，需要开启扩展的“允许访问文件网址”。
 
