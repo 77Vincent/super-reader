@@ -96,7 +96,7 @@
     assert(p.firstChild === divider, "did not reproduce the leading divider");
     processInput = async (texts) => texts.map(() => []);
     await until(() => inputs.length === 2 && !reader.status().busy, "title edit did not trigger a refresh");
-    assert(JSON.stringify(inputs[1]) === JSON.stringify([title]), "did not reread the whole current title");
+    assert(JSON.stringify(inputs[1]) === JSON.stringify(["我的数学家朋友集体破防"]), "new prefix was not read independently of the adopted fragment");
     assert(markers(p).length === 0 && p.textContent === title, "stale divider or changed title remains");
     assert(markers(other)[0] === stableMarker, "unrelated markers were replaced");
     const count = states.length;
@@ -104,16 +104,16 @@
     assert(states.length === count, "cleanup caused a mutation feedback loop");
   });
 
-  test("clearing the prefix of a marked shadow text removes its leading divider", async () => {
+  test("clearing a shadow anchor discards all old derived text", async () => {
     const root = shadow();
     const p = paragraph(root);
     await enable();
-    const remaining = p.lastChild.nodeValue;
+    const anchor = p.firstChild;
     processInput = async (texts) => texts.map(() => []);
     p.firstChild.nodeValue = "";
-    await until(() => inputs.length === 2 && !reader.status().busy, "empty prefix was ignored");
-    assert(inputs[1][0] === remaining && markers(p).length === 0, "stale shadow split survived");
-    assert(p.textContent === remaining, "cleanup restored obsolete text");
+    await until(() => markers(p).length === 0 && !reader.status().busy, "empty anchor was ignored");
+    assert(inputs.length === 1, "old tail was incorrectly sent for inference");
+    assert(p.textContent === "" && p.childNodes.length === 1 && p.firstChild === anchor, "clearing did not preserve the empty anchor");
   });
 
   test("nested comments render with their own stylesheet and fully restore on disable", async () => {
@@ -207,10 +207,9 @@
     const unchangedFragment = p.firstChild;
     const changedText = "直接修改现有文本节点的评论";
     unchangedFragment.nodeValue = changedText;
-    const currentText = p.textContent;
     await until(() => inputs.length === 3 && !reader.status().busy, "characterData change was missed");
-    assert(inputs[2][0] === currentText, "current text was not captured intact after clearing old splits");
-    assert(p.textContent === currentText && markers(p).length === 1, "old split or changed text remains");
+    assert(inputs[2][0] === changedText, "old derived text contaminated the new input");
+    assert(p.textContent === changedText && p.firstChild === unchangedFragment && markers(p).length === 1, "old tail remains or original anchor was replaced");
     await delay(450);
     assert(inputs.length === 3, "comment updates kept repeating");
   });
@@ -219,19 +218,66 @@
     const root = shadow();
     const p = paragraph(root);
     const updated = "页面观察到标记后自行更新的评论文字";
-    let currentText;
     const pageObserver = new MutationObserver(() => {
       pageObserver.disconnect();
       p.firstChild.nodeValue = updated;
-      currentText = p.textContent;
     });
     pageObserver.observe(p, { childList: true });
     try {
       await enable();
       await until(() => inputs.length === 2 && !reader.status().busy, "page update was incorrectly remembered as processed");
-      assert(inputs[1][0] === currentText, "current text was not processed intact after clearing old splits");
-      assert(p.textContent === currentText && markers(p).length === 1, "page content or split count changed");
+      assert(inputs[1][0] === updated, "old derived text contaminated the observer's update");
+      assert(p.textContent === updated && markers(p).length === 1, "page content or split count changed");
     } finally { pageObserver.disconnect(); }
+  });
+
+  test("same-value anchor writes remove old tails in ordinary and shadow DOM", async () => {
+    const ordinary = paragraph(fixture, "普通页面原始文字");
+    const nested = paragraph(shadow(), "影子根中原始文字");
+    const anchors = [ordinary.firstChild, nested.firstChild];
+    await enable();
+    processInput = async (texts) => texts.map(() => []);
+    anchors.forEach((anchor) => { anchor.nodeValue = anchor.nodeValue; });
+    await until(() => inputs.length === 2 && !reader.status().busy, "same-value writes were not tracked");
+    assert(JSON.stringify(inputs[1]) === JSON.stringify(["普通", "影子"]), "same-value updates retained stale tails");
+    [ordinary, nested].forEach((p, index) => {
+      assert(p.childNodes.length === 1 && p.firstChild === anchors[index], "anchor identity changed");
+    });
+  });
+
+  test("OFF flushes same-value writes before disconnecting the content observer", async () => {
+    const p = paragraph(shadow(), "立即关闭之前原始文字");
+    const anchor = p.firstChild;
+    await enable();
+    anchor.nodeValue = "立即";
+    reader.toggle(false); // Same task: the browser has not delivered the mutation yet.
+    assert(p.childNodes.length === 1 && p.firstChild === anchor && p.textContent === "立即", "OFF restored an obsolete tail");
+  });
+
+  test("unwrite retains separate adjacent Text nodes and empty anchors", async () => {
+    const p = paragraph(shadow(), "第一个独立原始节点");
+    const first = p.firstChild;
+    const empty = document.createTextNode("");
+    const second = document.createTextNode("第二个独立原始节点");
+    p.append(empty, second);
+    await enable();
+    reader.toggle(false);
+    assert(p.childNodes.length === 3 && p.childNodes[0] === first && p.childNodes[1] === empty && p.childNodes[2] === second, "original node identities or boundaries were lost");
+    assert(first.nodeValue === "第一个独立原始节点" && second.nodeValue === "第二个独立原始节点", "original text was not restored");
+  });
+
+  test("page-adopted derived text is preserved and paused until another edit", async () => {
+    const p = paragraph(shadow(), "原文里的后半段不能被错误删除");
+    await enable();
+    const anchor = p.firstChild;
+    const tail = p.lastChild;
+    tail.nodeValue = "网页接管后的新文字";
+    await until(() => markers(p).length === 0 && !reader.status().busy, "conflicted markers were not cleared");
+    assert(p.childNodes.length === 2 && p.firstChild === anchor && p.lastChild === tail, "adopted fragment was removed or merged");
+    assert(p.textContent === "原文网页接管后的新文字" && inputs.length === 1, "conflicted text was changed or immediately split again");
+    tail.nodeValue = "再次更新后的独立文字";
+    await until(() => inputs.length === 2 && !reader.status().busy, "later page edit did not resume processing");
+    assert(inputs[1][0] === "再次更新后的独立文字", "wrong resumed text");
   });
 
   test("content changes during inference wait and coalesce into the latest comment", async () => {

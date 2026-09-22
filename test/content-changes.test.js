@@ -4,7 +4,7 @@ const { readFileSync } = require("node:fs");
 const { join } = require("node:path");
 const vm = require("node:vm");
 
-function setup() {
+function setup(markDirty = () => false) {
   let observer;
   let notifications = 0;
   const element = (tag = "div", parent = null) => ({
@@ -36,7 +36,7 @@ function setup() {
     if (root.shadowRoot) yield* walk(root.shadowRoot, skip);
     for (const child of root.childNodes || []) yield* walk(child, skip);
   };
-  const changes = context.SuperReader.createContentChanges(document);
+  const changes = context.SuperReader.createContentChanges(document, markDirty);
   const stop = changes.watch(() => { notifications += 1; });
   const mutation = (target, addedNodes = [], removedNodes = []) => ({ type: "childList", target, addedNodes, removedNodes });
   return { changes, stop, observer, html, element, text, mutation, count: () => notifications };
@@ -92,6 +92,29 @@ test("emptying Chinese text or removing only a marker still requests reconciliat
   p.observer.deliver();
   assert.equal(p.count(), 2);
   p.stop();
+});
+
+test("group tracking sees filtered records and is flushed before suppression and shutdown", () => {
+  const batches = [];
+  const p = setup((records) => {
+    if (records.length) batches.push(records);
+    return records.length > 0;
+  });
+  const record = { type: "characterData", target: p.text("1234", p.html), oldValue: "1234" };
+  p.observer.queue(record);
+  p.observer.deliver();
+  assert.equal(p.count(), 1, "a dirty group bypasses the Chinese-content filter");
+  p.observer.queue(record);
+  p.changes.withoutObservation(() => {
+    assert.equal(batches.length, 2, "pending page edits reach group tracking before writes");
+    p.observer.queue(record);
+  });
+  p.observer.deliver();
+  assert.equal(batches.length, 2, "plugin writes must not reach group tracking");
+  p.observer.queue(record);
+  p.stop();
+  assert.equal(batches.length, 3, "OFF must not discard queued page edits");
+  assert.equal(p.observer.targets.size, 0);
 });
 
 test("new shadow hosts request a read; discovered roots are observed and detached roots are released", () => {

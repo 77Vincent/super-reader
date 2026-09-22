@@ -71,11 +71,14 @@ frontend/dom-tree.js → frontend/viewport.js → frontend/visibility.js → fro
 
 ```js
 const adapter = SuperReader.createReaderAdapter();
-const changes = SuperReader.createContentChanges(document);
+const changes = SuperReader.createContentChanges(document, SuperReader.markDirtySources);
 const reader = SuperReader.createReader({
   read: () => {
-    changes.withoutObservation(() =>
-      SuperReader.forgetProcessedText(SuperReader.removeStaleMarkers()));
+    changes.withoutObservation(() => {
+      const { forgotten, preserved } = SuperReader.removeStaleMarkers();
+      SuperReader.forgetProcessedText(forgotten);
+      SuperReader.rememberProcessedText(preserved);
+    });
     return SuperReader.read(changes.observeRoot);
   },
   process: adapter.process,
@@ -134,17 +137,19 @@ Chrome 的推理消息路径：
 
 `visibility.js` 判断分支是否应排除，并计算视口与祖先滚动容器的矩形交集；`viewport.js` 捕获视口尺寸。对应的独立测试位于 `test/visibility.test.js` 和 `test/viewport.test.js`，`test/dom-read.test.js` 验证分支跳过、整节点选择和快照行为。
 
-写入前检查节点连接、父节点和完整原文。分隔位置从后往前写入，原有标签与文本保留。writer 只返回成功处理的文本片段，由 reader 调用 `remember()` 记录；没有分隔点的节点也会记录，过期快照跳过的节点不会记录。后续读取跳过未变化的已处理节点，避免重叠视口重复推理或插入重复标记；空快照不调用后端。关闭时移除标记、合并相邻文本节点并清空已处理记录，再次开启会重新处理。处理记录使用 `WeakMap`。
+写入前检查节点连接、父节点和完整原文。分隔位置从后往前写入，原有标签与文本保留。writer 只返回成功处理的文本片段，由 reader 调用 `remember()` 记录；没有分隔点的节点也会记录，过期快照跳过的节点不会记录。后续读取跳过未变化的已处理节点，避免重叠视口重复推理或插入重复标记；空快照不调用后端。关闭时按原始文本节点分组撤销写入并清空已处理记录，再次开启会重新处理。处理记录使用 `WeakMap`。
 
-writer 记录每次切分后的文本值及文本、标记节点的顺序。下次读取前，装配层先检查这些记录；页面修改、移除或重排节点后，会移除受影响父节点里的旧标记，合并其当前相邻文本，并清除对应处理记录，再按当前文字重新推理。未变化的其他父节点保留标记。清理与写入一样暂停内容观察，避免触发循环；`read()` 本身仍然只读。这可避免动态标题更新后，旧分隔线残留在句首。
+writer 使用现有 `markedSources` 集合保存每个原始文本节点的切分记录：`sequence[0]` 是原节点 A，其余文本是衍生片段，记录同时包含分隔标记及切分后的文本值。页面对成员的文字写入会标记 dirty，即使赋值与当前片段相同；单独移走再放回文本成员也会留下移动记录。插件自己的同步写入不参与标脏。
 
-当前 writer 仍用 `splitText()` 拆分原始文本节点。若页面保留原节点引用，并在渲染后把该节点的 `nodeValue` 替换成整段新文字，旧的后续片段仍可能留在 DOM 中，造成新旧内容混合。清理旧标记只保留页面当前的文字，不猜测哪些文字应删除；彻底避免这种冲突仍需要调整标记渲染方式。
+自动刷新和关闭共用按组清理规则：整组文字未改且文本成员完整、有序时，`unwrite` 把原文恢复到同一个 A，再删除衍生片段和 divider；A 被改写且衍生片段未被改动时，`discard` 保留 A 的新值，只删除旧衍生内容。A 被删除且剩余片段仍完整、未被改动时，也丢弃旧片段，不重新插回 A。只有 divider 被移除或移动时，仍可还原完整文本组。任何路径都不对父元素调用 `normalize()`，同一父元素下的其他原始文本节点保持独立。
+
+兼容约定是：页面写入 A 的新值代表整条原始文本的新完整内容，空字符串代表整条清空；仅修改原节点前半段的页面不适用此约定。若页面修改了衍生片段、独立移动了文本成员或插入节点打断了组内结构，则只移除该组 divider，保留现存文字及节点身份。装配层将这些仍连接的冲突文本记为已处理，暂停插线，直到其文字或父节点再次变化；关闭后重新开启也会重新评估。`removeStaleMarkers()` 返回待清除处理记录的 `forgotten` 和需要暂停的 `preserved`，装配层先清除、再记住；`read()` 本身仍然只读。行内 `splitText()` 仍会改变网页 DOM，这些规则不保证兼容所有基于子节点位置的页面操作。
 
 `processed-text.js` 的记录是弱引用，writer 保存的切分记录、标记和 shadow 样式则是强引用。过期切分记录和标记在下一次读取前释放；shadow 样式保留到关闭或刷新页面。
 
-`content-changes.js` 观察文档及已发现的 open shadow root 的 `childList` 和 `characterData`。含中文的文本新增、移除、替换和修改会请求刷新；旧值含中文但新值被清空、页面自行移除分隔标记、新增带 open shadow root 的宿主，也会请求读取。脚本、样式、代码、控件和可编辑区域以及纯数字计时变化不触发内容刷新。不观察属性：尺寸不变的样式、可见性或 slot 分配变化仍需等下一次视口事件。只在 shadow root 内传播的滚动事件也不会触发刷新。
+`content-changes.js` 观察文档及已发现的 open shadow root 的 `childList` 和 `characterData`。先把页面变化交给 `markDirtySources`，已有切分组的变化会请求清理，包括 ASCII 片段的相同值写入；其余变化仍按中文内容过滤。含中文的文本新增、移除、替换和修改、旧值含中文但新值被清空、页面自行移除分隔标记、新增带 open shadow root 的宿主都会请求读取。未涉及已有分组的脚本、样式、代码、控件、可编辑区域及纯数字计时变化不触发内容刷新。不观察属性：尺寸不变的样式、可见性或 slot 分配变化仍需等下一次视口事件。只在 shadow root 内传播的滚动事件也不会触发刷新。
 
-装配层在同步写入标记期间暂停内容观察，写入前先处理已经排队的页面变化，写入后立即恢复观察，避免标记造成反馈循环；页面随后自行修改 DOM 仍会被捕捉。关闭或失败时断开两种观察器。内容观察器会释放脱离文档的 shadow root。
+装配层在同步写入及清理期间暂停内容观察，操作前先处理已经排队的页面变化，操作后立即恢复观察，避免标记造成反馈循环；页面随后自行修改 DOM 仍会被捕捉。关闭或失败时，先消费尚未送达的页面变化，再断开观察器并按组清理，避免立即关闭时遗漏 dirty 状态。内容观察器会释放脱离文档的 shadow root。
 
 当前处理当前文档的普通 DOM 和 open Shadow DOM；不进入 closed shadow root 或 iframe，不判断遮挡层、CSS 蒙版或任意旋转后的裁剪形状。新 shadow root 在下次读取时发现；如果已存在的宿主稍后才调用 `attachShadow()`，且没有已观察到的 DOM 或尺寸变化，则仍需等下一次视口事件。不能仅凭父元素在屏幕外就跳过整个分支，因为其定位后代仍可能可见；`visibility:hidden` 也可能被后代覆盖。初次发现节点的耗时仍受文档规模和浏览器布局成本影响。
 

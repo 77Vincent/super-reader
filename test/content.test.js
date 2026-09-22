@@ -16,6 +16,7 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false, opte
   const requests = [];
   const states = [];
   const layoutObservers = new Set();
+  let contentObserver;
   let bodyHeight = 600;
 
   class DomNode {
@@ -107,10 +108,13 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false, opte
     defaultView: Object.assign(new EventTarget(), {
       visualViewport: Object.assign(new EventTarget(), { offsetLeft: 0, offsetTop: 0, width: 800, height: 600 }),
       MutationObserver: class {
-        // Mutation delivery is covered by content-changes.test.js and native DOM fixtures.
-        observe() {}
-        disconnect() {}
-        takeRecords() { return []; }
+        // Delivery is driven explicitly here; native fixtures exercise browser delivery.
+        constructor(callback) { this.callback = callback; this.records = []; contentObserver = this; }
+        observe() { this.observing = true; }
+        disconnect() { this.observing = false; this.records = []; }
+        takeRecords() { const records = this.records; this.records = []; return records; }
+        queue(record) { if (this.observing) this.records.push(record); }
+        deliver() { const records = this.takeRecords(); if (records.length) this.callback(records); }
       },
       ResizeObserver: class {
         constructor(callback) { this.callback = callback; }
@@ -161,6 +165,13 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false, opte
       layoutObservers.forEach((observer) => observer.callback());
     },
     async settle() { await new Promise((resolve) => setTimeout(resolve, 220)); await drainPromises(); },
+    edit(node, value) {
+      const oldValue = node.nodeValue;
+      node.nodeValue = value;
+      contentObserver.queue({ type: "characterData", target: node, oldValue });
+    },
+    deliver: () => contentObserver.deliver(),
+    queueMutation: (record) => contentObserver.queue(record),
     text(value, parent = paragraph) { const node = new TextNode(value); parent.append(node); return node; },
     element(tag, parent = paragraph) { const node = new Element(tag); parent.append(node); return node; },
   };
@@ -554,7 +565,7 @@ test("nodes needing no markers are remembered, while changed text is processed a
   page.click();
 });
 
-test("a title update leaving a leading marker is reread intact without disturbing other paragraphs", async () => {
+test("a title rewrite preserves adopted text, removes a leading marker, and leaves other groups intact", async () => {
   const page = createPage("我的数学家朋友集体破防AI又双叒叕来毁灭人类了？", "h1");
   const other = page.element("p", page.document.body);
   page.text(sampleText, other);
@@ -568,11 +579,11 @@ test("a title update leaving a leading marker is reread intact without disturbin
   prefix.remove();
   right.before(prefix);
   assert.equal(page.paragraph.childNodes[0], marker);
-  const currentTitle = page.paragraph.textContent;
+  const currentTitle = "我的数学家朋友集体破防AI又双叒叕来毁灭人类了？";
   page.infer = async (texts) => ({ offsetsByText: texts.map(() => []) });
   page.resize();
   await page.settle();
-  assert.deepEqual(page.requests[1], [currentTitle]);
+  assert.deepEqual(page.requests[1], [prefix.nodeValue], "adopted right fragment is paused; new page text is read independently");
   assert.equal(page.paragraph.querySelectorAll().length, 0);
   assert.equal(page.paragraph.textContent, currentTitle);
   assert.equal(other.querySelectorAll()[0], otherMarker);
@@ -582,37 +593,206 @@ test("a title update leaving a leading marker is reread intact without disturbin
   page.click();
 });
 
-test("changing one fragment invalidates all old cuts in that parent before inference", async () => {
+test("an edited derived fragment pauses its group until a later page edit", async () => {
   const page = createPage();
   page.infer = async (texts) => ({ offsetsByText: texts.map(() => [4, 8]) });
   page.click();
   await page.finish();
   const oldMarkers = page.markers();
-  page.paragraph.childNodes[2].nodeValue = "页面改写后的中间片段";
-  const current = page.paragraph.textContent;
-  page.infer = async () => ({ offsetsByText: [[6]] });
+  const [anchor, , middle, , tail] = page.paragraph.childNodes;
+  middle.nodeValue = "页面改写后的中间片段";
+  const current = sampleText.slice(0, 4) + middle.nodeValue + sampleText.slice(8);
   page.resize();
   await page.settle();
-  assert.deepEqual(page.requests[1], [current]);
-  assert.equal(page.markers().length, 1);
+  assert.equal(page.requests.length, 1, "conflicted fragments are not immediately split again");
+  assert.equal(page.markers().length, 0);
   assert.ok(oldMarkers.every((marker) => !marker.isConnected));
-  assert.equal(page.paragraph.childNodes[0].nodeValue.length, 6);
+  assert.deepEqual(page.paragraph.childNodes, [anchor, middle, tail]);
   assert.equal(page.paragraph.textContent, current);
+  middle.nodeValue = "页面再次修改的独立文字";
+  page.infer = async (texts) => ({ offsetsByText: texts.map(() => []) });
+  page.resize();
+  await page.settle();
+  assert.deepEqual(page.requests[1], ["页面再次修改的独立文字"]);
   page.click();
 });
 
-test("removing all text before a marker reprocesses even an unchanged surviving fragment", async () => {
+test("removing the anchor discards its untouched derived text and markers", async () => {
   const page = createPage();
   page.click();
   await page.finish();
   page.paragraph.childNodes[0].remove();
-  const remaining = page.paragraph.textContent;
   page.infer = async () => ({ offsetsByText: [[]] });
   page.resize();
   await page.settle();
-  assert.deepEqual(page.requests[1], [remaining]);
+  assert.equal(page.requests.length, 1, "old derived text must not become a fresh source");
   assert.equal(page.markers().length, 0);
-  assert.equal(page.paragraph.textContent, remaining);
+  assert.equal(page.paragraph.textContent, "");
+  assert.equal(page.paragraph.childNodes.length, 0);
+  page.click();
+});
+
+test("unwrite preserves adjacent original Text objects, empty nodes, and nested markup", async () => {
+  const page = createPage();
+  const anchor = page.paragraph.childNodes[0];
+  const second = page.text("第二个原始文本节点必须独立保留");
+  const empty = page.text("");
+  const strong = page.element("strong");
+  const nested = page.text("嵌套原始文字也要还原", strong);
+  page.infer = async (texts) => ({ offsetsByText: texts.map(() => [4, 8]) });
+  page.paragraph.normalize = () => { throw new Error("must not normalize page parents"); };
+  for (let iteration = 0; iteration < 2; iteration += 1) {
+    page.click();
+    await page.finish();
+    page.click();
+    assert.deepEqual(page.paragraph.childNodes, [anchor, second, empty, strong]);
+    assert.equal(anchor.nodeValue, sampleText);
+    assert.equal(second.nodeValue, "第二个原始文本节点必须独立保留");
+    assert.deepEqual(strong.childNodes, [nested]);
+    assert.equal(nested.nodeValue, "嵌套原始文字也要还原");
+  }
+});
+
+test("anchor replacement and clearing discard every old tail before rereading", async () => {
+  for (const updated of ["这是新标题", ""]) {
+    const page = createPage("今天我们讨论人工智能", "h1");
+    const anchor = page.paragraph.childNodes[0];
+    page.infer = async (texts) => ({ offsetsByText: texts.map(() => [4, 6]) });
+    page.click();
+    await page.finish();
+    const oldNodes = page.paragraph.childNodes.slice(1);
+    page.infer = async (texts) => ({ offsetsByText: texts.map(() => []) });
+    page.edit(anchor, updated);
+    page.deliver();
+    await page.settle();
+    assert.deepEqual(page.paragraph.childNodes, [anchor]);
+    assert.equal(page.paragraph.textContent, updated);
+    assert.ok(oldNodes.every((node) => !node.isConnected));
+    assert.deepEqual(page.requests.slice(1), updated ? [[updated]] : []);
+    page.click();
+    assert.equal(anchor.nodeValue, updated, "OFF must not resurrect the old source");
+  }
+});
+
+test("same-value anchor writes are dirty even for an ASCII prefix", async () => {
+  const page = createPage("1234后面的中文不应残留");
+  const anchor = page.paragraph.childNodes[0];
+  page.click();
+  await page.finish();
+  page.edit(anchor, "1234");
+  page.deliver();
+  await page.settle();
+  assert.deepEqual(page.paragraph.childNodes, [anchor]);
+  assert.equal(page.paragraph.textContent, "1234");
+  assert.equal(page.requests.length, 1);
+  page.click();
+});
+
+test("OFF consumes queued anchor writes, including writes back to the saved prefix", async () => {
+  for (const intermediate of [null, "中途更新的文字"]) {
+    const page = createPage("今天我们讨论人工智能");
+    const anchor = page.paragraph.childNodes[0];
+    page.click();
+    await page.finish();
+    if (intermediate) page.edit(anchor, intermediate);
+    page.edit(anchor, "今天我们");
+    // No observer delivery or viewport refresh before shutdown.
+    page.click();
+    assert.deepEqual(page.paragraph.childNodes, [anchor]);
+    assert.equal(anchor.nodeValue, "今天我们");
+  }
+});
+
+test("missing or relocated dividers restore only their own text group", async () => {
+  const page = createPage();
+  const anchor = page.paragraph.childNodes[0];
+  const other = page.text("同一个父元素里的另一个独立原文");
+  page.click();
+  await page.finish();
+  const [divider, otherDivider] = page.markers();
+  const destination = page.element("div", page.document.body);
+  destination.append(divider);
+  page.infer = async (texts) => ({ offsetsByText: texts.map(() => []) });
+  page.resize();
+  await page.settle();
+  assert.deepEqual(page.requests[1], [sampleText]);
+  assert.equal(anchor.nodeValue, sampleText);
+  assert.equal(divider.parentNode, null);
+  assert.equal(otherDivider.parentNode, page.paragraph);
+  assert.equal(other.nodeValue, "同一个父");
+  page.click();
+  assert.deepEqual(page.paragraph.childNodes, [anchor, other]);
+  assert.equal(other.nodeValue, "同一个父元素里的另一个独立原文");
+});
+
+test("a same-value write to a derived fragment is treated as page adoption", async () => {
+  const page = createPage();
+  page.click();
+  await page.finish();
+  const [anchor, , tail] = page.paragraph.childNodes;
+  page.edit(tail, tail.nodeValue);
+  page.deliver();
+  await page.settle();
+  assert.deepEqual(page.paragraph.childNodes, [anchor, tail]);
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.paragraph.textContent, sampleText);
+  page.click();
+  assert.deepEqual(page.paragraph.childNodes, [anchor, tail], "adopted text must not be merged on OFF");
+});
+
+test("independent fragment moves preserve page structure and pause the conflicted group", async () => {
+  const page = createPage();
+  page.click();
+  await page.finish();
+  const [anchor, , tail] = page.paragraph.childNodes;
+  const destination = page.element("p", page.document.body);
+  destination.append(tail);
+  page.resize();
+  await page.settle();
+  assert.deepEqual(page.paragraph.childNodes, [anchor]);
+  assert.deepEqual(destination.childNodes, [tail]);
+  assert.equal(page.requests.length, 1);
+  page.click();
+  assert.equal(anchor.nodeValue, sampleText.slice(0, 4));
+  assert.equal(tail.nodeValue, sampleText.slice(4));
+});
+
+test("a fragment moved away and back cannot be mistaken for an untouched group", async () => {
+  const page = createPage();
+  page.click();
+  await page.finish();
+  const [anchor, , tail] = page.paragraph.childNodes;
+  tail.remove();
+  page.paragraph.append(tail);
+  page.queueMutation({ type: "childList", target: page.paragraph, removedNodes: [tail], addedNodes: [] });
+  page.click();
+  assert.deepEqual(page.paragraph.childNodes, [anchor, tail]);
+  assert.equal(page.paragraph.textContent, sampleText);
+});
+
+test("a foreign node inserted inside a group survives cleanup without merging its neighbors", async () => {
+  const page = createPage();
+  page.click();
+  await page.finish();
+  const [anchor, , tail] = page.paragraph.childNodes;
+  const inserted = page.text("页面插入的新文字");
+  inserted.remove();
+  tail.before(inserted);
+  page.click();
+  assert.deepEqual(page.paragraph.childNodes, [anchor, inserted, tail]);
+  assert.equal(page.paragraph.textContent, sampleText.slice(0, 4) + "页面插入的新文字" + sampleText.slice(4));
+});
+
+test("detached intact subtrees can still be unwritten and reused by the page", async () => {
+  const page = createPage();
+  const anchor = page.paragraph.childNodes[0];
+  page.click();
+  await page.finish();
+  page.paragraph.remove();
+  page.resize();
+  await page.settle();
+  assert.deepEqual(page.paragraph.childNodes, [anchor]);
+  assert.equal(anchor.nodeValue, sampleText);
   page.click();
 });
 

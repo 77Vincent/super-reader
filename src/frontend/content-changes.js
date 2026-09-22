@@ -4,7 +4,7 @@
   globalThis.SuperReader ??= {};
 
   /** Detect page text replacement; scheduling and visibility belong to the reader. */
-  globalThis.SuperReader.createContentChanges = function createContentChanges(document) {
+  globalThis.SuperReader.createContentChanges = function createContentChanges(document, markDirty = () => false) {
     const { walkDOM, parentElementAcrossRoots } = globalThis.SuperReader;
     const ignored = "script,style,link,noscript,input,textarea,select,button,code,pre,[contenteditable]:not([contenteditable='false']),.super-reader-divider";
     const options = { subtree: true, childList: true, characterData: true, characterDataOldValue: true };
@@ -38,7 +38,10 @@
     }
 
     function handleChanges(records) {
-      const changed = records.some((record) => !isIgnored(record.target) && (
+      // Forward all page records before filtering ordinary content refreshes.
+      // An existing group can be edited to ASCII, emptied, or independently moved.
+      const groupsChanged = markDirty(records);
+      const changed = groupsChanged || records.some((record) => !isIgnored(record.target) && (
         record.type === "characterData" ? hasContent(record.target) || /\p{Script=Han}/u.test(record.oldValue || "") :
           [...record.addedNodes, ...record.removedNodes].some((node) =>
             hasContent(node) || (node.nodeType === 1 && node.matches(".super-reader-divider")))
@@ -62,6 +65,8 @@
       observer = new document.defaultView.MutationObserver(handleChanges);
       observeRoot(document.documentElement);
       return () => {
+        // Preserve writes queued immediately before OFF, before disconnect drops them.
+        handleChanges(observer.takeRecords());
         observer.disconnect();
         observer = null;
         notify = null;

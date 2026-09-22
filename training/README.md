@@ -442,6 +442,20 @@ the validation selection score over its inherited weights. **Keep the existing
 192-channel production model.** Setup, results, limitations and local artifact
 paths are preserved in the experiment report.
 
+The [lower-learning-rate pilot](LEARNING_RATE_COMPARISON.md) reuses that frozen
+192-channel control and tests 0.0001 and 0.00003 with identical training samples,
+initial weights and optimizer settings. It selects on full validation before
+testing the selected candidate. Run or resume with
+`python3 training/run_learning_rate_comparison.py [--resume]`.
+
+The completed [16/20-layer comparison](DEPTH_COMPARISON.md) reused the 16-layer,
+0.00003 control and trained only a 20-layer candidate on the same 10,015,214 pairs.
+The 20-layer endpoint gained 0.01035 percentage points on full validation and
+0.00148 on full test (38 additional correct labels), with 22.8% longer JS inference.
+Longer inputs improved slightly more, but the measured benefit remains too small
+to justify adopting 20 layers. Keep 16 layers. The report preserves the protocol,
+context-coverage breakdown and local reproduction/resume commands.
+
 The [receptive-field analysis](RECEPTIVE_FIELD_ANALYSIS.md) scans all 74,121,940
 training examples and stratifies the complete epoch-2 validation results by
 context coverage. It records the coverage expected at larger CNN depths and the

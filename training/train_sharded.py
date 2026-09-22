@@ -75,6 +75,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--max-shards", type=int, default=0)
     parser.add_argument("--validation-limit", type=int, default=0)
     parser.add_argument("--test-limit", type=int, default=0)
+    parser.add_argument("--defer-test", action="store_true",
+                        help="Save endpoint validation and stop before test evaluation; resume without this flag after selection")
     parser.add_argument("--channels", type=int, default=128)
     parser.add_argument("--residual-blocks", type=int, default=4)
     parser.add_argument("--learning-rate", type=float, default=2e-3)
@@ -688,6 +690,42 @@ def main() -> None:
 
     if best_state is None:
         raise RuntimeError("Training did not produce a best checkpoint")
+    if args.defer_test:
+        # This branch is deliberately after all optimization and checkpointing.
+        # Re-evaluate the final endpoint so a resume after the last checkpoint
+        # produces the same report even when the training loop is skipped.
+        try:
+            endpoint_validation = evaluate(
+                model, validation_records, args.batch_size, args.max_tokens_per_batch,
+                should_stop=lambda: stop["requested"],
+            )
+        except TrainingStopRequested:
+            print(f"stopped during endpoint validation; checkpoint={state_path}", flush=True)
+            return
+        endpoint_score, endpoint_macro = selection_score(endpoint_validation, args.selection_macro_weight)
+        report = {
+            "stage": "validation-complete-test-deferred",
+            "configuration": configuration,
+            "data_identity": data_identity,
+            "data_sizes": {"train": manifest["statistics"]["samples"], "validation": len(validation_records)},
+            "parameter_count": sum(parameter.numel() for parameter in model.parameters()),
+            "initialization": initialization,
+            "history": history,
+            "endpoint_validation": endpoint_validation,
+            "endpoint_selection_score": endpoint_score,
+            "endpoint_macro_accuracy": endpoint_macro,
+            "best_epoch": best_epoch,
+            "best_selection_score": best_validation,
+            "checkpoint": str(state_path),
+            "test_evaluated": False,
+        }
+        destination = artifact_dir / "validation-only.json"
+        temporary = destination.with_suffix(".tmp")
+        temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        temporary.replace(destination)
+        print(json.dumps({"validation_report": str(destination), "selection_score": endpoint_score,
+                          "test_evaluated": False}), flush=True)
+        return
     restore_state(model, best_state)
     save_browser_compatible_checkpoint(model, browser_checkpoint_path)
     output_vocabulary_path.write_text(

@@ -7,7 +7,10 @@ import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 
 const run = process.argv[2];
-if (!run) throw new Error('Usage: node benchmark_width.mjs RUN_DIRECTORY');
+if (!run) throw new Error('Usage: node benchmark_width.mjs RUN_DIRECTORY [--depth]');
+const depthComparison = process.argv.includes('--depth');
+const arms = depthComparison ? [16, 20] : [192, 256];
+const folderFor = arm => join(run, `${depthComparison ? 'layers' : 'ch'}${arm}/final`);
 const implementation = readFileSync(join(run, 'source/src/backend/inference.js'), 'utf8');
 const backends = new Map();
 const softmax = scores => {
@@ -17,13 +20,14 @@ const softmax = scores => {
   return e.map(value => value / total);
 };
 const allCases = new Map();
-for (const width of [192, 256]) {
-  const folder = join(run, `ch${width}/final`);
+for (const width of arms) {
+  const folder = folderFor(width);
   const context = vm.createContext({ Buffer });
   vm.runInContext(readFileSync(join(folder, 'boundary-model-data.js'), 'utf8'), context);
   vm.runInContext(implementation, context);
   const api = context.SuperReaderModelBackend;
-  assert.equal(api.getModelInfo().channels, width);
+  assert.equal(api.getModelInfo().channels, depthComparison ? 192 : width);
+  if (depthComparison) assert.equal(api.getModelInfo().residualBlocks, width / 2);
   backends.set(width, api);
   const cases = JSON.parse(readFileSync(join(folder, 'reference.json'), 'utf8')).cases;
   allCases.set(width, cases);
@@ -36,14 +40,14 @@ for (const width of [192, 256]) {
     scores.forEach((score, i) => assert.ok(Math.abs(score - example.scores[i]) < 2e-4 + 2e-5 * Math.abs(example.scores[i])));
   }
 }
-assert.deepEqual(allCases.get(192).map(c => c.text), allCases.get(256).map(c => c.text));
-const cases = allCases.get(192).map(c => ({ text: c.text, tokens: Array.from(c.text) }));
+assert.deepEqual(allCases.get(arms[0]).map(c => c.text), allCases.get(arms[1]).map(c => c.text));
+const cases = allCases.get(arms[0]).map(c => ({ text: c.text, tokens: Array.from(c.text) }));
 for (let warmup = 0; warmup < 3; warmup++) {
   for (const api of backends.values()) for (const example of cases) api.scoreTokens(example.tokens);
 }
-const times = { 192: cases.map(() => []), 256: cases.map(() => []) };
+const times = Object.fromEntries(arms.map(arm => [arm, cases.map(() => [])]));
 for (let repetition = 0; repetition < 8; repetition++) {
-  for (const width of repetition % 2 ? [256, 192] : [192, 256]) {
+  for (const width of repetition % 2 ? [...arms].reverse() : arms) {
     cases.forEach((example, i) => {
       const start = performance.now();
       backends.get(width).scoreTokens(example.tokens);
@@ -59,8 +63,8 @@ const result = {
   runtime: process.version, platform: `${process.platform}/${process.arch}`,
   method: 'unchanged JS backend in isolated V8 contexts, 3 warmups, 8 alternating-order repetitions; excludes parsing, rendering and model load',
   metal_reference_checks_passed: true,
-  arms: Object.fromEntries([192, 256].map(width => [width, {
-    model_bytes: statSync(join(run, `ch${width}/final/boundary-model-data.js`)).size,
+  arms: Object.fromEntries(arms.map(width => [width, {
+    model_bytes: statSync(join(folderFor(width), 'boundary-model-data.js')).size,
     suite_median_ms: median(Array.from({ length: 8 }, (_, r) => times[width].reduce((sum, row) => sum + row[r], 0))),
     cases: cases.map((example, i) => ({ text: example.text, tokens: example.tokens.length, median_ms: median(times[width][i]) })),
   }])),
