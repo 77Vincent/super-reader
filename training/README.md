@@ -433,6 +433,12 @@ checkpoint or establish the accuracy of recursive child decisions.
 
 ## Verification and small experiments
 
+The [192/256-channel continuation pilot](WIDTH_COMPARISON.md) compares the
+current best CNN and a function-preserving width expansion on the same
+10,015,214 training samples and complete fixed validation/test sets. Run or
+resume it with `python3 training/run_width_comparison.py [--resume]`; outputs
+stay separate from the production backend.
+
 The [receptive-field analysis](RECEPTIVE_FIELD_ANALYSIS.md) scans all 74,121,940
 training examples and stratifies the complete epoch-2 validation results by
 context coverage. It records the coverage expected at larger CNN depths and the
