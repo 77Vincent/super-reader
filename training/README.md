@@ -433,11 +433,14 @@ checkpoint or establish the accuracy of recursive child decisions.
 
 ## Verification and small experiments
 
-The [192/256-channel continuation pilot](WIDTH_COMPARISON.md) compares the
-current best CNN and a function-preserving width expansion on the same
-10,015,214 training samples and complete fixed validation/test sets. Run or
-resume it with `python3 training/run_width_comparison.py [--resume]`; outputs
-stay separate from the production backend.
+The completed [192/256-channel continuation pilot](WIDTH_COMPARISON.md)
+(2026-09-22) used the same 10,015,214 training samples and complete fixed
+validation/test sets. The 256-channel endpoint gained only 0.0436 percentage
+points in test accuracy over the equally trained 192-channel endpoint, with
+57.7% more parameters and 52.1% longer JS inference time. Neither arm improved
+the validation selection score over its inherited weights. **Keep the existing
+192-channel production model.** Setup, results, limitations and local artifact
+paths are preserved in the experiment report.
 
 The [receptive-field analysis](RECEPTIVE_FIELD_ANALYSIS.md) scans all 74,121,940
 training examples and stratifies the complete epoch-2 validation results by

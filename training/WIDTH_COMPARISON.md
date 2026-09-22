@@ -1,14 +1,66 @@
 # 192 versus 256 channels: continuation pilot
 
-The September 22 pilot tests whether widening the current best CNN improves
-boundary prediction enough to justify its extra training and inference cost.
-The production bundle is not changed by this experiment.
+The September 22, 2026 pilot completed at 15:26 China Standard Time
+(07:26 UTC). **Keep the production model at 192 channels.** Widening to 256
+channels produced only a small accuracy gain over the equally trained
+192-channel arm, with substantially higher training and inference cost.
+Neither arm improved on its inherited checkpoint under the existing validation
+selection score. The production bundle was not changed by this experiment.
 
 Both arms start with the function learned by the completed 200-million-web
 continuation (`chinese-line-web-200m-16conv-v7-20260920/epoch-1-backend`). They
 keep 16 convolutions, kernel size 3, 8 residual blocks, the same 8,192-character
 vocabulary and 34-character gap receptive field. The parameter counts are
 3,496,329 and 5,513,737, an increase of 57.7%.
+
+## Completed results and decision
+
+Both arms completed one epoch over the same **10,015,214 training pairs**,
+followed by the full **2,522,347 validation** and **2,569,996 test** pairs.
+The results below compare the final endpoints after equal optimizer updates,
+not each arm's validation-selected checkpoint.
+
+| Metric | 192 channels | 256 channels |
+| --- | ---: | ---: |
+| Parameters | 3,496,329 | 5,513,737 |
+| Validation top-1 accuracy | 88.7894% | 88.8206% |
+| Test top-1 accuracy | 88.9166% | 88.9601% |
+| Validation macro-domain accuracy | 88.5692% | 88.6339% |
+| Validation selection score before training | 88.8306% | 88.8440% |
+| Validation selection score after training | 88.6793% | 88.7272% |
+| Pure training time | 57.5 minutes | 79.9 minutes |
+| Training pairs per second | 2,902 | 2,089 |
+| Exported model size, uncompressed bytes | 18,740,854 | 29,500,367 |
+| JS inference suite median | 575.9 ms | 876.0 ms |
+
+The 256-channel endpoint gained **0.0312 percentage points on validation**
+and **0.0436 percentage points on test** over the 192-channel endpoint.
+Parameters increased **57.7%**, pure training time **38.9%**, and inference
+suite time **52.1%**. These accuracies measure recovery of the single labeled
+gap; they are not the precision of the backend's 50% confidence threshold or
+the quality of all recursive reading chunks.
+
+Checkpoint selection uses `0.5 * overall_accuracy + 0.5 * macro_domain_accuracy`.
+Both arms retained **epoch 0**, meaning the inherited trained weights before
+this pilot, because their final selection scores were lower. Thus the small
+overall-accuracy gain did not establish a better checkpoint under the existing
+criterion. Test results did not participate in checkpoint selection.
+
+**Decision: retain the existing 192-channel production model; this pilot does
+not justify switching to 256 channels.** This is a one-epoch continuation on
+previously seen data, so it does not prove that 192 channels are sufficient for
+all future data or that a wider model could never benefit from longer training.
+
+The inference measurements use the same exported backend in Node v25.9.0 on
+macOS arm64, with 3 warmups and 8 alternating-order repetitions. They exclude
+model loading, DOM work and rendering. Both exports passed the Metal-reference
+checks; these are not end-to-end Chrome timings.
+
+Source artifacts, retained locally under
+`training/artifacts/width-192-vs-256-10m-v7-20260922/`:
+`comparison.json`, `status.json`, `browser-benchmark.json`, and each arm's
+`smoke-metrics.json` and `final/smoke-metrics.json`. This document preserves the
+decision and key measurements in Git even though generated artifacts are ignored.
 
 ## Fixed data and training
 
