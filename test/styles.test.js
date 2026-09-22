@@ -32,7 +32,3 @@ test("divider appearance lives in CSS without runtime style configuration", () =
     assert.doesNotMatch(read(path), /dividerWidth|dividerColor|style\.setProperty/u);
   }
 });
-
-test("the sample article has no second reader implementation or settings UI", () => {
-  assert.doesNotMatch(read("demo.html"), /<script|<input|<select/u);
-});

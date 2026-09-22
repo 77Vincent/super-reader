@@ -459,7 +459,8 @@ A separate [recursive >90% experiment](RECURSIVE_CONFIDENCE_EXPERIMENT.md)
 compares fresh child inference with fixed original probabilities. Its
 `scoringStrategy: "recursive-model"` option is opt-in; the default caches original
 logits and recursively recomputes softmax. Reproduce the historical strategy comparison with
-`node training/compare_recursive_confidence.mjs`.
+`node training/compare_recursive_confidence.mjs`. The article examples are fixed
+text-node snapshots in the script, independent of the product site's copy.
 
 ```bash
 npm test

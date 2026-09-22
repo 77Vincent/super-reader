@@ -15,7 +15,6 @@ const backend = require("../src/backend/inference.js");
 const chunker = require("../src/backend/chunker.js");
 const source = readFileSync(resolve(root, "src/backend/chunker.js"), "utf8");
 const casesBytes = readFileSync(resolve(root, "training/evaluation-cases.json"));
-const demo = readFileSync(resolve(root, "demo.html"), "utf8");
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const cases = JSON.parse(casesBytes);
 cases.push(
@@ -29,10 +28,12 @@ cases.push(
   { id: "reported-database", texts: ["币安数据库里的一条记录（IOU/欠条）"] },
   { id: "reported-child", texts: ["能够更加轻松地找到句子中的重点"] },
 );
-// This demo has simple paragraph/strong markup; keep its text nodes separate.
-for (const [index, match] of [...demo.matchAll(/<p>([\s\S]*?)<\/p>/gu)].entries()) {
-  cases.push({ id: `current-demo-${index + 1}`, texts: match[1].split(/<[^>]*>/u).filter((t) => /\p{Script=Han}/u.test(t)) });
-}
+// Fixed examples from the retired temporary page; retain IDs and inline text-node boundaries.
+cases.push(
+  { id: "current-demo-1", texts: ["过长的的句子会破坏阅读体验。请感受本文里断句的出现是否让你的阅读更轻松。"] },
+  { id: "current-demo-2", texts: ["好读", "使用神经网络，在长句中找到符合人类习惯的断句点，把长句切成更短的语意块提升阅读效率。"] },
+  { id: "current-demo-3", texts: ["即便是完全符合语法的通顺的但没有任何标点断句的句子模型依然能够找到恰当的切分点。"] },
+);
 const methods = {
   once: { minConfidence: .9, scoringStrategy: "fixed" },
   recursive: { minConfidence: .9, scoringStrategy: "recursive-model" },
@@ -121,7 +122,7 @@ function summarize(selectedRows, count) {
 assert.equal(readFileSync(resolve(root, "src/backend/chunker.js"), "utf8"), source);
 const report = { createdAt: new Date().toISOString(), passed: true, model: backend.getModelInfo(),
   bundleSha256: sha(readFileSync(resolve(root, "src/boundary-model-data.js"))), chunkerSha256: sha(source),
-  sourceCasesSha256: sha(casesBytes), demoSha256: sha(demo), completeInputSha256: sha(JSON.stringify(cases)),
+  sourceCasesSha256: sha(casesBytes), completeInputSha256: sha(JSON.stringify(cases)),
   settings: { threshold: .9, warmups, rounds, order: "alternating AB/BA and forward/reverse cases", protections: "fixed from original clause" },
   environment: { node: process.version, platform: platform(), arch: arch(), cpu: cpus()[0].model, trainingRunning: true },
   scope: "Warm Node backend processing; no DOM, Chrome messaging, human segmentation labels or new full-validation inference.",

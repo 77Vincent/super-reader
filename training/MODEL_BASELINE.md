@@ -112,7 +112,7 @@ validation accuracy from 81.99% to 81.28% and macro accuracy from 78.12% to
 ## Current segmentation outputs for review
 
 These are observations, **not gold answers**. The five demo cases were copied
-from `demo.html`; the other seven are authored diagnostic examples. `｜` marks
+from the former temporary demo page; the other seven are authored diagnostic examples. `｜` marks
 an inserted divider. Inline DOM nodes are passed separately, as in production.
 Cases are stored in `evaluation-cases.json`; no DOM traversal runs in this check.
 
