@@ -25,7 +25,9 @@ test("divider appearance lives in CSS without runtime style configuration", () =
   const css = read("src/content.css");
   assert.match(css, /\.super-reader-divider::before/u);
   assert.match(css, /content:\s*""/u);
-  assert.match(css, /border-inline-start:\s*3px solid #ff1744/u);
+  assert.match(css, /width:\s*calc\(1em \/ 6\)/u);
+  assert.match(css, /height:\s*1em/u);
+  assert.match(css, /background-color:\s*#ff1744/u);
   for (const path of [
     "src/app/reader.js", "src/frontend/read.js", "src/frontend/write.js", "src/platform/chrome/background.js",
   ]) {

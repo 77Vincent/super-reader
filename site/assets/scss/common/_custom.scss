@@ -24,10 +24,12 @@
 
 .reader-divider::before {
   display: inline-block;
-  width: 0;
+  // Preserve the 18px paragraph / 3px divider baseline at every font size.
+  width: calc(1em / 6);
   height: 1em;
   margin: 0 0.08em;
-  border-inline-start: 3px solid #ff1744;
+  border: 0;
+  background-color: #ff1744;
   vertical-align: -0.15em;
   content: "";
 }

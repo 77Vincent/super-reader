@@ -45,7 +45,7 @@
 | `src/platform/chrome/inference.js` | 提供 Worker 地址，将 Chrome 消息连接到推理服务 |
 | `src/platform/interfaces.js` | 适配器的 JSDoc 接口说明，无运行时代码 |
 | `src/inference.html` | Chrome 隐藏页面，承载推理服务 |
-| `src/content.css` | 分隔线的固定样式 |
+| `src/content.css` | 分隔线样式：高度 `1em`、宽度 `calc(1em / 6)`，按所在文字的字号等比例缩放 |
 | `manifest.json` | Chrome 权限、工具栏、快捷键和后台入口 |
 | `icons/` | 彩色和灰色 S 图标；工具栏按全局开关切换，忙碌状态不改变外观 |
 | `test/` | 单元测试、集成测试与浏览器测试页 |

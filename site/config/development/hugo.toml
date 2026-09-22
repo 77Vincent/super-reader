@@ -1,0 +1,2 @@
+# Production --gc must not remove resources still used by the preview server.
+resourceDir = 'resources/development'

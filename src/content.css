@@ -1,9 +1,11 @@
 .super-reader-divider::before {
   display: inline-block !important;
-  width: 0 !important;
+  /* Match the site's 18px paragraph / 3px divider baseline. */
+  width: calc(1em / 6) !important;
   height: 1em !important;
   margin: 0 0.08em !important;
-  border-inline-start: 3px solid #ff1744 !important;
+  border: 0 !important;
+  background-color: #ff1744 !important;
   vertical-align: -0.15em !important;
   pointer-events: none !important;
   content: "" !important;

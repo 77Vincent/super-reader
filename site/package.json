@@ -5,7 +5,7 @@
   "type": "module",
   "description": "好读 product site, built with Hugo and Doks",
   "scripts": {
-    "dev": "hugo server --bind 127.0.0.1 --disableFastRender --noHTTPCache",
+    "dev": "hugo server --bind 127.0.0.1 --renderToMemory --disableFastRender --noHTTPCache",
     "build": "hugo --cleanDestinationDir --minify --gc"
   },
   "engines": {

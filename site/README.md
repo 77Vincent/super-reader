@@ -10,6 +10,8 @@
 
 首页主标题 `headline` 和副标题 `lead` 也用 `｜` 指定固定断点，构建时由 `layouts/_partials/reader-copy.html` 转为与演示相同的红色分隔线，不显示字面量竖线，也不运行模型。每个语意块优先保持完整，分隔线随前一块一起换行，避免单独落在行首。演示按钮只控制演示段落，主标题和副标题始终显示分隔线。`title` 和 `seo.title` 保留不带分隔标记的纯文本，供页面元信息使用。
 
+官网与扩展的分隔线均以桌面正文的 18px 字号、3px 线宽为基准：高度 `1em`、宽度 `calc(1em / 6)`，间距和垂直偏移也使用 `em`。标题和小字按同一比例缩放；使用实色伪元素绘制，避免边框宽度取整改变细线比例。
+
 首页用 `<meta name="super-reader" content="off">` 让本项目的扩展跳过这个页面，避免真实扩展影响演示开关。已安装旧版开发扩展时，重新加载扩展及页面后该规则生效。
 
 ## 环境与本地预览
@@ -23,6 +25,8 @@
 npm --prefix site ci
 npm --prefix site run dev
 ```
+
+开发预览通过 `--renderToMemory` 在内存中提供页面和资源，与生产构建的 `public/` 分开。`config/development/hugo.toml` 同时将开发资源的编译缓存放到已忽略的 `resources/development/`，避免生产构建的 `--cleanDestinationDir` 或 `--gc` 删除预览正在使用的文件。可以在预览运行时执行构建。
 
 打开终端输出的本地地址（默认 `http://localhost:1313/`）。如果端口已占用：
 
