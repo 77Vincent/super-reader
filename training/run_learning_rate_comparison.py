@@ -45,9 +45,10 @@ def optimization_signature(source):
 
 def training_command(snapshot, run, plan, arm, *, finalize=False):
     command = [sys.executable, str(snapshot / 'training/run_sharded.py'),
-        '--manifest', str(run / 'pilot-manifest.json'), '--data-dir', plan['evaluation_dir'],
+        '--manifest', str(run / plan.get('manifest_name', 'pilot-manifest.json')), '--data-dir', plan['evaluation_dir'],
         '--artifact-dir', str(run / arm), '--epochs', '1', '--channels', '192',
-        '--residual-blocks', '8', '--seed', str(plan['seed']), '--checkpoint-shards', '1',
+        '--residual-blocks', '8', '--seed', str(plan['seed']),
+        '--checkpoint-shards', str(plan.get('checkpoint_shards', 1)),
         '--threads', '1', '--interop-threads', '1', '--device', 'mps']
     for key, value in {**plan['training'], 'learning_rate': plan['rates'][arm]}.items():
         command += ['--' + key.replace('_', '-'), str(value)]
@@ -219,6 +220,12 @@ def main():
             if not report.exists():
                 raise InterruptedError('Training or validation stopped; resume ' + arm)
             metrics = read(report)
+            if 'control_configuration' in plan:
+                expected_configuration = {**plan['control_configuration'], 'learning_rate': rate}
+                if metrics['configuration'] != expected_configuration:
+                    raise ValueError('Configuration differs from the full-data control beyond learning rate')
+                if metrics['data_identity'] != plan['control_data_identity']:
+                    raise ValueError('Data identity differs from the full-data control')
             if len(metrics['history']) != 1 or metrics['data_sizes'] != {
                 'train': plan['training_samples_per_arm'], 'validation': plan['evaluation']['validation']['count']}:
                 raise ValueError('Incomplete arm: ' + arm)
@@ -255,6 +262,7 @@ def main():
             'full_holdouts': plan['evaluation'], 'initial_validation': control['initial_validation'],
             'initial_selection_score': control['initial_selection_score'], 'endpoints': endpoints,
             'selection': selection, 'selected_test': test, 'selected_test_reused': reused_test,
+            'control_test': control['endpoint_test'],
             'backend_unchanged': sha(ROOT / 'src/boundary-model-data.js') == plan['backend_sha256_at_start']}
         write(run / 'comparison.json', result)
         status('complete', winner=winner, report=str(run / 'comparison.json'), test_accuracy=test['accuracy'])

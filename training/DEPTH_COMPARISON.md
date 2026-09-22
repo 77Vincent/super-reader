@@ -6,6 +6,23 @@ Only the new 20-layer arm was trained. Completed 2026-09-23 at 00:12 China time.
 **Keep 16 layers for now:** the 20-layer candidate gained only 0.00148 percentage
 points on the full test split while JS inference took 22.8% longer in this benchmark.
 
+## Recorded decision — 2026-09-23
+
+Retain **16 layers / 192 channels / a maximum 34-token gap receptive field**.
+Increasing depth to 20 layers expanded the maximum gap context to 42 tokens,
+but the additional context produced little measured accuracy gain in this
+controlled 10,015,214-pair continuation. Long-input and newly covered-input
+results also showed small gains. The extra 12.7% parameters and 22.8% JS
+inference time do not justify adopting this candidate for production.
+
+Although 20 layers won the prespecified validation score numerically, that
+selection does not automatically make it the preferred deployment choice.
+Do not promote this checkpoint or expand the 20-layer trial to the full corpus
+on the strength of these results. The approved next experiment keeps 16 layers
+and [changes only learning rate on the full dataset](FULL_LEARNING_RATE_COMPARISON.md).
+This decision applies to the tested initialization, training budget and learning
+rate; it does not establish that longer context can never help.
+
 Launched at 22:46 China time. Metal identity/learnability checks and all 13 JS
 reference cases passed before the training worker started at 22:47. The final
 trained exports also passed all 13 JS reference checks.
@@ -73,7 +90,7 @@ inputs improved somewhat more, but the absolute benefit remained small.
 This short low-LR continuation does not justify the measured inference cost
 for production. It does not prove that larger context is never useful or that
 the identity-initialized blocks could not benefit from longer/different training.
-No production weights were changed, and no further training was started.
+No production weights were changed, and no further 20-layer training was started.
 
 ### Prespecified protocol
 

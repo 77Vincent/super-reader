@@ -448,6 +448,13 @@ initial weights and optimizer settings. It selects on full validation before
 testing the selected candidate. Run or resume with
 `python3 training/run_learning_rate_comparison.py [--resume]`.
 
+The [full-data learning-rate comparison](FULL_LEARNING_RATE_COMPARISON.md)
+replays the currently bundled model's 246,266,210-pair epoch from its original
+pre-expansion weights, changing only 0.0003 to 0.00003. It preserves the original
+seed, optimizer setup, batches and fixed complete holdouts, and reuses the existing
+backend model as control. Run or resume with
+`python3 training/run_full_learning_rate_comparison.py [--resume]`.
+
 The completed [16/20-layer comparison](DEPTH_COMPARISON.md) reused the 16-layer,
 0.00003 control and trained only a 20-layer candidate on the same 10,015,214 pairs.
 The 20-layer endpoint gained 0.01035 percentage points on full validation and
