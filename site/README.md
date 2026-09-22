@@ -6,11 +6,9 @@
 
 配置参考官方 Doks starter，其 MIT 许可保留在 `LICENSE-Doks.txt`。
 
-首页的切分示例是静态演示，不加载模型或运行推理。在 `content/_index.md` 的 `reader-demo` shortcode 内用 `｜` 指定示意断点；构建时生成分隔线，按钮只控制这些标记的显示和隐藏。没有 JavaScript 时仍显示静态示例。
+首页的切分示例是静态演示，不加载模型或运行推理。在 `content/_index.md` 的 `reader-demo` shortcode 内用 `｜` 指定示意断点；构建时生成分隔线，按钮只控制这些标记的显示和隐藏。开关位于纸张卡片外的右上方，卡片使用纯色纸面和 [CSS Scan #32](https://getcssscan.com/css-box-shadow-examples) 阴影，不设边框或圆角；深色模式仅调整纸面底色。没有 JavaScript 时仍显示静态示例。
 
-首页主标题 `headline`、副标题 `lead` 和三句宣传文案 `slogans` 也用 `｜` 指定固定断点，构建时由 `layouts/_partials/reader-copy.html` 转为与演示相同的红色分隔线，不显示字面量竖线，也不运行模型。每个语意块优先保持完整，分隔线随前一块一起换行，避免单独落在行首。演示按钮只控制演示段落，标题和宣传文案始终显示分隔线。`title` 和 `seo.title` 保留不带分隔标记的纯文本，供页面元信息使用。
-
-`slogans` 列表每项是一句完整文案。首页模板将它们放在演示下方的独立区块，逐行以大字显示，并适配窄屏换行；无需在正文中使用 Markdown 标题来控制外观。
+首页主标题 `headline` 和副标题 `lead` 也用 `｜` 指定固定断点，构建时由 `layouts/_partials/reader-copy.html` 转为与演示相同的红色分隔线，不显示字面量竖线，也不运行模型。每个语意块优先保持完整，分隔线随前一块一起换行，避免单独落在行首。演示按钮只控制演示段落，主标题和副标题始终显示分隔线。`title` 和 `seo.title` 保留不带分隔标记的纯文本，供页面元信息使用。
 
 首页用 `<meta name="super-reader" content="off">` 让本项目的扩展跳过这个页面，避免真实扩展影响演示开关。已安装旧版开发扩展时，重新加载扩展及页面后该规则生效。
 

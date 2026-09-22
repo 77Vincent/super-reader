@@ -29,17 +29,5 @@
       </div>
     </div>
   </section>
-  {{/* Keep promotional copy separate from the article's heading hierarchy. */}}
-  {{ with .Params.slogans }}
-    <section class="section container-fluid pt-0 pb-5" aria-label="产品特点">
-      <div class="row justify-content-center">
-        <div class="col-lg-12 col-xl-10 portal-slogans">
-          {{ range . }}
-            <p class="portal-slogan">{{ partial "reader-copy.html" . }}</p>
-          {{ end }}
-        </div>
-      </div>
-    </section>
-  {{ end }}
 </main>
 {{ end }}
