@@ -509,14 +509,14 @@ test("punctuation-delimited clauses of twelve characters or fewer stay intact", 
 test("without abstention the bundled model splits the divider example within the length threshold", () => {
   const chunks = chunkText("同一个无标点子句内的短语块用细竖线分隔；", { minConfidence: 0 });
 
-  assert.deepEqual(chunks, ["同一个无标点", "子句内的短语块", "用细竖线分隔；"]);
+  assert.deepEqual(chunks, ["同一个无标点子句内的短语", "块", "用细竖线分隔；"]);
   assert.ok(chunks.every((chunk) => visualLength(chunk) <= 12));
 });
 
 test("uses model scores and word protection for the reading example", () => {
   const chunks = chunkText("而是帮助大脑更快地识别信息结构。", { minConfidence: 0 });
 
-  assert.deepEqual(chunks, ["而是", "帮助大脑更快地识别信息", "结构。"]);
+  assert.deepEqual(chunks, ["而是帮助大脑", "更快地识别信息", "结构。"]);
   assert.ok(chunks.every((chunk) => visualLength(chunk) <= 12));
 });
 
@@ -548,8 +548,8 @@ test("renders the reported Euler-method example with model scores", () => {
     "因此它被称为一种数值积分方法（numerical integration method）。",
   ]);
   assert.deepEqual(chunkText(text, { minConfidence: 0 }), [
-    "欧拉法",
-    "是在积分无法直接计算时，",
+    "欧拉法是在积分",
+    "无法直接计算时，",
     '用"无数个小矩形累加"来近似',
     '积分，',
     "因此",
@@ -589,8 +589,8 @@ test("visual chunks preserve punctuation-delimited boundaries", () => {
 
 test("vertical separators appear only at model boundaries inside one clause", () => {
   assert.deepEqual(buildVisualChunks("而是帮助大脑更快地识别信息结构。", { minConfidence: 0 }), [
-    { text: "而是", processed: true, separated: false },
-    { text: "帮助大脑更快地识别信息", processed: true, separated: true },
+    { text: "而是帮助大脑", processed: true, separated: false },
+    { text: "更快地识别信息", processed: true, separated: true },
     { text: "结构。", processed: true, separated: true },
   ]);
   assert.deepEqual(buildVisualChunks("春天来了，我们出发。"), [

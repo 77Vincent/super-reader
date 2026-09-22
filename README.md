@@ -73,7 +73,11 @@ frontend/dom-tree.js → frontend/viewport.js → frontend/visibility.js → fro
 const adapter = SuperReader.createReaderAdapter();
 const changes = SuperReader.createContentChanges(document);
 const reader = SuperReader.createReader({
-  read: () => SuperReader.read(changes.observeRoot),
+  read: () => {
+    changes.withoutObservation(() =>
+      SuperReader.forgetProcessedText(SuperReader.removeStaleMarkers()));
+    return SuperReader.read(changes.observeRoot);
+  },
   process: adapter.process,
   write: (snapshot, results) => changes.withoutObservation(() =>
     SuperReader.write(snapshot, results, adapter.markerStyleUrl)),
@@ -132,11 +136,13 @@ Chrome 的推理消息路径：
 
 写入前检查节点连接、父节点和完整原文。分隔位置从后往前写入，原有标签与文本保留。writer 只返回成功处理的文本片段，由 reader 调用 `remember()` 记录；没有分隔点的节点也会记录，过期快照跳过的节点不会记录。后续读取跳过未变化的已处理节点，避免重叠视口重复推理或插入重复标记；空快照不调用后端。关闭时移除标记、合并相邻文本节点并清空已处理记录，再次开启会重新处理。处理记录使用 `WeakMap`。
 
-当前 writer 用 `splitText()` 拆分原始文本节点。若页面保留原节点引用，并在渲染后把该节点的 `nodeValue` 替换成整段新文字，旧的后续片段仍会留在 DOM 中，造成新旧内容混合。处理前的快照检查无法防止这种后续更新；解决它需要调整标记渲染方式。
+writer 记录每次切分后的文本值及文本、标记节点的顺序。下次读取前，装配层先检查这些记录；页面修改、移除或重排节点后，会移除受影响父节点里的旧标记，合并其当前相邻文本，并清除对应处理记录，再按当前文字重新推理。未变化的其他父节点保留标记。清理与写入一样暂停内容观察，避免触发循环；`read()` 本身仍然只读。这可避免动态标题更新后，旧分隔线残留在句首。
 
-`processed-text.js` 的记录是弱引用，但 writer 为关闭时清理而保存的标记 `Set` 和 shadow 样式 `Map` 是强引用。已脱离页面的标记和其关联子树仍可能保留到关闭或刷新页面；大量替换内容的长会话需要关注这部分内存。
+当前 writer 仍用 `splitText()` 拆分原始文本节点。若页面保留原节点引用，并在渲染后把该节点的 `nodeValue` 替换成整段新文字，旧的后续片段仍可能留在 DOM 中，造成新旧内容混合。清理旧标记只保留页面当前的文字，不猜测哪些文字应删除；彻底避免这种冲突仍需要调整标记渲染方式。
 
-`content-changes.js` 观察文档及已发现的 open shadow root 的 `childList` 和 `characterData`。含中文的文本新增、移除、替换和修改会请求刷新；新增带 open shadow root 的宿主也会请求读取。脚本、样式、代码、控件和可编辑区域以及纯数字计时变化不触发内容刷新。不观察属性：尺寸不变的样式、可见性或 slot 分配变化仍需等下一次视口事件。只在 shadow root 内传播的滚动事件也不会触发刷新。
+`processed-text.js` 的记录是弱引用，writer 保存的切分记录、标记和 shadow 样式则是强引用。过期切分记录和标记在下一次读取前释放；shadow 样式保留到关闭或刷新页面。
+
+`content-changes.js` 观察文档及已发现的 open shadow root 的 `childList` 和 `characterData`。含中文的文本新增、移除、替换和修改会请求刷新；旧值含中文但新值被清空、页面自行移除分隔标记、新增带 open shadow root 的宿主，也会请求读取。脚本、样式、代码、控件和可编辑区域以及纯数字计时变化不触发内容刷新。不观察属性：尺寸不变的样式、可见性或 slot 分配变化仍需等下一次视口事件。只在 shadow root 内传播的滚动事件也不会触发刷新。
 
 装配层在同步写入标记期间暂停内容观察，写入前先处理已经排队的页面变化，写入后立即恢复观察，避免标记造成反馈循环；页面随后自行修改 DOM 仍会被捕捉。关闭或失败时断开两种观察器。内容观察器会释放脱离文档的 shadow root。
 

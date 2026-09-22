@@ -588,8 +588,8 @@ test("the actual worker defaults to recursive softmax at 50% on the demo text no
   assert.equal(response.error, undefined);
   assert.equal(response.id, 50);
   assert.deepEqual(Array.from(response.offsetsByText, (cuts) => Array.from(cuts)),
-    [[25, 31, 50], [], [11, 35], [10, 13, 20, 27]]);
-  assert.equal(inputs.length, 6, "nine cuts use only the six original clause model calls");
+    [[25, 31, 50], [], [11, 35], [10, 13, 20, 25, 27]]);
+  assert.equal(inputs.length, 6, "ten cuts use only the six original clause model calls");
   assert.equal(inputs.reduce((n, tokens) => n + tokens.length, 0), 122);
 });
 

@@ -9,14 +9,15 @@ function setup() {
   let notifications = 0;
   const element = (tag = "div", parent = null) => ({
     nodeType: 1, parentElement: parent, isConnected: true, childNodes: [],
-    matches: () => ["script", "style", "link", "pre", "button", "marker"].includes(tag),
+    matches: (selector) => selector === ".super-reader-divider"
+      ? tag === "marker" : ["script", "style", "link", "pre", "button", "marker"].includes(tag),
   });
   const text = (value, parent = null) => ({ nodeType: 3, nodeValue: value, parentElement: parent });
   const html = element("html");
   const document = { documentElement: html, defaultView: { MutationObserver: class {
     constructor(callback) { this.callback = callback; this.targets = new Set(); this.records = []; observer = this; }
     observe(root, options) {
-      assert.deepEqual({ ...options }, { subtree: true, childList: true, characterData: true });
+      assert.deepEqual({ ...options }, { subtree: true, childList: true, characterData: true, characterDataOldValue: true });
       this.targets.add(root);
     }
     disconnect() { this.targets.clear(); this.records = []; }
@@ -78,6 +79,18 @@ test("queued page changes survive suppression, marker writes do not notify, and 
   p.observer.queue(change);
   p.observer.deliver();
   assert.equal(p.count(), 3, "observation must resume even if writing throws");
+  p.stop();
+});
+
+test("emptying Chinese text or removing only a marker still requests reconciliation", () => {
+  const p = setup();
+  const title = p.element("h1", p.html);
+  p.observer.queue({ type: "characterData", target: p.text("", title), oldValue: "被清空的标题" });
+  p.observer.deliver();
+  assert.equal(p.count(), 1);
+  p.observer.queue(p.mutation(title, [], [p.element("marker")]));
+  p.observer.deliver();
+  assert.equal(p.count(), 2);
   p.stop();
 });
 

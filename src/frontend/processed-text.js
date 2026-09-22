@@ -21,4 +21,8 @@
   globalThis.SuperReader.clearProcessedText = function clearProcessedText() {
     processedNodes = new WeakMap();
   };
+
+  globalThis.SuperReader.forgetProcessedText = function forgetProcessedText(nodes) {
+    for (const node of nodes) processedNodes.delete(node);
+  };
 })();

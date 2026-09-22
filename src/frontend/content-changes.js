@@ -7,7 +7,7 @@
   globalThis.SuperReader.createContentChanges = function createContentChanges(document) {
     const { walkDOM, parentElementAcrossRoots } = globalThis.SuperReader;
     const ignored = "script,style,link,noscript,input,textarea,select,button,code,pre,[contenteditable]:not([contenteditable='false']),.super-reader-divider";
-    const options = { subtree: true, childList: true, characterData: true };
+    const options = { subtree: true, childList: true, characterData: true, characterDataOldValue: true };
     const roots = new Set();
     let observer = null;
     let notify = null;
@@ -39,8 +39,9 @@
 
     function handleChanges(records) {
       const changed = records.some((record) => !isIgnored(record.target) && (
-        record.type === "characterData" ? hasContent(record.target) :
-          [...record.addedNodes, ...record.removedNodes].some(hasContent)
+        record.type === "characterData" ? hasContent(record.target) || /\p{Script=Han}/u.test(record.oldValue || "") :
+          [...record.addedNodes, ...record.removedNodes].some((node) =>
+            hasContent(node) || (node.nodeType === 1 && node.matches(".super-reader-divider")))
       ));
       // Release removed comment roots instead of retaining them for the session.
       if ([...roots].some((root) => !root.isConnected)) {

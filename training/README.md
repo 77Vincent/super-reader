@@ -412,10 +412,11 @@ This browser smoke check uses a deterministic sample of 500 examples per domain
 (seed 20260911); formal training always evaluates the complete validation/test splits.
 Keep input and sample hashes fixed for within-version comparisons.
 
-The bundled model is the completed epoch-2 best checkpoint from the 16-layer
-v7 run (`chinese-line-web-100m-16conv-v7-20260917`), trained on 146,266,210
-pairs including 100 million web pairs. Full validation accuracy is 88.2298%
-and test accuracy is 88.3654%; the separate 200-million-web-pair run is still training.
+The bundled model is the completed epoch-1 best checkpoint from the 16-layer
+v7 expansion (`chinese-line-web-200m-16conv-v7-20260920`), trained on 246,266,210
+pairs including 200 million web pairs. It continues from the previous 100-million-web
+run's epoch-2 weights; epoch numbering restarts for the expansion. Full validation
+accuracy is 88.7786% and test accuracy is 88.8945% on the unchanged holdouts.
 See [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for its provenance and validation results.
 The backend first splits clauses using normalized proxy punctuation and enumeration
 commas. All resulting clauses, including enumeration items, follow the same rule:

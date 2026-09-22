@@ -1,10 +1,11 @@
 # Bundled boundary model
 
-`src/boundary-model-data.js` contains the completed **epoch 2 best_state** from
-`chinese-line-web-100m-16conv-v7-20260917`, exported on 2026-09-21. It is the
-best completed checkpoint by the run's validation selection score. Training,
-validation and test data use the v7 cleaning policy. The separate expansion to
-200 million web training pairs is still training and has not replaced this model.
+`src/boundary-model-data.js` contains the completed **epoch 1 best_state** from
+`chinese-line-web-200m-16conv-v7-20260920`, exported on 2026-09-22. This expansion
+continues from the previous 100-million-web run's epoch-2 weights, with epoch
+numbering restarted for the new run. It is the best completed checkpoint by the
+run's validation selection score. Training, validation and test data use the v7
+cleaning policy; the previous full validation/test holdouts are unchanged.
 
 | Property | Value |
 | --- | ---: |
@@ -14,28 +15,31 @@ validation and test data use the v7 cleaning policy. The separate expansion to
 | Parameters | 3,496,329 |
 | Structural gap receptive field | Up to 34 tokens, 17 on each side |
 | Vocabulary entries | 8,192 |
-| Training examples per epoch | 146,266,210 |
-| Web / other training examples | 100,000,000 / 46,266,210 |
+| Training examples per epoch | 246,266,210 |
+| Web / other training examples | 200,000,000 / 46,266,210 |
 | Full validation examples | 2,522,347 |
-| Validation accuracy | 88.2298% |
-| Mean domain validation accuracy | 88.1696% |
-| Validation selection score | 88.1997% |
+| Validation accuracy | 88.7786% |
+| Mean domain validation accuracy | 88.8826% |
+| Validation selection score | 88.8306% |
 | Full test examples | 2,569,996 |
-| Test accuracy | 88.3654% |
+| Test accuracy | 88.8945% |
 
 Accuracy measures recovery of the single hidden punctuation boundary in each
 sample. It does not measure precision at the backend's 50% confidence threshold
-or the accuracy of recursive cuts. On these same full datasets, epoch 1 scored
-88.0176% validation accuracy and 88.1614% test accuracy; epoch 2 improves these by
-0.2122 and 0.2040 percentage points. Selection uses validation results, not test
+or the accuracy of recursive cuts. On these same full datasets, the previous
+100-million-web epoch-2 checkpoint scored 88.2298% validation accuracy and 88.3654%
+test accuracy; the new checkpoint improves these by 0.5489 and 0.5292 percentage
+points. This continuation changes both training data volume and optimization
+steps, so the comparison does not isolate their individual effects.
+Selection uses validation results, not test
 results. These aggregate gains do not imply every domain or sentence improves.
 Older bundled-model figures used different data and cleaning policies and are
 not directly comparable.
 
 The frozen release artifacts are in
-`training/artifacts/chinese-line-web-100m-16conv-v7-20260917/epoch-2-backend/`.
+`training/artifacts/chinese-line-web-200m-16conv-v7-20260920/epoch-1-backend/`.
 `training-state.pt` preserves the completed source checkpoint. Its SHA-256 is
-`eaa1fecea56261d85a55664eb2e2ceefa18d00cd270d2d3ed90ea741eb33df5c`.
+`b0c2f9c9f8ea84b85119b06adaa6f70f3abaad1f94e21af3981feac7e00a2c65`.
 `verify_release.py` checks every exported parameter against `best_state`, accounting
 for the convolution export layout, and generates independent PyTorch Metal (MPS)
 float32 references. `release-verification.json` records the hashes and data identity;
@@ -43,35 +47,34 @@ float32 references. `release-verification.json` records the hashes and data iden
 historical filename.
 
 Exported safetensors SHA-256:
-`264eb00ba804f80997272750036f10226dd1ffd5ca89ab7d6faacdc0745fd255`.
+`f878d00561217644570bdac0bb6d21a7c9462f89b11c8a1a8a97c8182b173980`.
 
 `npm run model:export` reproduces the bundle from these local release artifacts.
 The script is 18,740,854 bytes, with SHA-256
-`7d7417038f73f3c0689089e26d77db1082fbb6f0c5d22043dc01870ed8d8c803`.
+`61dc5b5b2bda2ec18bd9df3124f8acba0bdf6bb31af1b88d21ffe80671625ecc`.
 A clean checkout includes the exported model and test references; runtime and
 ordinary model tests require no training artifacts or PyTorch.
 
 `test/model-backend-reference.json` contains 11 independent PyTorch Metal float32
 cases, including times, numbers, Latin text, quotes, supplementary Han, emoji and
 a two-character input. JavaScript selects the same best gap in all cases.
-Maximum raw-logit difference is 0.00134278 (on a logit of magnitude about 1,172);
-maximum softmax probability difference is 0.00000298. Tests check absolute-plus-relative
+Maximum raw-logit difference is 0.00256348, maximum relative logit difference is
+0.000003761, and maximum softmax probability difference is 0.00000425. The logit
+tolerance is `2e-5 + 4e-6 * abs(reference)`; the independent probability tolerance
+remains `1e-5`, and all best gaps must match. Tests check absolute-plus-relative
 float32 tolerances, probabilities and selected gaps. The Worker tests run the
 actual production Worker scripts in a JavaScript VM, including the demo's recursive
 50% behavior, mixed Unicode, long strings and ordered results.
 
-Backend rules are unchanged by this promotion, but model-dependent snapshots
-change. At the 75% threshold used during promotion, `我一直在思考明天早上的早餐吃什么`
-stays intact: its best gap after `思考` has 53.74% confidence. The warning example
-now begins `在没有人｜被人特别留意的情况下，` while still avoiding cuts next
-to `（切勿模仿）`. These are observed outputs, not human-labeled quality targets;
+Backend rules remain at recursive softmax with a strict 50% gate. The breakfast
+example still splits as `我一直在思考｜明天早上的早餐吃什么`; the warning example
+still begins `在没有人｜被人特别留意的情况下，` and avoids cuts adjacent to
+`（切勿模仿）`. Model-dependent snapshots have been updated: the long unpunctuated
+demo sentence now has an additional cut at `句子｜模型`, while retaining the cut at
+`模型｜依然`. These are observed outputs, not human-labeled quality targets;
 short or awkward fragments remain possible despite aggregate validation improvement.
 The old model's confidence precision/recall figures have not been remeasured for
 this checkpoint.
-
-On 2026-09-21, the backend default threshold was lowered to strictly above 50%.
-The breakfast example now splits as `我一直在思考｜明天早上的早餐吃什么`.
-The weights and other splitting rules remain the same.
 
 ## Backend preprocessing
 
@@ -120,6 +123,7 @@ child decisions.
 
 The completed [architecture smoke](CNN_TRANSFORMER_EXPERIMENT.md) was a separate
 experiment; its scripts and generated artifacts have been removed. The current
-200-million-web-pair continuation uses its own frozen training/export sources, so
-this backend release does not change that run. Completing an epoch does not
+200-million-web-pair continuation completed epoch 1 using its own frozen
+training/export sources; this promotion does not resume or modify that run.
+Completing an epoch does not
 automatically replace this bundle.

@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8">
+<meta name="super-reader" content="off">
 <title>Shadow DOM regression tests</title>
 <link rel="stylesheet" href="../src/content.css">
 <style>
@@ -80,6 +81,39 @@
     const stableStates = states.length;
     await delay(500);
     assert(states.length === stableStates && inputs.length === 2, "marker insertion caused a refresh loop");
+  });
+
+  test("a YouTube-style title rewrite removes a stranded leading divider automatically", async () => {
+    const title = "我的数学家朋友集体破防AI又双叒叕来毁灭人类了？";
+    const p = paragraph(fixture, title);
+    const other = paragraph(fixture);
+    await enable();
+    const stableMarker = markers(other)[0];
+    const [left, divider, right] = p.childNodes;
+    left.remove();
+    right.nodeValue = "AI又双叒叕来毁灭人类了？";
+    right.before(document.createTextNode("我的数学家朋友集体破防"));
+    assert(p.firstChild === divider, "did not reproduce the leading divider");
+    processInput = async (texts) => texts.map(() => []);
+    await until(() => inputs.length === 2 && !reader.status().busy, "title edit did not trigger a refresh");
+    assert(JSON.stringify(inputs[1]) === JSON.stringify([title]), "did not reread the whole current title");
+    assert(markers(p).length === 0 && p.textContent === title, "stale divider or changed title remains");
+    assert(markers(other)[0] === stableMarker, "unrelated markers were replaced");
+    const count = states.length;
+    await delay(500);
+    assert(states.length === count, "cleanup caused a mutation feedback loop");
+  });
+
+  test("clearing the prefix of a marked shadow text removes its leading divider", async () => {
+    const root = shadow();
+    const p = paragraph(root);
+    await enable();
+    const remaining = p.lastChild.nodeValue;
+    processInput = async (texts) => texts.map(() => []);
+    p.firstChild.nodeValue = "";
+    await until(() => inputs.length === 2 && !reader.status().busy, "empty prefix was ignored");
+    assert(inputs[1][0] === remaining && markers(p).length === 0, "stale shadow split survived");
+    assert(p.textContent === remaining, "cleanup restored obsolete text");
   });
 
   test("nested comments render with their own stylesheet and fully restore on disable", async () => {
@@ -173,8 +207,10 @@
     const unchangedFragment = p.firstChild;
     const changedText = "直接修改现有文本节点的评论";
     unchangedFragment.nodeValue = changedText;
+    const currentText = p.textContent;
     await until(() => inputs.length === 3 && !reader.status().busy, "characterData change was missed");
-    assert(inputs[2][0] === changedText, "changed text was not captured intact");
+    assert(inputs[2][0] === currentText, "current text was not captured intact after clearing old splits");
+    assert(p.textContent === currentText && markers(p).length === 1, "old split or changed text remains");
     await delay(450);
     assert(inputs.length === 3, "comment updates kept repeating");
   });
@@ -183,15 +219,18 @@
     const root = shadow();
     const p = paragraph(root);
     const updated = "页面观察到标记后自行更新的评论文字";
+    let currentText;
     const pageObserver = new MutationObserver(() => {
       pageObserver.disconnect();
       p.firstChild.nodeValue = updated;
+      currentText = p.textContent;
     });
     pageObserver.observe(p, { childList: true });
     try {
       await enable();
       await until(() => inputs.length === 2 && !reader.status().busy, "page update was incorrectly remembered as processed");
-      assert(inputs[1][0] === updated, "updated text was not processed intact");
+      assert(inputs[1][0] === currentText, "current text was not processed intact after clearing old splits");
+      assert(p.textContent === currentText && markers(p).length === 1, "page content or split count changed");
     } finally { pageObserver.disconnect(); }
   });
 

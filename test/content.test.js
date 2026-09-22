@@ -21,6 +21,10 @@ function createPage(text = sampleText, tag = "p", useChromeAdapter = false, opte
   class DomNode {
     constructor(nodeType) { this.nodeType = nodeType; this.parentNode = null; }
     get parentElement() { return this.parentNode; }
+    get nextSibling() {
+      const siblings = this.parentNode?.childNodes;
+      return siblings?.[siblings.indexOf(this) + 1] || null;
+    }
     getRootNode() { return this.parentNode?.getRootNode() || this; }
     get isConnected() { return this === document.documentElement || Boolean(this.parentNode?.isConnected); }
     remove() {
@@ -547,6 +551,68 @@ test("nodes needing no markers are remembered, while changed text is processed a
   page.scroll();
   await page.settle();
   assert.deepEqual(page.requests, [[sampleText], ["页面已更新这段中文文字"]]);
+  page.click();
+});
+
+test("a title update leaving a leading marker is reread intact without disturbing other paragraphs", async () => {
+  const page = createPage("我的数学家朋友集体破防AI又双叒叕来毁灭人类了？", "h1");
+  const other = page.element("p", page.document.body);
+  page.text(sampleText, other);
+  page.click();
+  await page.finish();
+  const otherMarker = other.querySelectorAll()[0];
+  const [left, marker, right] = page.paragraph.childNodes;
+  left.remove();
+  right.nodeValue = "AI又双叒叕来毁灭人类了？";
+  const prefix = page.text("我的数学家朋友集体破防");
+  prefix.remove();
+  right.before(prefix);
+  assert.equal(page.paragraph.childNodes[0], marker);
+  const currentTitle = page.paragraph.textContent;
+  page.infer = async (texts) => ({ offsetsByText: texts.map(() => []) });
+  page.resize();
+  await page.settle();
+  assert.deepEqual(page.requests[1], [currentTitle]);
+  assert.equal(page.paragraph.querySelectorAll().length, 0);
+  assert.equal(page.paragraph.textContent, currentTitle);
+  assert.equal(other.querySelectorAll()[0], otherMarker);
+  page.resize();
+  await page.settle();
+  assert.equal(page.requests.length, 2, "reconciled text is remembered");
+  page.click();
+});
+
+test("changing one fragment invalidates all old cuts in that parent before inference", async () => {
+  const page = createPage();
+  page.infer = async (texts) => ({ offsetsByText: texts.map(() => [4, 8]) });
+  page.click();
+  await page.finish();
+  const oldMarkers = page.markers();
+  page.paragraph.childNodes[2].nodeValue = "页面改写后的中间片段";
+  const current = page.paragraph.textContent;
+  page.infer = async () => ({ offsetsByText: [[6]] });
+  page.resize();
+  await page.settle();
+  assert.deepEqual(page.requests[1], [current]);
+  assert.equal(page.markers().length, 1);
+  assert.ok(oldMarkers.every((marker) => !marker.isConnected));
+  assert.equal(page.paragraph.childNodes[0].nodeValue.length, 6);
+  assert.equal(page.paragraph.textContent, current);
+  page.click();
+});
+
+test("removing all text before a marker reprocesses even an unchanged surviving fragment", async () => {
+  const page = createPage();
+  page.click();
+  await page.finish();
+  page.paragraph.childNodes[0].remove();
+  const remaining = page.paragraph.textContent;
+  page.infer = async () => ({ offsetsByText: [[]] });
+  page.resize();
+  await page.settle();
+  assert.deepEqual(page.requests[1], [remaining]);
+  assert.equal(page.markers().length, 0);
+  assert.equal(page.paragraph.textContent, remaining);
   page.click();
 });
 
