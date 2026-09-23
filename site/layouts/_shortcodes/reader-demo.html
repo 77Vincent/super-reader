@@ -1,11 +1,12 @@
 {{- $id := printf "reader-demo-%d" .Ordinal -}}
 <div class="reader-demo my-4" data-reader-demo>
-  <div class="d-flex justify-content-end mb-3">
-    <button type="button" class="btn btn-outline-primary btn-sm rounded-pill"
-      data-reader-demo-toggle aria-pressed="true" aria-controls="{{ $id }}" hidden>隐藏分隔线</button>
-  </div>
   <div id="{{ $id }}" class="reader-demo-paper reader-demo-text">
     {{- $content := .Page.RenderString (dict "display" "block") .Inner -}}
     {{- replace $content "｜" `<span class="reader-divider" aria-hidden="true"></span>` | safeHTML -}}
+  </div>
+
+  <div class="d-flex justify-content-center mt-3">
+    <button type="button" class="btn btn-outline-primary btn-sm rounded-pill"
+      data-reader-demo-toggle aria-pressed="true" aria-controls="{{ $id }}" hidden>关闭阅读辅助</button>
   </div>
 </div>

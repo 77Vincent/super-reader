@@ -25,7 +25,7 @@ document.querySelectorAll('[data-reader-demo]').forEach((demo) => {
     const enabled = button.getAttribute('aria-pressed') !== 'true';
     markers.forEach((marker) => { marker.hidden = !enabled; });
     button.setAttribute('aria-pressed', String(enabled));
-    button.textContent = enabled ? '隐藏分隔线' : '显示分隔线';
+    button.textContent = enabled ? '关闭阅读辅助' : '启动阅读辅助';
   });
   button.hidden = false;
 });

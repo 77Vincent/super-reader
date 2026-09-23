@@ -5,7 +5,7 @@ description = '好读是一款中文阅读辅助浏览器扩展，使用本地�
 lead = '按人类习惯｜把长句切成短句｜使用微型神经网络｜本地运行｜极致高效'
 
 [seo]
-title = '好读 · 让中文更好读 · Chrome / Edge 阅读辅助扩展'
+title = '好读 · 让中文更好读 · Chrome / Edge 浏览器阅读辅助扩展'
 +++
 
 {{< reader-demo >}}
