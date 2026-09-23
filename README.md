@@ -107,6 +107,14 @@ adapter.connect(reader);
 
 自动处理新网站需要 manifest 中的 HTTP、HTTPS 和本地文件访问权限，替代原来只覆盖用户点击页面的 `activeTab`；修改 manifest 后需要重新加载扩展。本地文件还需打开“允许访问文件网址”。浏览器自身页面等受限页面不注入。相关权限要求见 [Chrome 内容脚本文档](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts#inject-programmatically)。
 
+网页可在初始 HTML 的 `<head>` 中加入以下标记，禁止扩展处理该页：
+
+```html
+<meta name="super-reader" content="off">
+```
+
+即使全局开关开启，页面也不会启动文本处理或请求模型推理；刷新、切换标签页及再次开启扩展均遵守此标记。它不改变全局设置，其他网页仍正常处理。官网全站默认添加该标记，静态演示由网页自己的按钮控制。
+
 Shadow DOM 中的标记加载同一个 `src/content.css`，该文件在 manifest 中声明为可访问资源，前端无需调用 Chrome API。
 
 Chrome 的推理消息路径：

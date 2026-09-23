@@ -16,6 +16,7 @@ function createBackground(saved = {}) {
   let creations = 0;
   const tabs = new Map();
   const pages = new Map();
+  const optedOutTabs = new Set();
   const badges = new Map();
   const icons = new Map();
   const titles = new Map();
@@ -41,7 +42,10 @@ function createBackground(saved = {}) {
     let listener;
     const page = { reads: 0, clears: 0, marker: null, process: async () => [[]] };
     const context = vm.createContext({ setTimeout, clearTimeout,
-      document: { querySelector: () => null }, chrome: { runtime: {
+      document: { querySelector: (selector) => {
+        assert.equal(selector, 'meta[name="super-reader"][content="off"]');
+        return optedOutTabs.has(id) ? {} : null;
+      } }, chrome: { runtime: {
       getURL: (path) => path,
       onMessage: { addListener: (callback) => { listener = callback; } },
       sendMessage: (request) => publish(request, id),
@@ -163,7 +167,7 @@ function createBackground(saved = {}) {
 
   return {
     pages, badges, icons, titles, disabled, commands, queries, writes, saved, tabs, injected, injectedFiles, requests,
-    addTab,
+    addTab, optedOutTabs,
     pauseInjection(id) {
       let resume;
       injectionDelays.set(id, new Promise((resolve) => { resume = resolve; }));
@@ -264,6 +268,40 @@ test("active reloads and new tabs use the saved switch; background reloads wait 
   await background.focus(3);
   assert.equal(background.pages.has(1), false);
   assert.equal(background.pages.has(3), false);
+});
+
+test("page opt-out survives focus, navigation and global toggles without disabling other pages", async () => {
+  const background = createBackground({ enabled: true });
+  background.optedOutTabs.add(1);
+  await background.focus(1);
+  const portal = background.pages.get(1);
+  assert.equal(portal.reader.status().enabled, false);
+  assert.equal(portal.reads, 0);
+  assert.equal(portal.marker, null);
+  assert.equal(background.saved.enabled, true);
+  assert.equal(background.writes.length, 0);
+
+  await background.focus(2);
+  assert.equal(background.pages.get(2).reader.status().enabled, true);
+  assert.equal(background.pages.get(2).reads, 1);
+  await background.focus(1);
+  assert.equal(portal.reads, 0);
+
+  await background.navigate(1);
+  const reloaded = background.pages.get(1);
+  assert.notEqual(reloaded, portal);
+  assert.equal(reloaded.reader.status().enabled, false);
+  assert.equal(reloaded.reads, 0);
+  await background.click(1);
+  assert.equal(background.saved.enabled, false);
+  await background.click(1);
+  assert.equal(background.saved.enabled, true);
+  assert.equal(reloaded.reader.status().enabled, false);
+  assert.equal(reloaded.reads, 0);
+  assert.equal(reloaded.marker, null);
+
+  await background.focus(2);
+  assert.equal(background.pages.get(2).reader.status().enabled, true);
 });
 
 test("a tab that missed OFF and ON keeps its existing results when focused again", async () => {
