@@ -1,6 +1,6 @@
 {{- $id := printf "reader-demo-%d" .Ordinal -}}
 <div class="my-4" data-reader-demo>
-  <div id="{{ $id }}" class="bg-body-tertiary shadow-sm p-3 p-md-4">
+  <div id="{{ $id }}" class="reader-demo-paper bg-body-tertiary p-3 p-md-4">
     {{- $content := .Page.RenderString (dict "display" "block") .Inner -}}
     {{- replace $content "｜" `<span class="reader-divider" aria-hidden="true"></span>` | safeHTML -}}
   </div>

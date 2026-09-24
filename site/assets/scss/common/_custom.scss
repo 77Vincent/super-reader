@@ -1,5 +1,5 @@
-// Use Bootstrap classes for layout and appearance. Only the proportional
-// reading divider needs custom drawing; its dimensions also match the extension.
+// Use Bootstrap classes for layout and appearance, except for the proportional
+// reading divider and the demo card's paper shadow.
 .reader-divider::before {
   display: inline-block;
   // Preserve the 18px paragraph / 3px divider baseline at every font size.
@@ -10,4 +10,11 @@
   background-color: #ff1744;
   vertical-align: -0.15em;
   content: "";
+}
+
+.reader-demo-paper {
+  // CSS Scan example #32: https://getcssscan.com/css-box-shadow-examples
+  box-shadow:
+    rgba(60, 64, 67, 0.3) 0px 1px 2px 0px,
+    rgba(60, 64, 67, 0.15) 0px 2px 6px 2px;
 }
