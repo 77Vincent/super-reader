@@ -11,7 +11,7 @@ test("browser backend loads the exported best checkpoint", () => {
   const info = backend.getModelInfo();
 
   assert.equal(info.bestEpoch, 1);
-  assert.equal(info.testAccuracy, 0.8889453524441283);
+  assert.equal(info.testAccuracy, 0.8937383560130054);
   assert.equal(info.tokenization, "character");
   assert.equal(info.inputRepresentation, "unicode-context-v1");
   assert.equal(info.candidatePositions, "between every adjacent Unicode code point");

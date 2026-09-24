@@ -1,5 +1,12 @@
 # Boundary model training
 
+The [source-mixture pilot](SOURCE_MIX_COMPARISON.md) compares 10 million matched
+existing training pairs per arm: the current mixture versus Wikipedia plus
+synthetic data. Both continue from the latest released model at learning rate
+0.00003, using the complete fixed validation/test sets. Start or resume with
+`python3 training/run_source_comparison.py [--resume]`. No backend replacement
+or source deletion is automatic.
+
 The current data contract is **unicode-context-v7**, defined in
 [text-policy.json](text-policy.json). Its model input representation remains
 **unicode-context-v1**. In addition to requiring Han in each fragment, v7 rejects
@@ -116,6 +123,36 @@ of the hidden proxy; it does not establish human-rated reading chunk quality.
 The [2026-09-16 corpus quality audit](CORPUS_QUALITY_AUDIT.md) records a stratified
 1,000-row AI semantic review, 20,000-row automatic checks, proxy-label failure
 examples, and limits of the resulting quality estimates.
+
+The [2026-09-24 training-teacher audit](TRAINING_TEACHER_AUDIT.md) samples the
+current 246,266,210-row v7 training pool: 24,000 automatic checks, 500 probability
+reviews, and 64 separate targeted reviews. It distinguishes acceptable target
+pauses from damaged inputs, compares current model predictions, accounts for
+training loss weights, and documents the limits of attributing errors to noise.
+All 564 judgments are preserved in
+[the review record](training-teacher-review-20260924.json).
+The [follow-up close reading](GOOD_TEACHER_ERRORS.md) covers all 45 model misses
+among the 492 acceptable targets. It distinguishes poor local cuts, locally
+plausible cuts that miss the original structural boundary, acceptable alternatives,
+and unresolved cases; these judgments do not define a new backend accuracy.
+Under the user's overall-semantic acceptance standard, the first two categories
+both fail: 32 unacceptable results, 9 acceptable alternatives, and 4 unresolved.
+
+The [source-by-source teacher review](SOURCE_TEACHER_AUDIT.md) separately reads
+350 current-policy candidates from 13 source groups, including seven web
+sub-sources: 343 usable, 2 unsuitable inputs, and 5 unresolved/task-fit concerns.
+It reuses cached document pools, excludes known prior review documents, and
+keeps original context. These are not verified members of the current training
+set; the small document-balanced review is not a corpus-wide bad-label estimate.
+All cases are in [the source review record](source-teacher-review-20260924.json).
+The [expanded source review](SOURCE_TEACHER_AUDIT_R2.md) adds 650 disjoint
+documents, reaching 1,000 reviewed documents (999 distinct input/target pairs):
+973 usable, 15 unsuitable, and 12 unresolved. It checks 17 flagged web documents
+against original Parquet and confirms exact current training membership for one
+unsuitable academic example and one quote-position concern. Candidate quality
+and actual training membership remain separate; no noise-causality estimate is
+made. [All 650 new judgments](source-teacher-review-r2-20260924.json) retain source
+context, provenance, and the targeted lookup results.
 
 [Local web prose screening](WEB_SCREENING.md) documents an earlier screening
 experiment. The current rebuild does not use its paragraph selection rules.
@@ -412,11 +449,12 @@ This browser smoke check uses a deterministic sample of 500 examples per domain
 (seed 20260911); formal training always evaluates the complete validation/test splits.
 Keep input and sample hashes fixed for within-version comparisons.
 
-The bundled model is the completed epoch-1 best checkpoint from the 16-layer
-v7 expansion (`chinese-line-web-200m-16conv-v7-20260920`), trained on 246,266,210
-pairs including 200 million web pairs. It continues from the previous 100-million-web
-run's epoch-2 weights; epoch numbering restarts for the expansion. Full validation
-accuracy is 88.7786% and test accuracy is 88.8945% on the unchanged holdouts.
+The bundled model is the completed epoch-1 best checkpoint from the full-data
+learning-rate comparison (`learning-rate-192ch-full-246m-v7-20260923/lr-3e-5`),
+promoted on 2026-09-24. It retains 192 channels and 16 convolution layers and uses
+246,266,210 pairs, including 200 million web pairs. The matched comparison changes
+learning rate from 0.0003 to 0.00003; initialization, data and training steps are
+unchanged. Full validation accuracy is 89.2357% and test accuracy is 89.3738%.
 See [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for its provenance and validation results.
 The backend first splits clauses using normalized proxy punctuation and enumeration
 commas. All resulting clauses, including enumeration items, follow the same rule:

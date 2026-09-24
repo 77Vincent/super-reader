@@ -1,11 +1,12 @@
 # Bundled boundary model
 
 `src/boundary-model-data.js` contains the completed **epoch 1 best_state** from
-`chinese-line-web-200m-16conv-v7-20260920`, exported on 2026-09-22. This expansion
-continues from the previous 100-million-web run's epoch-2 weights, with epoch
-numbering restarted for the new run. It is the best completed checkpoint by the
-run's validation selection score. Training, validation and test data use the v7
-cleaning policy; the previous full validation/test holdouts are unchanged.
+`learning-rate-192ch-full-246m-v7-20260923/lr-3e-5`, promoted on 2026-09-24.
+It won the full-data learning-rate comparison by validation selection score.
+Both arms started from the same preceding 100-million-web epoch-2 weights with
+fresh AdamW optimizers and used identical data, order, seed, batch limits and
+training steps. Learning rate alone changes from 0.0003 to **0.00003**.
+Training and both full holdouts use the existing v7 cleaning policy.
 
 | Property | Value |
 | --- | ---: |
@@ -18,63 +19,49 @@ cleaning policy; the previous full validation/test holdouts are unchanged.
 | Training examples per epoch | 246,266,210 |
 | Web / other training examples | 200,000,000 / 46,266,210 |
 | Full validation examples | 2,522,347 |
-| Validation accuracy | 88.7786% |
-| Mean domain validation accuracy | 88.8826% |
-| Validation selection score | 88.8306% |
+| Validation accuracy | 89.2357% |
+| Mean domain validation accuracy | 89.2437% |
+| Validation selection score | 89.2397% |
 | Full test examples | 2,569,996 |
-| Test accuracy | 88.8945% |
+| Test accuracy | 89.3738% |
 
-Accuracy measures recovery of the single hidden punctuation boundary in each
-sample. It does not measure precision at the backend's 50% confidence threshold
-or the accuracy of recursive cuts. On these same full datasets, the previous
-100-million-web epoch-2 checkpoint scored 88.2298% validation accuracy and 88.3654%
-test accuracy; the new checkpoint improves these by 0.5489 and 0.5292 percentage
-points. This continuation changes both training data volume and optimization
-steps, so the comparison does not isolate their individual effects.
-Selection uses validation results, not test
-results. These aggregate gains do not imply every domain or sentence improves.
-Older bundled-model figures used different data and cleaning policies and are
-not directly comparable.
+The previous bundle scored 88.7786% validation and 88.8945% test accuracy on
+these same holdouts. Gains are **0.4571 and 0.4793 percentage points** respectively.
+Accuracy measures recovery of the single hidden punctuation boundary; it is not
+precision at the backend's 50% threshold or accuracy of recursive child cuts.
+Selection uses validation, followed by full-test evaluation. These holdouts have
+been reused across experiments; they are not a new untouched test set.
+See [FULL_LEARNING_RATE_COMPARISON.md](FULL_LEARNING_RATE_COMPARISON.md).
 
-The frozen release artifacts are in
-`training/artifacts/chinese-line-web-200m-16conv-v7-20260920/epoch-1-backend/`.
-`training-state.pt` preserves the completed source checkpoint. Its SHA-256 is
-`b0c2f9c9f8ea84b85119b06adaa6f70f3abaad1f94e21af3981feac7e00a2c65`.
+The frozen release is
+`training/artifacts/learning-rate-192ch-full-246m-v7-20260923/epoch-1-backend/`.
 `verify_release.py` checks every exported parameter against `best_state`, accounting
-for the convolution export layout, and generates independent PyTorch Metal (MPS)
-float32 references. `release-verification.json` records the hashes and data identity;
-`smoke-metrics.json` contains the full validation and test results despite its
-historical filename.
+for convolution export layout, and generates independent PyTorch Metal float32
+references. `release-verification.json` records hashes and data identity;
+`smoke-metrics.json` contains the full validation/test results despite its filename.
 
-Exported safetensors SHA-256:
-`f878d00561217644570bdac0bb6d21a7c9462f89b11c8a1a8a97c8182b173980`.
+- Training checkpoint SHA-256: `5169707d95d51fe2515496f372f8ad52197f531f37d84f4b6775d32a5b9e7fca`.
+- Exported safetensors SHA-256: `d7a19c35d73bb73d0bb346cd13e7c84154ba9545b311c8064649b21d83144aa5`.
+- Browser bundle SHA-256: `bb90cb253f364e7b0e923455366224ed78c8612034efc6ae81c1ff8a34664081`.
+- Browser bundle size: 18,740,854 bytes.
 
-`npm run model:export` reproduces the bundle from these local release artifacts.
-The script is 18,740,854 bytes, with SHA-256
-`61dc5b5b2bda2ec18bd9df3124f8acba0bdf6bb31af1b88d21ffe80671625ecc`.
-A clean checkout includes the exported model and test references; runtime and
-ordinary model tests require no training artifacts or PyTorch.
+`npm run model:export` reproduces this bundle from the local frozen release.
+A clean checkout includes the exported model and independent test references;
+runtime and ordinary model tests require no training artifacts or PyTorch.
 
-`test/model-backend-reference.json` contains 11 independent PyTorch Metal float32
-cases, including times, numbers, Latin text, quotes, supplementary Han, emoji and
-a two-character input. JavaScript selects the same best gap in all cases.
-Maximum raw-logit difference is 0.00256348, maximum relative logit difference is
-0.000003761, and maximum softmax probability difference is 0.00000425. The logit
-tolerance is `2e-5 + 4e-6 * abs(reference)`; the independent probability tolerance
-remains `1e-5`, and all best gaps must match. Tests check absolute-plus-relative
-float32 tolerances, probabilities and selected gaps. The Worker tests run the
-actual production Worker scripts in a JavaScript VM, including the demo's recursive
-50% behavior, mixed Unicode, long strings and ordered results.
+The 11 independent Metal reference cases cover times, numbers, Latin text,
+quotes, supplementary Han, emoji and a two-character input. JavaScript chooses
+the same best gap in every case. Maximum absolute logit difference is
+0.000305176, maximum relative difference 0.000001143, and maximum softmax
+probability difference 0.000002165, all within the existing tolerances.
 
-Backend rules remain at recursive softmax with a strict 50% gate. The breakfast
-example still splits as `我一直在思考｜明天早上的早餐吃什么`; the warning example
-still begins `在没有人｜被人特别留意的情况下，` and avoids cuts adjacent to
-`（切勿模仿）`. Model-dependent snapshots have been updated: the long unpunctuated
-demo sentence now has an additional cut at `句子｜模型`, while retaining the cut at
-`模型｜依然`. These are observed outputs, not human-labeled quality targets;
-short or awkward fragments remain possible despite aggregate validation improvement.
-The old model's confidence precision/recall figures have not been remeasured for
-this checkpoint.
+Model-dependent snapshots were updated without changing runtime rules. At the
+default 50% threshold the unpunctuated demo now omits the previous `句子｜模型`
+cut, while retaining `模型｜依然`. With abstention explicitly disabled, the
+phrase example changes from `短语｜块` to a cut before `内的短语块`; the reading
+example still cuts at `信息｜结构`. These are observations, not human-reviewed
+quality targets; aggregate improvement does not fix every sentence.
+See [MODEL_ERROR_AUDIT.md](MODEL_ERROR_AUDIT.md) for the full-test error audit.
 
 ## Backend preprocessing
 
@@ -122,8 +109,7 @@ figures do not describe this checkpoint or establish the accuracy of recursive
 child decisions.
 
 The completed [architecture smoke](CNN_TRANSFORMER_EXPERIMENT.md) was a separate
-experiment; its scripts and generated artifacts have been removed. The current
-200-million-web-pair continuation completed epoch 1 using its own frozen
+experiment; its scripts and generated artifacts have been removed. The full-data learning-rate comparison completed epoch 1 using its own frozen
 training/export sources; this promotion does not resume or modify that run.
 Completing an epoch does not
 automatically replace this bundle.

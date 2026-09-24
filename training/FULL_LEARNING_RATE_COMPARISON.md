@@ -1,15 +1,16 @@
 # Full-data learning-rate comparison — 2026-09-23
 
-Replay the training run that produced the currently bundled model, changing
+Replay the training run that produced the previous bundled model, changing
 only the learning rate from **0.0003 to 0.00003**. Reuse the completed control;
-train only the new lower-rate arm. Results are pending.
+train only the new lower-rate arm. Completed on 2026-09-24 at 04:56 China time;
+the lower-rate candidate won validation selection and was promoted to the backend
+on 2026-09-24 at the user's request.
 
 Started on 2026-09-23 at 00:23 China time. Exact initialization transfer and input
-verification passed for all 2,432 shards; the Metal worker is preparing training
-weights and initial validation. Coordinator PID at launch: 67607 (use the current
-`status.json` after any resume).
+verification passed for all 2,432 shards. Recorded training time was 22.55 hours
+at 3,034 samples/second, excluding pause time. Full evaluation also completed.
 
-| Setting | Existing backend / control | New candidate |
+| Setting | Previous backend / control | New candidate |
 | --- | --- | --- |
 | Learning rate | 0.0003 | 0.00003 |
 | Architecture | 192 channels, 8 residual blocks / 16 convolutions | Same |
@@ -25,6 +26,24 @@ weights and initial validation. Coordinator PID at launch: 67607 (use the curren
 | Device | Metal float32, one CPU host thread / interop thread | Same |
 | Regular checkpoints | Every 4 shards | Same |
 | Full validation / test | 2,522,347 / 2,569,996 | Same fixed splits |
+
+## Results
+
+| Metric | Original 0.0003 | New 0.00003 | Change |
+| --- | ---: | ---: | ---: |
+| Validation top-1 | 88.7786% | 89.2357% | +0.4571 pp |
+| Mean domain validation | 88.8826% | 89.2437% | +0.3610 pp |
+| Validation selection score | 88.8306% | 89.2397% | +0.4091 pp |
+| Full test top-1 | 88.8945% | 89.3738% | +0.4793 pp |
+| Validation cross-entropy | 0.339916 | 0.328032 | -0.011884 |
+| Test cross-entropy | 0.335033 | 0.323382 | -0.011651 |
+
+The smaller learning rate helps on the full dataset, as it did in the pilot.
+All six test domains improve; dialogue validation has a small regression.
+This is one matched-seed comparison, not a multi-seed significance study.
+The test error rate falls by about 4.32% relatively; 89.37% top-1 still does not
+establish end-to-end precision of recursive reading cuts.
+See [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for release verification.
 
 ## Matched starting point
 
