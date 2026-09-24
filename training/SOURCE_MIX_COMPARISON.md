@@ -3,9 +3,67 @@
 The [expanded source review](SOURCE_TEACHER_AUDIT_R2.md) motivates a controlled
 trial, not a conclusion that whole web sources are unusable. The user approved
 comparing the existing mixture against the cleaner-looking candidate sources.
-This pilot has **no results yet** and does not replace the backend model.
+The pilot is complete. **Neither continuation beats the inherited model on the
+precommitted validation selection score.** Removing the web/old small sources
+does not improve overall accuracy in this run; the original backend is retained.
 The background run started on 2026-09-24 at 12:46 China time. Matched data
 preparation passed at 12:50 and the first Metal worker started immediately.
+B was safely paused at 9,375,222 examples and resumed from the saved optimizer
+and next batch. Final reports completed at **15:25:30 China time**. Both arms
+trained exactly one pass; no second epoch was started.
+
+## Results
+
+All rows below use the same complete **2,522,347-example validation set**.
+The A/B rows report the actual epoch-1 endpoints, not their selected epoch-0
+checkpoints. Macro accuracy averages the six evaluation domains equally;
+selection is half overall and half macro accuracy.
+
+| Model | Overall accuracy | Macro accuracy | Selection score | Validation loss |
+| --- | ---: | ---: | ---: | ---: |
+| Inherited model | **89.2357%** | 89.2437% | **89.2397%** | 0.328032 |
+| A: current mixture, epoch 1 | 89.1853% | **89.2553%** | 89.2203% | **0.325393** |
+| B: Wikipedia + synthetic, epoch 1 | 89.1624% | 89.2083% | 89.1853% | 0.338851 |
+
+A loses **0.0505 percentage points** of overall accuracy versus initialization;
+B loses **0.0733 points**. B is **0.0229 points** below A (577 fewer exact matches).
+These are small differences from one seed, not a statistical source ranking.
+B's validation loss also increases versus initialization. Its lower training
+loss cannot be compared directly with A's: the examples and effective source
+loss weights differ.
+
+| Validation domain | Inherited | A endpoint | B endpoint | B minus inherited, pp |
+| --- | ---: | ---: | ---: | ---: |
+| Academic | 91.2031% | 90.6856% | 90.5563% | -0.6468 |
+| Dialogue | 93.5005% | 93.2259% | 93.4273% | -0.0732 |
+| Encyclopedia | 89.1233% | 89.1233% | 89.6380% | +0.5147 |
+| News | 82.5600% | 83.5200% | 82.4000% | -0.1600 |
+| Web | 89.1084% | 89.0578% | 88.9757% | -0.1327 |
+| Wikipedia | 89.9666% | 89.9191% | 90.2523% | +0.2857 |
+
+B improves the Wikipedia and encyclopedia domains while the other four decline
+versus initialization. This is consistent with specialization toward the
+retained sources, not evidence of a broadly superior teacher mixture. This
+pilot **does not justify dropping all web sources**. It also does not establish
+that the observed damaged web examples are harmless, that every web source is
+useful, or that Wikipedia/synthetic-only training from scratch would fail.
+The audit and this experiment answer different questions.
+
+Both arms select **epoch 0** under the frozen rule, and `selection.json` selects
+`initial`. Accordingly, neither new endpoint is evaluated on test. The
+**89.3738%** test accuracy recorded in `best_state_tests` is the existing
+inherited-model result on all 2,569,996 test examples, reused for both selected
+epoch-0 checkpoints. It is **not a measured test score for either new endpoint**.
+No natural-reading accuracy improvement is claimed from this proxy-label test.
+
+A records 69.24 training minutes and B 61.66 minutes, excluding pauses, data
+preparation and validation. Both had identical 51,274 batch counts; these times
+are not a controlled speed benchmark. Epoch validation and the final validation
+recheck match exactly for both arms, initial validation matches the release,
+and the production bundle hash is unchanged. The coordinator and worker exited
+normally after writing `comparison.json`.
+
+## Experimental controls
 
 | Control | Both arms |
 | --- | --- |

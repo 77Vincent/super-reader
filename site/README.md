@@ -6,11 +6,13 @@
 
 配置参考官方 Doks starter，其 MIT 许可保留在 `LICENSE-Doks.txt`。
 
-首页的切分示例是静态演示，不加载模型或运行推理。在 `content/_index.md` 的 `reader-demo` shortcode 内用 `｜` 指定示意断点；构建时生成分隔线，按钮只控制这些标记的显示和隐藏。开关位于纸张卡片外的右上方，卡片使用纯色纸面和 [CSS Scan #32](https://getcssscan.com/css-box-shadow-examples) 阴影，不设边框或圆角；深色模式仅调整纸面底色。没有 JavaScript 时仍显示静态示例。
+首页的切分示例是静态演示，不加载模型或运行推理。在 `content/_index.md` 的 `reader-demo` shortcode 内用 `｜` 指定示意断点；构建时生成分隔线，按钮只控制这些标记的显示和隐藏。开关位于卡片下方居中，卡片使用 Bootstrap 的 `bg-body-tertiary`、`shadow-sm` 和 `p-3 p-md-4`，背景随明暗模式切换。没有 JavaScript 时仍显示静态示例。
 
 首页主标题 `headline` 和副标题 `lead` 也用 `｜` 指定固定断点，构建时由 `layouts/_partials/reader-copy.html` 转为与演示相同的红色分隔线，不显示字面量竖线，也不运行模型。每个语意块优先保持完整，分隔线随前一块一起换行，避免单独落在行首。演示按钮只控制演示段落，主标题和副标题始终显示分隔线。`title` 和 `seo.title` 保留不带分隔标记的纯文本，供页面元信息使用。
 
 官网与扩展的分隔线均以桌面正文的 18px 字号、3px 线宽为基准：高度 `1em`、宽度 `calc(1em / 6)`，间距和垂直偏移也使用 `em`。标题和小字按同一比例缩放；使用实色伪元素绘制，避免边框宽度取整改变细线比例。
+
+站点布局和样式优先使用 Bootstrap 预定义类，包括栅格、间距、排版、背景、阴影和按钮；标题语意块使用 `d-inline-block mw-100`，正文使用 `lh-lg text-break`。`assets/scss/common/_custom.scss` 仅保留 Bootstrap 工具类无法直接表达的阅读分隔线绘制规则。后续样式调整也优先组合现有类，避免新增项目 CSS 或内联样式。
 
 全站通过 `layouts/_partials/head/custom-head.html` 在 HTML 的 `<head>` 中输出 `<meta name="super-reader" content="off">`。即使扩展全局开启，也会跳过这些页面，不运行切分推理，避免影响静态演示开关；其他网站仍按全局设置处理。此标记不依赖域名或页面 JavaScript，部署后同样生效。已安装旧版开发扩展时，重新加载扩展及页面后该规则生效。
 
@@ -67,7 +69,7 @@ npm --prefix site run build -- --baseURL https://example.org/super-reader/
 | `content/_index.md` | 唯一的产品内容页 |
 | `layouts/home.html` | 使用 Doks 基础模板和 Bootstrap 栅格的产品首页 |
 | `layouts/_partials/` | 项目扩展入口、站点图标、404 的 noindex |
-| `assets/scss/common/` | 小范围样式调整，保留 Doks 默认配色和排版 |
+| `assets/scss/common/` | 仅保留专用阅读分隔线样式，其余使用 Bootstrap 预定义类 |
 | `package.json`、`package-lock.json` | 固定版本的主题依赖和构建命令 |
 
 没有复制官方示例的 docs、blog、privacy 等页面。文档搜索、侧栏、版本切换等功能在 `params.toml` 中关闭；导航仅链接首页各部分及 GitHub。

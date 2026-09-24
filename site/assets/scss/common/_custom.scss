@@ -1,27 +1,5 @@
-.portal-content {
-  line-height: 1.9;
-  overflow-wrap: break-word;
-
-  h2 {
-    margin-top: 3rem;
-    scroll-margin-top: 6rem;
-  }
-
-  h3 {
-    margin-top: 2rem;
-    font-size: 1.2rem;
-  }
-
-  li {
-    margin-block: 0.65rem;
-  }
-}
-
-.reader-copy-chunk {
-  display: inline-block;
-  max-inline-size: 100%;
-}
-
+// Use Bootstrap classes for layout and appearance. Only the proportional
+// reading divider needs custom drawing; its dimensions also match the extension.
 .reader-divider::before {
   display: inline-block;
   // Preserve the 18px paragraph / 3px divider baseline at every font size.
@@ -32,31 +10,4 @@
   background-color: #ff1744;
   vertical-align: -0.15em;
   content: "";
-}
-
-.reader-divider[hidden] {
-  display: none !important;
-}
-
-.reader-demo-paper {
-  padding: clamp(1rem, 4vw, 2rem);
-  background: #fff;
-  // CSS Scan example #32: https://getcssscan.com/css-box-shadow-examples
-  box-shadow:
-    rgba(60, 64, 67, 0.3) 0px 1px 2px 0px,
-    rgba(60, 64, 67, 0.15) 0px 2px 6px 2px;
-}
-
-[data-bs-theme="dark"] .reader-demo-paper {
-  background: #242527;
-}
-
-.reader-demo-text > :last-child {
-  margin-bottom: 0;
-}
-
-@media (max-width: 575.98px) {
-  .navbar-brand {
-    font-size: 1rem;
-  }
 }

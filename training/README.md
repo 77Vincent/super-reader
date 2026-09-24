@@ -1,11 +1,12 @@
 # Boundary model training
 
-The [source-mixture pilot](SOURCE_MIX_COMPARISON.md) compares 10 million matched
-existing training pairs per arm: the current mixture versus Wikipedia plus
-synthetic data. Both continue from the latest released model at learning rate
-0.00003, using the complete fixed validation/test sets. Start or resume with
-`python3 training/run_source_comparison.py [--resume]`. No backend replacement
-or source deletion is automatic.
+The completed [source-mixture pilot](SOURCE_MIX_COMPARISON.md) compared 10 million
+matched training pairs per arm at learning rate 0.00003. Complete validation
+accuracy was 89.1853% for the current mixture and 89.1624% for Wikipedia plus
+synthetic, versus the inherited model's 89.2357%. Both retained epoch 0 under the
+selection rule; their recorded test results reuse that initial checkpoint and
+do not measure the new endpoints. The backend remains unchanged. The recorded
+run can be inspected with `python3 training/run_source_comparison.py --resume`.
 
 The current data contract is **unicode-context-v7**, defined in
 [text-policy.json](text-policy.json). Its model input representation remains
