@@ -1,19 +1,20 @@
 # Boundary model training
 
-The [padding-corrected larger continuation](PADDING_FIXED_EXPANSION.md) fixes
-intermediate padded activations and prepares 150 million additional web pairs,
-for 396,266,210 total. It reuses the strongest weights at learning rate 0.00003,
-remeasures full validation with the fix, and selects by overall validation top-1.
-Full holdouts and data cleaning stay fixed. Run or resume with
-`npm run model:expand-padding-fixed -- --resume`; completion writes `result.json`
-in `artifacts/padding-fixed-web-350m-v7-20260925/`.
+The [padding-corrected larger continuation](PADDING_FIXED_EXPANSION.md) completed
+one epoch on 396,266,210 pairs on 2026-09-27. The selected epoch-1 weights are now
+bundled: full validation **89.4642%**, full test **89.5785%**. The comparable
+initial validation with corrected padding was 89.2074%. The run adds 150 million
+web pairs, keeps learning rate 0.00003, full holdouts and data cleaning, and
+selects by overall validation top-1. Results are in
+`artifacts/padding-fixed-web-350m-v7-20260925/result.json`; the frozen release is
+its `epoch-1-backend/` directory, used by `npm run model:export`.
 
 The completed [source-mixture pilot](SOURCE_MIX_COMPARISON.md) compared 10 million
 matched training pairs per arm at learning rate 0.00003. Complete validation
 accuracy was 89.1853% for the current mixture and 89.1624% for Wikipedia plus
 synthetic, versus the inherited model's 89.2357%. Both retained epoch 0 under the
 selection rule; their recorded test results reuse that initial checkpoint and
-do not measure the new endpoints. The backend remains unchanged. The recorded
+do not measure the new endpoints. That pilot did not replace the backend. The recorded
 run can be inspected with `python3 training/run_source_comparison.py --resume`.
 
 The current data contract is **unicode-context-v7**, defined in
@@ -474,12 +475,11 @@ This browser smoke check uses a deterministic sample of 500 examples per domain
 (seed 20260911); formal training always evaluates the complete validation/test splits.
 Keep input and sample hashes fixed for within-version comparisons.
 
-The bundled model is the completed epoch-1 best checkpoint from the full-data
-learning-rate comparison (`learning-rate-192ch-full-246m-v7-20260923/lr-3e-5`),
-promoted on 2026-09-24. It retains 192 channels and 16 convolution layers and uses
-246,266,210 pairs, including 200 million web pairs. The matched comparison changes
-learning rate from 0.0003 to 0.00003; initialization, data and training steps are
-unchanged. Full validation accuracy is 89.2357% and test accuracy is 89.3738%.
+The bundled model is the completed epoch-1 best checkpoint from the corrected
+continuation (`padding-fixed-web-350m-v7-20260925/candidate`), promoted on
+2026-09-27. It retains 192 channels and 16 convolution layers and uses
+396,266,210 pairs, including 350 million web pairs, at learning rate 0.00003.
+Full validation accuracy is 89.4642% and test accuracy is 89.5785%.
 See [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for its provenance and validation results.
 The backend first splits clauses using normalized proxy punctuation and enumeration
 commas. All resulting clauses, including enumeration items, follow the same rule:
@@ -512,7 +512,7 @@ testing the selected candidate. Run or resume with
 `python3 training/run_learning_rate_comparison.py [--resume]`.
 
 The [full-data learning-rate comparison](FULL_LEARNING_RATE_COMPARISON.md)
-replays the currently bundled model's 246,266,210-pair epoch from its original
+replayed the preceding model's 246,266,210-pair epoch from its original
 pre-expansion weights, changing only 0.0003 to 0.00003. It preserves the original
 seed, optimizer setup, batches and fixed complete holdouts, and reuses the existing
 backend model as control. Run or resume with

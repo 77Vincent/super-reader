@@ -509,7 +509,7 @@ test("punctuation-delimited clauses of twelve characters or fewer stay intact", 
 test("without abstention the bundled model splits the divider example within the length threshold", () => {
   const chunks = chunkText("同一个无标点子句内的短语块用细竖线分隔；", { minConfidence: 0 });
 
-  assert.deepEqual(chunks, ["同一个无标点子句", "内的短语块", "用细竖线分隔；"]);
+  assert.deepEqual(chunks, ["同一个无标点子句内的短语", "块", "用细竖线分隔；"]);
   assert.ok(chunks.every((chunk) => visualLength(chunk) <= 12));
 });
 
@@ -550,8 +550,8 @@ test("renders the reported Euler-method example with model scores", () => {
   assert.deepEqual(chunkText(text, { minConfidence: 0 }), [
     "欧拉法",
     "是在积分无法直接计算时，",
-    '用"无数个小矩形累加"来近似',
-    '积分，',
+    '用"无数个小矩形累加"来',
+    '近似积分，',
     "因此",
     "它被称为一种数值",
     "积分方法（numerical integration method）。",
@@ -561,8 +561,8 @@ test("renders the reported Euler-method example with model scores", () => {
 test("model scoring keeps 方向盘 together at the current length threshold", () => {
   assert.deepEqual(chunkText("驾驶员会出于本能进行向左打方向盘等避险动作，", { minConfidence: 0 }), [
     "驾驶员会出于本能",
-    "进行",
-    "向左打方向盘等避险动作，",
+    "进行向左打",
+    "方向盘等避险动作，",
   ]);
 });
 

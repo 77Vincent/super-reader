@@ -192,7 +192,7 @@ test("bundled model uses the 50% default and honors a stricter explicit threshol
   const marginal = "我一直在思考明天早上的早餐吃什么";
   const moderate = "在没有人被人特别留意的情况下";
   assert.deepEqual(realChunker.process([marginal, moderate]), [[6], [4]]);
-  assert.deepEqual(realChunker.process([marginal, moderate], { minConfidence: .75 }), [[], [4]]);
+  assert.deepEqual(realChunker.process([marginal, moderate], { minConfidence: .75 }), [[], []]);
   assert.deepEqual(realChunker.process([moderate], { minConfidence: .9 }), [[]]);
   assert.deepEqual(realChunker.process([marginal, moderate], { minConfidence: 0 }), [[6], [4]]);
   const tokens = realChunker.tokenizeContext(marginal);

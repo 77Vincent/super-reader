@@ -1,10 +1,21 @@
 # Padding correction and larger continuation — 2026-09-25
 
-The confirmed padding defect is fixed. A detached pipeline is preparing
-**150,000,000 additional web pairs** and will train one epoch on
+The confirmed padding defect is fixed. The detached pipeline prepared
+**150,000,000 additional web pairs** and completed one epoch on
 **396,266,210 pairs** (350 million web plus 46,266,210 inherited local pairs).
-This is 1.609 times the preceding 246,266,210-pair corpus. The run is in progress;
-there is no new full-validation or test result yet.
+This is 1.609 times the preceding 246,266,210-pair corpus. It finished on
+**2026-09-27 at 07:44 China time** in 44.12 hours including preparation and
+evaluation; recorded training time was 34.34 hours (3,205 pairs/second).
+
+| Metric | Starting weights, corrected padding | Selected epoch 1 |
+| --- | ---: | ---: |
+| Full validation top-1 | 89.2074% | **89.4642%** |
+| Full validation cross-entropy | 0.329023 | **0.320630** |
+| Full test top-1 | Not remeasured | **89.5785%** |
+
+Validation improves by **0.2569 percentage points**; every reported validation
+domain improves. Test remains below 90%. The selected epoch-1 model was promoted
+at the user's request on 2026-09-27; see [BUNDLED_MODEL.md](BUNDLED_MODEL.md).
 
 ## Correctness change
 
@@ -58,7 +69,8 @@ of reaching 90%.
 
 This is a larger continuation, not an experiment isolating data quantity or
 padding: it adds training exposure and changes checkpoint selection as described.
-The extension's published weights and rules are not replaced by this job.
+The job itself did not replace the extension's weights. The later authorized
+promotion installs its best state without changing runtime rules.
 
 ## Operation and completion
 
