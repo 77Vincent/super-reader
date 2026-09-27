@@ -63,7 +63,7 @@ class SharedPairBoundaryChooser(nn.Module):
     ) -> torch.Tensor:
         hidden = self.embedding(token_ids) * token_mask.unsqueeze(-1)
         for block in self.blocks:
-            hidden = block(hidden) * token_mask.unsqueeze(-1)
+            hidden = block(hidden, token_mask.unsqueeze(-1))
 
         left = hidden[:, :-1]
         right = hidden[:, 1:]

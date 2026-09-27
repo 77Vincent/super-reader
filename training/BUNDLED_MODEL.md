@@ -55,6 +55,19 @@ the same best gap in every case. Maximum absolute logit difference is
 0.000305176, maximum relative difference 0.000001143, and maximum softmax
 probability difference 0.000002165, all within the existing tolerances.
 
+**Known evaluation/runtime limitation (2026-09-24):** those reference cases use
+unpadded individual inputs. A [subsequent 500-row diagnosis](GOOD_TEACHER_DIAGNOSIS.md)
+found that the training implementation clears padding only after each residual
+block; intermediate padded activations can change real-token logits. Historical
+batched evaluation and current JS individual inference chose different gaps on
+3 of these 500 rows. Unpadded Metal and JS agreed on all 500; restoring original
+batch padding reproduced all historical predictions. The full holdout figures
+above remain batched measurements, not a newly verified unpadded-runtime score.
+The diagnosis did not change the bundled weights. On 2026-09-25 the working
+trainer was [corrected](PADDING_FIXED_EXPANSION.md); a new continuation will
+remeasure full validation under that contract. This bundle and its historical
+reported holdout measurements remain unchanged.
+
 Model-dependent snapshots were updated without changing runtime rules. At the
 default 50% threshold the unpunctuated demo now omits the previous `句子｜模型`
 cut, while retaining `模型｜依然`. With abstention explicitly disabled, the

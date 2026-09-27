@@ -22,6 +22,7 @@ from text_policy import DATA_POLICY, require_data_policy, valid_proxy_label
 
 from train_smoke import (
     BoundaryChooser,
+    MODEL_EXECUTION_CONTRACT,
     TrainingStopRequested,
     batch_to_device,
     batching_statistics,
@@ -365,6 +366,7 @@ def main() -> None:
             "pass --resume or choose a different --artifact-dir"
         )
     configuration = {
+        "model_execution_contract": MODEL_EXECUTION_CONTRACT,
         "batch_size": args.batch_size,
         "max_tokens_per_batch": args.max_tokens_per_batch,
         "channels": args.channels,

@@ -27,6 +27,7 @@ DEFAULT_DATA_DIR = SCRIPT_DIR / "data" / "processed"
 DEFAULT_ARTIFACT_DIR = SCRIPT_DIR / "artifacts"
 PAD_TOKEN = "<pad>"
 UNKNOWN_TOKEN = "<unk>"
+MODEL_EXECUTION_CONTRACT = "masked-residual-convolutions-v1"
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -104,6 +105,7 @@ def training_execution(memory_fraction: float) -> dict[str, Any]:
         "device": "mps",
         "dtype": "float32",
         "convolution": "native_conv1d",
+        "model_execution_contract": MODEL_EXECUTION_CONTRACT,
         "framework_version": str(torch.__version__),
         "intra_op_threads": torch.get_num_threads(),
         "inter_op_threads": torch.get_num_interop_threads(),
@@ -276,11 +278,14 @@ class ResidualConvBlock(nn.Module):
         self.second = BoundaryConv1d(channels)
         self.residual_scale = nn.Parameter(torch.tensor([0.1]))
 
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        hidden = self.normalization(inputs)
-        hidden = F.gelu(self.first(hidden), approximate="tanh")
+    def forward(self, inputs: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        # Each convolution must see zero outside the real sequence. Masking
+        # only the block output lets LayerNorm/conv biases and neighboring
+        # tokens populate padding, then leak back through the second conv.
+        hidden = self.normalization(inputs) * mask
+        hidden = F.gelu(self.first(hidden), approximate="tanh") * mask
         hidden = self.second(hidden)
-        return inputs + self.residual_scale * hidden
+        return (inputs + self.residual_scale * hidden) * mask
 
 
 class BoundaryChooser(nn.Module):
@@ -306,7 +311,7 @@ class BoundaryChooser(nn.Module):
         expanded_mask = token_mask.unsqueeze(-1)
         hidden = hidden * expanded_mask
         for block in self.blocks:
-            hidden = block(hidden) * expanded_mask
+            hidden = block(hidden, expanded_mask)
 
         left = hidden[:, :-1]
         right = hidden[:, 1:]
@@ -578,6 +583,7 @@ def data_identity(
 
 def resume_configuration(args: argparse.Namespace) -> dict[str, Any]:
     return {
+        "model_execution_contract": MODEL_EXECUTION_CONTRACT,
         "batch_size": args.batch_size,
         "max_tokens_per_batch": args.max_tokens_per_batch,
         "channels": args.channels,

@@ -17,15 +17,15 @@ menu?.addEventListener('click', (event) => {
   }
 });
 
-// Static examples only: toggle prepared markers without loading a model.
-document.querySelectorAll('[data-reader-demo]').forEach((demo) => {
-  const button = demo.querySelector('[data-reader-demo-toggle]');
-  const markers = demo.querySelectorAll('.reader-divider');
-  button.addEventListener('click', () => {
-    const enabled = button.getAttribute('aria-pressed') !== 'true';
+// Toggle all prepared markers on this page, including the heading and lead.
+const readerToggle = document.querySelector('[data-reader-toggle]');
+if (readerToggle) {
+  const markers = document.querySelectorAll('.reader-divider');
+  readerToggle.addEventListener('click', () => {
+    const enabled = readerToggle.getAttribute('aria-pressed') !== 'true';
     markers.forEach((marker) => { marker.hidden = !enabled; });
-    button.setAttribute('aria-pressed', String(enabled));
-    button.textContent = enabled ? '关闭阅读辅助' : '启动阅读辅助';
+    readerToggle.setAttribute('aria-pressed', String(enabled));
+    readerToggle.textContent = enabled ? '关闭本页阅读辅助' : '开启本页阅读辅助';
   });
-  button.hidden = false;
-});
+  readerToggle.hidden = false;
+}

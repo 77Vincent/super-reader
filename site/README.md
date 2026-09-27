@@ -6,9 +6,9 @@
 
 配置参考官方 Doks starter，其 MIT 许可保留在 `LICENSE-Doks.txt`。
 
-首页的切分示例是静态演示，不加载模型或运行推理。在 `content/_index.md` 的 `reader-demo` shortcode 内用 `｜` 指定示意断点；构建时生成分隔线，按钮只控制这些标记的显示和隐藏。开关位于卡片下方居中，卡片保留自定义的 [CSS Scan #32](https://getcssscan.com/css-box-shadow-examples) 纸张阴影；背景和间距使用 Bootstrap 的 `bg-body-tertiary`、`p-3 p-md-4`，背景随明暗模式切换。没有 JavaScript 时仍显示静态示例。
+首页的切分示例是静态演示，不加载模型或运行推理。在 `content/_index.md` 的 `reader-demo` shortcode 内用 `｜` 指定示意断点；构建时生成分隔线。阅读辅助开关与安装入口并排，使用 Bootstrap 类保持等宽等高；安装入口使用 `btn-primary`，开关使用 `btn-outline-primary`。开关统一控制本页标题、简介及所有演示段落中的分隔线。卡片保留自定义的 [CSS Scan #32](https://getcssscan.com/css-box-shadow-examples) 纸张阴影，间距使用 Bootstrap 的 `p-3 p-md-4`。没有 JavaScript 时仍显示静态示例，开关隐藏。
 
-首页主标题 `headline` 和副标题 `lead` 也用 `｜` 指定固定断点，构建时由 `layouts/_partials/reader-copy.html` 转为与演示相同的红色分隔线，不显示字面量竖线，也不运行模型。每个语意块优先保持完整，分隔线随前一块一起换行，避免单独落在行首。演示按钮只控制演示段落，主标题和副标题始终显示分隔线。`title` 和 `seo.title` 保留不带分隔标记的纯文本，供页面元信息使用。
+首页主标题 `headline` 和副标题 `lead` 也用 `｜` 指定固定断点，构建时由 `layouts/_partials/reader-copy.html` 转为与演示相同的红色分隔线，不显示字面量竖线，也不运行模型。每个语意块优先保持完整，分隔线随前一块一起换行，避免单独落在行首。`title` 和 `seo.title` 保留不带分隔标记的纯文本，供页面元信息使用。
 
 官网与扩展的分隔线均以桌面正文的 18px 字号、3px 线宽为基准：高度 `1em`、宽度 `calc(1em / 6)`，间距和垂直偏移也使用 `em`。标题和小字按同一比例缩放；使用实色伪元素绘制，避免边框宽度取整改变细线比例。
 

@@ -1,5 +1,13 @@
 # Boundary model training
 
+The [padding-corrected larger continuation](PADDING_FIXED_EXPANSION.md) fixes
+intermediate padded activations and prepares 150 million additional web pairs,
+for 396,266,210 total. It reuses the strongest weights at learning rate 0.00003,
+remeasures full validation with the fix, and selects by overall validation top-1.
+Full holdouts and data cleaning stay fixed. Run or resume with
+`npm run model:expand-padding-fixed -- --resume`; completion writes `result.json`
+in `artifacts/padding-fixed-web-350m-v7-20260925/`.
+
 The completed [source-mixture pilot](SOURCE_MIX_COMPARISON.md) compared 10 million
 matched training pairs per arm at learning rate 0.00003. Complete validation
 accuracy was 89.1853% for the current mixture and 89.1624% for Wikipedia plus
@@ -138,6 +146,22 @@ plausible cuts that miss the original structural boundary, acceptable alternativ
 and unresolved cases; these judgments do not define a new backend accuracy.
 Under the user's overall-semantic acceptance standard, the first two categories
 both fail: 32 unacceptable results, 9 acceptable alternatives, and 4 unresolved.
+
+The [model-side diagnosis](GOOD_TEACHER_DIAGNOSIS.md) replays the frozen reviews:
+28 of the 32 unacceptable errors had the original target in the top three;
+22 had full input coverage at both compared gaps. It also identifies a padding
+invariance bug: activations at padded positions inside convolution blocks affect
+real-token logits. A 500-row Metal control reproduces the original batched
+predictions and isolates this from weight export or device differences. See the
+report for actual backend recursion results and the limits of these counts.
+
+The [preparation-contract audit](DATA_PREPARATION_AUDIT.md) checks all 5,092,343
+holdout rows plus 3,781,496 rows from 32 seeded training shards. It finds no
+invalid target/encoding metadata or exact input conflicts in that checked union,
+and documents strong position weighting, implicit length weighting from variable
+batch sizes, and measured differences between training and backend inputs. These
+are confirmed mechanisms or design tradeoffs, not measured causes of a 90%
+accuracy ceiling. The audit does not change the data or start training.
 
 The [source-by-source teacher review](SOURCE_TEACHER_AUDIT.md) separately reads
 350 current-policy candidates from 13 source groups, including seven web

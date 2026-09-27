@@ -142,6 +142,40 @@ class TrainingDeviceTests(unittest.TestCase):
         self.assertEqual(predict_record(cpu,self.records[-1],512)['predicted_index'],
             predict_record(gpu,self.records[-1],512)['predicted_index'])
 
+    def test_padding_and_batch_companions_preserve_logits_and_gradients(self):
+        model = BoundaryChooser(128, 32, 8).to('mps')
+        # Learned LayerNorm biases must not activate absent positions.
+        with torch.no_grad():
+            for block in model.blocks:
+                block.normalization.bias.fill_(0.3)
+                block.residual_scale.fill_(0.7)
+        for length in (2, 9, 33):
+            reference_logits = reference_gradients = None
+            for extra, companion in ((0, False), (1, False), (2, False), (17, False), (17, True)):
+                with self.subTest(length=length, padding=extra, companion=companion):
+                    width = length + extra
+                    ids = torch.zeros((2 if companion else 1, width), dtype=torch.long, device='mps')
+                    ids[0, :length] = torch.arange(2, length + 2, device='mps')
+                    mask = torch.zeros_like(ids, dtype=torch.bool)
+                    mask[0, :length] = True
+                    if companion:
+                        ids[1] = torch.arange(2, width + 2, device='mps')
+                        mask[1] = True
+                    gaps = mask[:, :-1] & mask[:, 1:]
+                    model.zero_grad(set_to_none=True)
+                    logits = model(ids, mask, gaps)
+                    self.assertTrue(torch.all(logits[~gaps] == -1e9).item())
+                    # Backprop only the first sample; the unrelated companion
+                    # must not change its loss or parameter gradients.
+                    F.cross_entropy(logits[:1], torch.tensor([length // 2 - 1], device='mps')).backward()
+                    real_logits = logits[0, :length - 1].detach().cpu()
+                    gradients = torch.cat([p.grad.detach().cpu().flatten() for p in model.parameters()])
+                    if reference_logits is None:
+                        reference_logits, reference_gradients = real_logits, gradients
+                    else:
+                        torch.testing.assert_close(real_logits, reference_logits, rtol=2e-4, atol=2e-5)
+                        torch.testing.assert_close(gradients, reference_gradients, rtol=2e-4, atol=2e-5)
+
     def test_portable_cpu_checkpoint_resumes_mps_optimizer_at_same_next_step(self):
         gpu=BoundaryChooser(128,32,2).to('mps')
         gpu_optimizer=torch.optim.AdamW(gpu.parameters(),lr=.0003,foreach=True)

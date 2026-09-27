@@ -1,13 +1,22 @@
 """Coordinator recovery must retain progress without restarting failed jobs blindly."""
 import os
+from argparse import Namespace
 from pathlib import Path
 import tempfile
 import unittest
 
-from run_web_continuation import run_with_recovery
+from run_web_continuation import run_with_recovery, validate_training_options
 
 
 class WebContinuationTests(unittest.TestCase):
+    def test_changed_learning_rate_or_selection_cannot_silently_resume(self):
+        plan = {'training': {'learning_rate': .00003, 'selection_macro_weight': 0}, 'checkpoint_shards': 2}
+        options = dict(learning_rate=.00003, selection_macro_weight=0, checkpoint_shards=2)
+        validate_training_options(plan, Namespace(**options))
+        for key, value in [('learning_rate', .0003), ('selection_macro_weight', .5), ('checkpoint_shards', 4)]:
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                validate_training_options(plan, Namespace(**{**options, key: value}))
+
     def test_memory_refresh_resumes_saved_state_instead_of_initializing_again(self):
         with tempfile.TemporaryDirectory() as directory:
             checkpoint = Path(directory) / "state.pt"

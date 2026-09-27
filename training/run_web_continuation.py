@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -67,6 +68,16 @@ def run_with_recovery(stage, command, *, run_once, checkpoint, should_stop, on_r
             command.append("--resume")
 
 
+def validate_training_options(plan, args):
+    requested = {"learning_rate": args.learning_rate,
+                 "selection_macro_weight": args.selection_macro_weight}
+    for key, value in requested.items():
+        if plan["training"][key] != value:
+            raise ValueError(f"Resume with the original {key}")
+    if plan.get("checkpoint_shards", 4) != args.checkpoint_shards:
+        raise ValueError("Resume with the original checkpoint frequency")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", type=Path, default=RUN)
@@ -78,10 +89,17 @@ def main():
     parser.add_argument("--initialize-from", type=Path, default=BEST)
     parser.add_argument("--freeze-evaluation", action="store_true")
     parser.add_argument("--epochs", type=int, default=2)
+    parser.add_argument("--learning-rate", type=float, default=0.0003)
+    parser.add_argument("--selection-macro-weight", type=float, default=0.5)
+    parser.add_argument("--checkpoint-shards", type=int, default=4)
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
-    if min(args.target_samples, args.epochs, args.shards) < 1:
+    if min(args.target_samples, args.epochs, args.shards, args.checkpoint_shards) < 1:
         parser.error("Counts must be positive")
+    if not math.isfinite(args.learning_rate) or args.learning_rate <= 0:
+        parser.error("Learning rate must be finite and positive")
+    if not 0 <= args.selection_macro_weight <= 1:
+        parser.error("Selection macro weight must be between zero and one")
     run, data = args.run_dir.resolve(), args.data_dir.resolve()
     base, evaluation, initialization = args.base_manifest.resolve(), args.evaluation.resolve(), args.initialize_from.resolve()
     run.mkdir(parents=True, exist_ok=True)
@@ -103,18 +121,21 @@ def main():
                 link.symlink_to(ROOT / "training" / name, target_is_directory=True)
         write(plan_path, {"created_at": datetime.now(timezone.utc).isoformat(), "new_train_samples": args.target_samples,
               "additional_shards": args.shards,
+              "checkpoint_shards": args.checkpoint_shards,
               "epochs": args.epochs, "data": str(data), "base_manifest": str(base), "base_sha256": sha(base),
               "old_evaluation": str(evaluation), "old_evaluation_summary_sha256": sha(evaluation / "summary.json"),
+              "evaluation_sha256": {split: sha(evaluation / f"{split}.jsonl") for split in ("validation", "test")},
               "freeze_evaluation": args.freeze_evaluation,
               "initialization_source": str(initialization), "initialization_sha256": sha(run / "initialization.pt"),
               "architecture": {"channels": 192, "residual_blocks": 8, "vocabulary_size": 8192},
               "source_hashes": {name: sha(snapshot / name) for name in SOURCES},
               "new_evaluation": "Keep complete validation/test splits byte-identical" if args.freeze_evaluation else "Whole documents split 96/2/2; retain all resulting validation/test samples",
               "history_exclusion": "All inherited training manifests plus frozen holdouts; projected input deduplication",
-              "training": {"learning_rate": 0.0003, "domain_weight_power": 0.65, "selection_macro_weight": 0.5,
+              "training": {"learning_rate": args.learning_rate, "domain_weight_power": 0.65, "selection_macro_weight": args.selection_macro_weight,
                            "gradient_clip": 1.0, "batch_size": 512, "max_tokens_per_batch": 8192, "threads": 1, "device": "mps"},
               "backend_bundle_sha256_at_start": sha(ROOT / "src/boundary-model-data.js")})
     plan = read(plan_path)
+    validate_training_options(plan, args)
     if (plan["epochs"], plan["new_train_samples"], plan["data"]) != (args.epochs, args.target_samples, str(data)):
         raise ValueError("Resume with the original data directory, target and epoch count")
     if plan.get("additional_shards", 128) != args.shards:
@@ -128,6 +149,12 @@ def main():
     for name, expected in plan["source_hashes"].items():
         if sha(snapshot / name) != expected:
             raise ValueError(f"Frozen source changed: {name}")
+    for split, expected in plan.get("evaluation_sha256", {}).items():
+        if sha(evaluation / f"{split}.jsonl") != expected:
+            raise ValueError(f"Frozen {split} changed")
+    if (run / "status.json").exists() and read(run / "status.json")["stage"] == "complete":
+        print("Run is already complete; see result.json and candidate/smoke-metrics.json", flush=True)
+        return
     child, stopped = None, False
     def stop(signum, _frame):
         nonlocal stopped
@@ -194,9 +221,9 @@ def main():
             raise FileExistsError("Training checkpoint exists; use --resume")
         command = [sys.executable, str(snapshot / "training/run_sharded.py"), "--manifest", str(data / "manifest.json"),
             "--data-dir", str(data), "--artifact-dir", str(candidate), "--epochs", str(args.epochs),
-            "--channels", "192", "--residual-blocks", "8", "--learning-rate", "0.0003", "--domain-weight-power", "0.65",
-            "--selection-macro-weight", "0.5", "--gradient-clip", "1.0", "--batch-size", "512", "--max-tokens-per-batch", "8192",
-            "--checkpoint-shards", "4", "--threads", "1", "--interop-threads", "1", "--device", "mps",
+            "--channels", "192", "--residual-blocks", "8", "--learning-rate", str(args.learning_rate), "--domain-weight-power", "0.65",
+            "--selection-macro-weight", str(args.selection_macro_weight), "--gradient-clip", "1.0", "--batch-size", "512", "--max-tokens-per-batch", "8192",
+            "--checkpoint-shards", str(args.checkpoint_shards), "--threads", "1", "--interop-threads", "1", "--device", "mps",
             "--mps-memory-fraction", "0.4"]
         command += ["--resume"] if checkpoint.exists() else ["--initialize-from", str(run / "initialization.pt")]
         execute("training", command)
@@ -207,6 +234,16 @@ def main():
         execute("export", [sys.executable, str(snapshot / "training/export_browser_model.py"),
             "--artifact-dir", str(candidate), "--output", str(candidate / "boundary-model-data.js")])
         metrics = read(candidate / "smoke-metrics.json")
+        initial_validation = metrics["initialization"]["validation_before_training"]
+        write(run / "result.json", {"completed_at": datetime.now(timezone.utc).isoformat(),
+              "data_sizes": metrics["data_sizes"], "best_epoch": metrics["best_epoch"],
+              "initial_validation_with_fixed_padding": initial_validation,
+              "selected_validation": metrics["validation"], "selected_test": metrics["test"],
+              "validation_accuracy_gain_pp": 100 * (metrics["validation"]["accuracy"] - initial_validation["accuracy"]),
+              "history": metrics["history"], "checkpoint_selection": metrics["checkpoint_selection"],
+              "backend_changed": sha(ROOT / "src/boundary-model-data.js") != plan["backend_bundle_sha256_at_start"],
+              "candidate_bundle": str(candidate / "boundary-model-data.js"),
+              "candidate_bundle_sha256": sha(candidate / "boundary-model-data.js")})
         status("complete", selected_epoch=metrics["best_epoch"], validation_accuracy=metrics["validation"]["accuracy"],
                test_accuracy=metrics["test"]["accuracy"])
     except InterruptedError as error:
