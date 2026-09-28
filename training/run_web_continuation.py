@@ -14,6 +14,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 RUN = ROOT / "training/artifacts/web-mix-20m-192ch-16conv-20260915"
@@ -78,6 +79,76 @@ def validate_training_options(plan, args):
         raise ValueError("Resume with the original checkpoint frequency")
 
 
+def extend_completed_run(run, plan, target_epochs, *, resume):
+    """Extend only a completed run, preserving the optimizer and frozen trainer.
+
+    Caller holds .run.lock. Publish the archive before the new plan; retrying
+    after an interrupted plan update also clears obsolete completion records.
+    """
+    previous = plan["epochs"]
+    if target_epochs < previous:
+        raise ValueError("Cannot reduce the recorded epoch target")
+    if target_epochs > previous:
+        if not resume:
+            raise ValueError("Extending training requires --resume")
+        status_path, result_path = run / "status.json", run / "result.json"
+        if not status_path.exists() or read(status_path).get("stage") != "complete" or not result_path.exists():
+            raise ValueError("Finish the recorded training, evaluation and export before extending")
+        result = read(result_path)
+        if not result.get("history") or result["history"][-1]["epoch"] != previous:
+            raise ValueError("Completed result does not match the recorded epoch target")
+        sys.path.insert(0, str(ROOT / "training/.deps"))
+        import torch
+        candidate = run / "candidate"
+        checkpoint = candidate / "training-state.pt"
+        state = torch.load(checkpoint, map_location="cpu", weights_only=True)
+        progress = state["progress"]
+        if (progress["epoch"], progress["shard"], progress["next_batch"]) != (previous + 1, 0, 0):
+            raise ValueError("Extension requires a completed epoch checkpoint")
+        if not state.get("optimizer_state", {}).get("state"):
+            raise ValueError("Extension requires saved optimizer state")
+        del state
+        archive = run / "completed-epochs" / f"epoch-{previous}"
+        archive.parent.mkdir(exist_ok=True)
+        if not archive.exists():
+            with tempfile.TemporaryDirectory(dir=archive.parent, prefix=".archive-") as temporary:
+                staging = Path(temporary) / "snapshot"
+                staging.mkdir()
+                shutil.copytree(candidate, staging / "candidate")
+                for name in ("run.json", "result.json", "status.json", "training.log", "export.log"):
+                    if (run / name).exists():
+                        shutil.copy2(run / name, staging / name)
+                staging.rename(archive)
+        for source in candidate.iterdir():
+            if source.is_file() and sha(source) != sha(archive / "candidate" / source.name):
+                raise ValueError(f"Completed archive differs: {source.name}")
+        updated = {**plan, "epochs": target_epochs, "epoch_extensions": [
+            *plan.get("epoch_extensions", []),
+            {"from_epochs": previous, "to_epochs": target_epochs,
+             "created_at": datetime.now(timezone.utc).isoformat(), "archive": str(archive),
+             "checkpoint_sha256": sha(checkpoint), "optimizer_preserved": True,
+             "coordinator_sha256": sha(Path(__file__))},
+        ]}
+        write(run / "run.json", updated)
+        plan.update(updated)
+    result_path = run / "result.json"
+    if result_path.exists():
+        completed_epochs = read(result_path)["history"][-1]["epoch"]
+        if completed_epochs < target_epochs:
+            if not resume or not plan.get("epoch_extensions"):
+                raise ValueError("Incomplete extension requires --resume and its archive")
+            # Keep the authoritative result in the archive, not at the active
+            # run path where it could be mistaken for the new epoch's result.
+            result_path.unlink()
+            write(run / "status.json", {"stage": "ready-to-resume", "target_epochs": target_epochs,
+                  "updated_at": datetime.now(timezone.utc).isoformat()})
+    # Recovery if the process stopped between unlinking result and updating status.
+    status_path = run / "status.json"
+    if plan.get("epoch_extensions") and not result_path.exists() and status_path.exists() and read(status_path).get("stage") == "complete":
+        write(status_path, {"stage": "ready-to-resume", "target_epochs": target_epochs,
+              "updated_at": datetime.now(timezone.utc).isoformat()})
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", type=Path, default=RUN)
@@ -136,8 +207,8 @@ def main():
               "backend_bundle_sha256_at_start": sha(ROOT / "src/boundary-model-data.js")})
     plan = read(plan_path)
     validate_training_options(plan, args)
-    if (plan["epochs"], plan["new_train_samples"], plan["data"]) != (args.epochs, args.target_samples, str(data)):
-        raise ValueError("Resume with the original data directory, target and epoch count")
+    if (plan["new_train_samples"], plan["data"]) != (args.target_samples, str(data)):
+        raise ValueError("Resume with the original data directory and sample target")
     if plan.get("additional_shards", 128) != args.shards:
         raise ValueError("Resume with the original additional shard count")
     if (plan["base_manifest"], plan["old_evaluation"], plan.get("freeze_evaluation", False)) != (str(base), str(evaluation), args.freeze_evaluation):
@@ -152,6 +223,7 @@ def main():
     for split, expected in plan.get("evaluation_sha256", {}).items():
         if sha(evaluation / f"{split}.jsonl") != expected:
             raise ValueError(f"Frozen {split} changed")
+    extend_completed_run(run, plan, args.epochs, resume=args.resume)
     if (run / "status.json").exists() and read(run / "status.json")["stage"] == "complete":
         print("Run is already complete; see result.json and candidate/smoke-metrics.json", flush=True)
         return

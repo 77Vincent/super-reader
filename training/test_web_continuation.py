@@ -1,14 +1,75 @@
 """Coordinator recovery must retain progress without restarting failed jobs blindly."""
 import os
+import json
 from argparse import Namespace
 from pathlib import Path
 import tempfile
 import unittest
 
-from run_web_continuation import run_with_recovery, validate_training_options
+from run_web_continuation import run_with_recovery, validate_training_options, extend_completed_run
 
 
 class WebContinuationTests(unittest.TestCase):
+    def completed_fixture(self, run):
+        import torch
+        candidate = run / 'candidate'
+        candidate.mkdir()
+        torch.save({'progress': {'epoch': 2, 'shard': 0, 'next_batch': 0},
+                    'model_state': {'weight': torch.tensor([3.])},
+                    'optimizer_state': {'state': {0: {'step': torch.tensor(17.)}}}},
+                   candidate / 'training-state.pt')
+        (candidate / 'smoke-metrics.json').write_text('{"best_epoch":1}')
+        plan = {'epochs': 1, 'source_hashes': {'train.py': 'frozen'}, 'data': '/same/data'}
+        for name, value in [('run.json', plan), ('status.json', {'stage': 'complete'}),
+                            ('result.json', {'history': [{'epoch': 1}]})]:
+            (run / name).write_text(json.dumps(value))
+        return plan
+
+    def test_extension_archives_results_and_preserves_exact_optimizer_checkpoint(self):
+        with tempfile.TemporaryDirectory() as folder:
+            run = Path(folder)
+            plan = self.completed_fixture(run)
+            checkpoint = run / 'candidate/training-state.pt'
+            before = checkpoint.read_bytes()
+            extend_completed_run(run, plan, 2, resume=True)
+            self.assertEqual(checkpoint.read_bytes(), before)
+            archive = run / 'completed-epochs/epoch-1'
+            self.assertEqual((archive / 'candidate/training-state.pt').read_bytes(), before)
+            self.assertEqual(json.loads((archive / 'run.json').read_text())['epochs'], 1)
+            self.assertEqual(json.loads((archive / 'result.json').read_text())['history'], [{'epoch': 1}])
+            self.assertEqual(plan['epochs'], 2)
+            self.assertEqual(plan['source_hashes'], {'train.py': 'frozen'})
+            self.assertFalse((run / 'result.json').exists())
+            self.assertEqual(json.loads((run / 'status.json').read_text())['stage'], 'ready-to-resume')
+            # Recover both possible interruptions after publishing the plan.
+            for restore_result in (True, False):
+                (run / 'status.json').write_text('{"stage":"complete"}')
+                if restore_result:
+                    (run / 'result.json').write_text((archive / 'result.json').read_text())
+                extend_completed_run(run, plan, 2, resume=True)
+                self.assertFalse((run / 'result.json').exists())
+                self.assertEqual(json.loads((run / 'status.json').read_text())['stage'], 'ready-to-resume')
+            self.assertEqual(len(plan['epoch_extensions']), 1)
+
+    def test_extension_rejects_missing_resume_unfinished_or_optimizerless_checkpoints(self):
+        import torch
+        for problem in ('resume', 'reduce', 'incomplete', 'optimizer'):
+            with self.subTest(problem=problem), tempfile.TemporaryDirectory() as folder:
+                run = Path(folder)
+                plan = self.completed_fixture(run)
+                if problem == 'incomplete':
+                    (run / 'status.json').write_text('{"stage":"stopped"}')
+                if problem == 'optimizer':
+                    path = run / 'candidate/training-state.pt'
+                    state = torch.load(path, weights_only=True)
+                    state['optimizer_state']['state'] = {}
+                    torch.save(state, path)
+                before = (run / 'run.json').read_bytes()
+                with self.assertRaises(ValueError):
+                    extend_completed_run(run, plan, 0 if problem == 'reduce' else 2, resume=problem != 'resume')
+                self.assertEqual((run / 'run.json').read_bytes(), before)
+                self.assertFalse((run / 'completed-epochs').exists())
+
     def test_changed_learning_rate_or_selection_cannot_silently_resume(self):
         plan = {'training': {'learning_rate': .00003, 'selection_macro_weight': 0}, 'checkpoint_shards': 2}
         options = dict(learning_rate=.00003, selection_macro_weight=0, checkpoint_shards=2)

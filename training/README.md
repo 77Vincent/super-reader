@@ -5,9 +5,15 @@ one epoch on 396,266,210 pairs on 2026-09-27. The selected epoch-1 weights are n
 bundled: full validation **89.4642%**, full test **89.5785%**. The comparable
 initial validation with corrected padding was 89.2074%. The run adds 150 million
 web pairs, keeps learning rate 0.00003, full holdouts and data cleaning, and
-selects by overall validation top-1. Results are in
-`artifacts/padding-fixed-web-350m-v7-20260925/result.json`; the frozen release is
-its `epoch-1-backend/` directory, used by `npm run model:export`.
+selects by overall validation top-1. Epoch-1 results are archived in
+`artifacts/padding-fixed-web-350m-v7-20260925/completed-epochs/epoch-1/result.json`;
+the frozen release is the run's `epoch-1-backend/` directory, used by
+`npm run model:export`.
+
+Epoch 2 started on 2026-09-27 with the same corpus, frozen trainer and full
+holdouts, preserving epoch 1's weights and optimizer state. Resume with
+`npm run model:expand-padding-fixed -- --resume --epochs 2`. Expected duration is
+about 35 hours based on the preceding epoch; the backend stays on epoch 1.
 
 The completed [source-mixture pilot](SOURCE_MIX_COMPARISON.md) compared 10 million
 matched training pairs per arm at learning rate 0.00003. Complete validation

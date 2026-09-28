@@ -17,6 +17,29 @@ Validation improves by **0.2569 percentage points**; every reported validation
 domain improves. Test remains below 90%. The selected epoch-1 model was promoted
 at the user's request on 2026-09-27; see [BUNDLED_MODEL.md](BUNDLED_MODEL.md).
 
+## Epoch 2 continuation — 2026-09-27
+
+At the user's request, epoch 2 was launched at **21:36 China time** on the
+same 396,266,210 pairs. It resumes the completed epoch-1 checkpoint and AdamW
+state, including optimizer step **2,102,401**, rather than initializing a new
+optimizer. The checkpoint's next position is epoch 2, shard 0, batch 0; its
+current weights exactly match its epoch-1 best weights.
+
+Resume checkpoint SHA-256:
+`874f451a904a3358c3c45d570fa52af0fb22be604a3f4724df8d8549e68d89aa`.
+The coordinator archives epoch-1 artifacts and results under
+`completed-epochs/epoch-1/` before extending the target. The original frozen
+trainer, architecture, learning rate 0.00003, cleaning, complete validation/test
+files and checkpoint selection remain unchanged. The extension is recorded in
+`run.json` and does not modify the production `epoch-1-backend/` release.
+
+Based on epoch 1's measured 34.34 training hours, allow approximately **35 hours**
+for this epoch and its evaluation, depending on sustained power and throughput.
+No additional data preparation is needed. Compare epoch 2 with epoch 1 on the
+same full validation set; selection can retain epoch 1 if epoch 2 is worse.
+The selected model is then evaluated on full test and exported to the candidate
+directory. Backend promotion remains a separate action.
+
 ## Correctness change
 
 Each residual block now clears padded activations after LayerNorm and after
@@ -76,9 +99,12 @@ promotion installs its best state without changing runtime rules.
 
 ```sh
 npm run model:expand-padding-fixed
-# After a graceful stop, process failure or reboot:
-npm run model:expand-padding-fixed -- --resume
+# Current epoch-2 continuation, including after a stop, process failure or reboot:
+npm run model:expand-padding-fixed -- --resume --epochs 2
 ```
+
+`--epochs 2` is the total epoch target, not two additional epochs. Keep it on
+subsequent resume commands; the coordinator rejects reducing a recorded target.
 
 Run directory: `training/artifacts/padding-fixed-web-350m-v7-20260925/`.
 Data directory: `training/data/processed/padding-fixed-web-350m-v7-20260925/`.
@@ -98,7 +124,7 @@ corrected initial validation, epoch endpoint, selected checkpoint's validation
 and test, and validation gain in percentage points. A failed process records
 `stage: failed` and its error; it never reports success before evaluation/export.
 
-Estimated preparation, training and evaluation: **44–50 hours**, conditional
+Original epoch-1 estimate for preparation, training and evaluation: **44–50 hours**, conditional
 on sustained power and available compute. This is an estimate, not a deadline
 guarantee. The initial 200-million-additional plan was reduced to 150 million
 to aim near the user's two-day return. The unchanged historical 246m run took
