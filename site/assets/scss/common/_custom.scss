@@ -1,6 +1,7 @@
 // Use Bootstrap classes for layout and appearance, except for the proportional
 // reading divider and the demo card's paper shadow.
-.reader-divider::before {
+.reader-divider::before,
+.brand-divider::before {
   display: inline-block;
   // Preserve the 18px paragraph / 3px divider baseline at every font size.
   width: calc(1em / 6);

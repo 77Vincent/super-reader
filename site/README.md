@@ -6,6 +6,8 @@
 
 配置参考官方 Doks starter，其 MIT 许可保留在 `LICENSE-Doks.txt`。
 
+默认品牌文字标志为「好｜读」，由 `layouts/_partials/brand-wordmark.html` 统一生成。导航栏和移动端菜单通过本地 `header/header.html` 覆盖使用它；该文件保留 Doks 1.9.3 的导航模板，仅替换这两处品牌标题，升级主题时需同步检查。品牌分隔线与正文共用颜色及随字号缩放的比例，固定显示，不受阅读辅助开关影响。站点名称、页面元数据中的品牌名仍为「好读」。
+
 首页的切分示例是静态演示，不加载模型或运行推理。在 `content/_index.md` 的 `reader-demo` shortcode 内用 `｜` 指定示意断点；构建时生成分隔线。阅读辅助开关与安装入口并排，使用 Bootstrap 类保持等宽等高；安装入口使用 `btn-primary`，开关使用 `btn-outline-primary`。开关统一控制本页标题、简介及所有演示段落中的分隔线。卡片保留自定义的 [CSS Scan #32](https://getcssscan.com/css-box-shadow-examples) 纸张阴影，间距使用 Bootstrap 的 `p-3 p-md-4`。没有 JavaScript 时仍显示静态示例，开关隐藏。
 
 首页主标题 `headline` 和副标题 `lead` 也用 `｜` 指定固定断点，构建时由 `layouts/_partials/reader-copy.html` 转为与演示相同的红色分隔线，不显示字面量竖线，也不运行模型。每个语意块优先保持完整，分隔线随前一块一起换行，避免单独落在行首。`title` 和 `seo.title` 保留不带分隔标记的纯文本，供页面元信息使用。
