@@ -179,7 +179,7 @@ test("punctuation separates independent confidence distributions and preserves U
   const item = "𠮷🌈" + text;
   let calls = 0;
   const chunker = withScores((tokens) => { calls++; return tokens.slice(1).map((_, i) => i === 9 ? 100 : 0); });
-  const input = `${item}、${item}，短句。`;
+  const input = `${item}；${item}，短句。`;
   const chunks = Array.from(chunker.chunkText(input, { segmenter: null }));
   assert.equal(chunks.join(""), input);
   assert.equal(calls, 2);

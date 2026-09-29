@@ -77,25 +77,28 @@ expectation. The forced Euler example changes `来近似｜积分` to `来｜近
 and the driving example moves a cut from `进行｜向左打方向盘` to `进行向左打｜方向盘`.
 The confidence for `在没有人｜被人特别留意的情况下` is now about 53.25%, so the
 explicit 75% threshold abstains. Aggregate gains do not establish improvement
-on every sentence. The runtime threshold, preprocessing and recursion are unchanged.
+on every sentence. That promotion left the runtime threshold, preprocessing and
+recursion unchanged. The later preprocessing corrections are described below.
 
 ## Backend preprocessing
 
-1. Classify proxy punctuation after NFKC normalization, preserving original text
-   and UTF-16 offsets.
-2. Pre-split on the backend punctuation rules: commas, periods,
-   exclamation/question marks, semicolons and ellipses. Also pre-split on enumeration
-   commas (`、`, including NFKC-equivalent forms) as a backend rule. Periods and
-   commas between digits remain inside numbers. Other punctuation and whitespace
-   stay in the clause. Training v7 identifies its Chinese proxy punctuation before
-   NFKC normalization; the runtime uses its own broader punctuation rules and does
-   not read `text-policy.json`. This promotion does not change either policy.
+Updated 2026-09-29 to align with the existing training input contract; weights
+and training/evaluation data are unchanged. See [INPUT_ALIGNMENT.md](INPUT_ALIGNMENT.md).
+
+1. Classify the original Chinese proxy glyphs `，。；！？…` before NFKC,
+   preserving original text and UTF-16 offsets. ASCII punctuation, enumeration
+   commas and compatibility forms are retained context. The former additional
+   enumeration pre-splitting rule has been removed.
+2. Pre-split on these proxies and all training physical line boundaries. Chinese
+   commas between numbers remain numeric context, including signed numbers,
+   decimals, exponents and surrounding whitespace. Closing quotes/brackets stay
+   on their original side of the proxy, matching training fragment extraction.
 3. Leave clauses of at most 12 visual units intact. A Han character, numeric
    expression or Latin word contributes one unit; this is not a 12-token cap.
-   Enumeration items follow this same threshold, with no additional list protection.
 4. Send the remaining longer clauses to the model with their context characters.
-   Normalize input and whitespace, hide pre-split proxy punctuation, and preserve
-   numeric separators. Model cuts require immediately adjacent Han characters
+   Normalize input and within-line whitespace after excluding the raw delimiters,
+   and preserve numeric separators. A compatibility glyph that normalizes into a
+   proxy-looking character remains a token. Model cuts require immediately adjacent Han characters
    in the original text, as well as browser word protection. This includes
    supplementary Han and treats spaces as non-Han. Dedicated number-interior,
    numeric-attachment, quantity-phrase and quote/bracket attachment rules have been removed.
@@ -109,6 +112,13 @@ on every sentence. The runtime threshold, preprocessing and recursion are unchan
 
 Rendered text retains its original punctuation, spacing and character widths.
 Only model-selected cuts inside a clause receive visual dividers.
+
+Inputs over 256 tokens are scored in bounded windows with a full convolution
+halo around each owned gap. For this kernel-3, dilation-1, 16-convolution model,
+the halo is 16 tokens on each side. Each gap retains one score, avoiding missing
+context at internal seams. At most 256 tokens still enter any model call;
+shorter inputs still use one call. The true CNN's 512 gap logits on a 513-token
+fixture exactly match whole-sequence inference in the regression test.
 
 By default the chunker scores the clause once and reuses its logits while
 recursively choosing the highest-scoring eligible gap in each fragment.

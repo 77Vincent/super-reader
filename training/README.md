@@ -44,6 +44,13 @@ exclusion list is maintained. Thus ASCII punctuation and compatibility forms
 such as `﹐` or `｡` do not become proxies merely because normalization changes
 their appearance.
 
+The browser now follows this same raw-proxy, numeric-comma and normalization
+contract, including physical line barriers. Inference receives an already
+delimited clause; training constructs AB by hiding the proxy between two valid
+fragments. That intentional difference remains. Corpus eligibility filters
+select teachers and are not used to delete webpage content. See
+[the input-alignment fixes and verification](INPUT_ALIGNMENT.md).
+
 Other punctuation, digits, letters and quotes remain in eligible input;
 fragments with `{ } < > & =` or their NFKC equivalents are discarded whole.
 Actual line breaks are split before whitespace normalization: no pair crosses a

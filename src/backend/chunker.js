@@ -19,16 +19,38 @@
   const SPLIT_LENGTH_THRESHOLD = 12;
   const MIN_SPLIT_CONFIDENCE = 0.5;
   const MAX_MODEL_WINDOW_TOKENS = 256;
-  const USES_CONTEXT = modelBackend?.getModelInfo?.().inputRepresentation === "unicode-context-v1";
-  // Keep in sync with training/text-policy.json; whitespace is context, not a proxy.
-  const CONTEXT_PROXY = /[，,。.！？!?；;…]/u;
+  const MODEL_INFO = modelBackend?.getModelInfo?.();
+  const USES_CONTEXT = MODEL_INFO?.inputRepresentation === "unicode-context-v1";
+  // Each kernel-3, dilation-1 convolution adds one token of context per side.
+  const MODEL_CONTEXT_RADIUS = MODEL_INFO?.convolutionLayers ?? 0;
+  // Match training/text-policy.json and text_policy.{py,mjs}. Classify ORIGINAL
+  // glyphs before NFKC: ASCII/compatibility punctuation is retained context.
+  const CONTEXT_PROXY = /[，。！？；…]/u;
+  const LINE_BOUNDARY = /[\n\r\v\f\u001c-\u001e\u0085\u2028\u2029]/u;
+  const PHYSICAL_LINE = /[^\n\r\v\f\u001c-\u001e\u0085\u2028\u2029]+/gu;
+  const NUMBER_SIGN = String.raw`[+\-−﹢﹣＋－]`;
+  const NUMBER = `${NUMBER_SIGN}? *(?:\\p{Nd}+(?:[.．]\\p{Nd}*)?|[.．]\\p{Nd}+)(?:[eEｅＥ]${NUMBER_SIGN}?\\p{Nd}+)?`;
+  const NUMERIC_COMMAS = new RegExp(`(?<![\\p{Nd}.．])${NUMBER} *(，) *(?=${NUMBER})`, "gu");
 
-  function isContextProxy(characters, index) {
-    const c = characters[index];
-    return CONTEXT_PROXY.test(c || "") && !(
-      /[.,，．]/u.test(c) && /^\p{Nd}$/u.test(characters[index - 1] || "") &&
-      /^\p{Nd}$/u.test(characters[index + 1] || "")
-    );
+  function contextBoundaryOffsets(text) {
+    const numericCommas = new Set();
+    if (text.includes("，")) {
+      for (const line of text.matchAll(PHYSICAL_LINE)) {
+        // Do not fold line breaks into spaces and accidentally join numbers.
+        for (const match of line[0].replace(/\s/gu, " ").matchAll(NUMERIC_COMMAS)) {
+          numericCommas.add(line.index + match.index + match[0].indexOf("，"));
+        }
+      }
+    }
+    const boundaries = new Set();
+    let offset = 0;
+    for (const character of text) {
+      if (LINE_BOUNDARY.test(character) || (CONTEXT_PROXY.test(character) && !numericCommas.has(offset))) {
+        boundaries.add(offset);
+      }
+      offset += character.length;
+    }
+    return boundaries;
   }
 
   // Keep source UTF-16 offsets even when NFKC expands a grapheme (e.g. ﬃ).
@@ -46,12 +68,18 @@
   }
 
   function tokenizeContext(text) {
-    const expanded = normalizeContextTokens(text);
-    const characters = expanded.map((token) => token.segment);
+    // Called on an already separated clause. Exclude its raw delimiters before
+    // normalization; e.g. a retained ｡ may normalize to 。 and must stay a token.
+    const expanded = [];
+    let start = 0;
+    for (const end of [...contextBoundaryOffsets(text), text.length]) {
+      for (const token of normalizeContextTokens(text.slice(start, end))) {
+        expanded.push({ segment: token.segment, index: start + token.index });
+      }
+      start = end + 1; // All source delimiters are one UTF-16 code unit.
+    }
     const tokens = [];
-    for (let i = 0; i < expanded.length; i += 1) {
-      const token = expanded[i];
-      if (isContextProxy(characters, i)) continue;
+    for (const token of expanded) {
       if (token.segment === " " && (!tokens.length || tokens[tokens.length - 1].segment === " ")) continue;
       tokens.push(token);
     }
@@ -97,11 +125,7 @@
     const clauses = [];
     let buffer = "";
     let isInsideStraightDoubleQuote = false;
-    const normalized = USES_CONTEXT ? normalizeContextTokens(text) : [];
-    const normalizedCharacters = normalized.map((token) => token.segment);
-    const boundaryOffsets = new Set(normalized.filter((token, index) => (
-      isContextProxy(normalizedCharacters, index) || token.segment === "、"
-    )).map((token) => token.index));
+    const boundaryOffsets = USES_CONTEXT ? contextBoundaryOffsets(text) : new Set();
     let sourceOffset = 0;
     const sourceOffsets = characters.map((character) => {
       const start = sourceOffset;
@@ -130,7 +154,7 @@
       while (index + 1 < characters.length) {
         const nextCharacter = characters[index + 1];
         const isTrailingPunctuation = isEnd(index + 1);
-        const isTrailingCloser =
+        const isTrailingCloser = !USES_CONTEXT &&
           TRAILING_CLOSER.test(nextCharacter) &&
           (nextCharacter !== '"' || isInsideStraightDoubleQuote);
 
@@ -229,6 +253,27 @@
     return weights.map((weight) => weight / total);
   }
 
+  function scoreTokenWindows(tokens) {
+    const scores = [];
+    // Score owned gaps with a full convolution halo on both sides. Otherwise
+    // an internal window seam looks like a sentence edge to the CNN.
+    const radius = MODEL_CONTEXT_RADIUS;
+    const stride = MAX_MODEL_WINDOW_TOKENS - 2 * radius - 1;
+    if (!Number.isInteger(radius) || radius < 0 || stride < 1) {
+      throw new RangeError("Model receptive field exceeds the inference window");
+    }
+    for (let cursor = 0; cursor < tokens.length - 1;) {
+      const gapEnd = tokens.length <= MAX_MODEL_WINDOW_TOKENS
+        ? tokens.length - 1 : Math.min(tokens.length - 1, cursor + stride);
+      const windowStart = Math.max(0, cursor - radius);
+      const windowEnd = Math.min(tokens.length, gapEnd + radius + 1);
+      const windowScores = modelBackend.scoreTokens(tokens.slice(windowStart, windowEnd));
+      scores.push(...windowScores.slice(cursor - windowStart, gapEnd - windowStart));
+      cursor = gapEnd;
+    }
+    return scores;
+  }
+
   function chunkByModel(text, segmenter, minConfidence, scoringStrategy) {
     const tokens = USES_CONTEXT ? tokenizeContext(text) : tokenizeHanCharacters(text);
     if (tokens.length < 2 || visualLength(text) <= SPLIT_LENGTH_THRESHOLD) return [text];
@@ -261,13 +306,7 @@
     );
 
     function scoreRange(start, end) {
-      const scores = [];
-      // Adjacent windows share one token, scoring every gap exactly once.
-      for (let cursor = start; cursor < end - 1; cursor += MAX_MODEL_WINDOW_TOKENS - 1) {
-        scores.push(...modelBackend.scoreTokens(
-          tokens.slice(cursor, Math.min(end, cursor + MAX_MODEL_WINDOW_TOKENS)).map((token) => token.segment),
-        ));
-      }
+      const scores = scoreTokenWindows(tokens.slice(start, end).map((token) => token.segment));
       // Combine windows before normalization, including any short final window.
       return { scores, confidence: gapProbabilities(scores) };
     }
@@ -389,6 +428,7 @@
     chunkTextByClause,
     createSegmenter,
     selectBestBoundary,
+    scoreTokenWindows,
     splitClauses,
     tokenizeHanCharacters,
     tokenizeContext,
