@@ -6,6 +6,9 @@
   "scripts": {
     "test": "node --test",
     "icons:generate": "node scripts/generate-icons.mjs",
+    "release:extension": "node scripts/build-extension.mjs",
+    "release:site": "node scripts/build-site.mjs",
+    "release:site:preview": "node scripts/build-site.mjs --preview",
     "model:baseline": "node training/evaluate_model.mjs",
     "smoke:data": "node --max-old-space-size=20480 training/prepare_smoke_data.mjs --tokenization character",
     "smoke:model": "npm run smoke:data && python3 training/run_smoke.py --epochs 2",

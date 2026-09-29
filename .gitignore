@@ -4,3 +4,4 @@ training/artifacts/
 training/.deps/
 __pycache__/
 *.pyc
+/dist/

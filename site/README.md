@@ -1,6 +1,6 @@
 # 好读静态入口页
 
-独立的 Hugo + [Doks](https://github.com/thuliteio/doks) 项目。仅保留产品首页和 404 页面，不生成 docs、blog、分类、标签、RSS 或搜索索引。内容在构建时生成静态 HTML，主题的 JavaScript 用于明暗切换、移动端导航等交互。
+独立的 Hugo + [Doks](https://github.com/thuliteio/doks) 项目。包含产品首页、隐私政策和 404 页面，不生成 docs、blog、分类、标签、RSS 或搜索索引。内容在构建时生成静态 HTML，主题的 JavaScript 用于明暗切换、移动端导航等交互。
 
 主题通过官方 npm 包 `@thulite/doks-core` 安装，按 [Doks 官方安装方式](https://getdoks.org/docs/start-here/installation/) 和 Thulite 模块挂载配置接入。主题、构建依赖和锁文件都位于 `site/`，与插件的根目录 npm 项目独立。
 
@@ -48,6 +48,16 @@ npm --prefix site run build
 
 将 `site/public/` 部署到静态托管服务即可。`public/`、`node_modules/`、`resources/`、`hugo_stats.json` 和 Hugo 锁文件均已忽略；`package-lock.json` 应提交，保证干净检出后可通过 `npm ci` 安装相同依赖。
 
+正式发布推荐从仓库根目录运行：
+
+```sh
+npm run release:site -- --base-url https://正式域名/
+```
+
+该入口必须指定真实 HTTPS 地址，输出到独立的 `dist/site/`，并检查隐私页、扩展跳过标记、sitemap 和 robots 地址。它不会修改开发配置。域名确定后再生成最终产物；部署只上传 `dist/site/` 的内容。详细步骤见 [`../release/README.md`](../release/README.md)。
+
+尚未确定域名时运行 `npm run release:site:preview`，生成 `dist/site-preview/`，用本地静态服务器预览即可。预览产物禁用抓取并标记 noindex；正式产物在指定真实域名后重新生成。
+
 ## 发布前配置
 
 - `config/_default/hugo.toml` 的 `baseURL`：把 `https://example.org/` 替换为正式地址，包含协议、部署子路径（如有）和末尾斜杠。
@@ -70,13 +80,14 @@ npm --prefix site run build -- --baseURL https://example.org/super-reader/
 | --- | --- |
 | `config/_default/` | Hugo、Doks、SEO、导航和 npm 模块挂载配置 |
 | `config/postcss.config.js` | 官方 PostCSS 配置，压缩生产 CSS 并保留动态主题样式 |
-| `content/_index.md` | 唯一的产品内容页 |
+| `content/_index.md` | 产品首页 |
+| `content/privacy.md`、`layouts/legal.html` | 隐私政策和简单的正文布局 |
 | `layouts/home.html` | 使用 Doks 基础模板和 Bootstrap 栅格的产品首页 |
 | `layouts/_partials/` | 项目扩展入口、站点图标、404 的 noindex |
 | `assets/scss/common/` | 保留阅读分隔线和卡片纸张阴影，其余使用 Bootstrap 预定义类 |
 | `package.json`、`package-lock.json` | 固定版本的主题依赖和构建命令 |
 
-没有复制官方示例的 docs、blog、privacy 等页面。文档搜索、侧栏、版本切换等功能在 `params.toml` 中关闭；导航仅链接首页各部分及 GitHub。
+没有复制官方示例的 docs、blog 等页面。隐私政策按本项目实际的数据流编写。文档搜索、侧栏、版本切换等功能在 `params.toml` 中关闭；页脚包含隐私政策入口。
 
 升级主题时更新依赖与锁文件并重新构建，检查首页、404、明暗切换和移动端菜单即可。不修改 `node_modules` 中的主题源码。
 

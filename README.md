@@ -1,6 +1,6 @@
 # 好读
 
-用于梳理核心流程的最小 Chrome 中文阅读辅助扩展。只有一个全局工具栏开关，保存在本地，刷新页面或重启浏览器后仍保留。页面在获得焦点时应用开关，后台标签页不会因开关变化而收到消息或开始处理。直接加载源码即可运行，不需要安装依赖或构建。
+Chrome 中文阅读辅助扩展。只有一个全局工具栏开关，保存在本地，刷新页面或重启浏览器后仍保留。页面在获得焦点时应用开关，后台标签页不会因开关变化而收到消息或开始处理。运行代码无需编译；发布时通过白名单复制和打包，避免把本地训练数据带入插件。
 
 在 Chrome 中按 **Shift + Option + R**（macOS；其他平台为 **Shift + Alt + R**）可切换开关。快捷键通过 manifest 的 `_execute_action` 触发同一个工具栏点击处理函数，处理中同样不响应，无需额外事件监听。重新加载扩展后生效；可在 `chrome://extensions/shortcuts` 查看或修改绑定。声明方式见 [Chrome 快捷键文档](https://developer.chrome.com/docs/extensions/reference/api/commands#action-commands)。
 
@@ -163,7 +163,7 @@ writer 使用现有 `markedSources` 集合保存每个原始文本节点的切�
 
 ## 安装和验证
 
-1. 在 `chrome://extensions/` 开启开发者模式，加载本目录。
+1. 在仓库根目录运行 `npm run release:extension`（需要 Node.js 和 `zip`，macOS 自带 `zip`）。在 `chrome://extensions/` 开启开发者模式，选择“加载已解压的扩展程序”，加载 `dist/extension/`。不要选仓库根目录，否则 Chrome 会把本地语料等文件也计入扩展体积。
 2. 打开普通网页，点击好读工具栏按钮或按 Shift + Option + R（macOS）。开启时显示红色粗竖线图标，关闭时显示灰色版本，不显示 `ON` 标签。处理中保持相同外观和标题，点击不响应、不排队；`ERR` 表示失败，悬停可看错误。图标通过 [Chrome action API](https://developer.chrome.com/docs/extensions/reference/api/action#icon) 切换。
 3. 切到其他普通网页会沿用全局开关；切回已处理页面不会重复处理。刷新当前页面也会沿用开关。
 4. 处理完成后再次点击全局关闭。后台标签页不会收到通知，下次聚焦时才清理。使用本地文件时，需要开启扩展的“允许访问文件网址”。
@@ -180,3 +180,9 @@ python3 -m http.server 8765 --bind 127.0.0.1
 - `http://127.0.0.1:8765/test/shadow-dom-fixture.html`：点击 **Run shadow DOM tests**，验证同尺寸标题替换后自动恢复标记、晚到及更新的嵌套评论、处理中合并更新、避免标记反馈循环、slot、宿主裁剪、样式和完整清理。
 
 离线训练见 [`training/README.md`](training/README.md)。
+
+## 发布
+
+- 插件：`npm run release:extension` 输出 `dist/extension/` 和可提交 Chrome Web Store 的 `dist/haodu-<version>.zip`，同时输出文件清单和 SHA-256。打包直接使用已接入的模型，不触发训练或导出。
+- 静态站点：先运行 `npm --prefix site ci`，再运行 `npm run release:site -- --base-url https://正式域名/`，产物为 `dist/site/`。本地开发仍使用 `npm --prefix site run dev`。
+- 发布顺序、部署参数和商店材料见 [`release/README.md`](release/README.md)；商店介绍和权限解释见 [`release/chrome-web-store.md`](release/chrome-web-store.md)。

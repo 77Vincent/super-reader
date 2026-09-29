@@ -1,4 +1,4 @@
-{{ if eq .Kind "404" }}
+{{ if or (eq .Kind "404") (ne hugo.Environment "production") }}
   <meta name="robots" content="noindex">
 {{ end }}
 <meta name="super-reader" content="off">
