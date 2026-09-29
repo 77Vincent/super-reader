@@ -5,6 +5,7 @@
   "description": "好读 — a browser extension for vertically separated Chinese phrase chunking",
   "scripts": {
     "test": "node --test",
+    "icons:generate": "node scripts/generate-icons.mjs",
     "model:baseline": "node training/evaluate_model.mjs",
     "smoke:data": "node --max-old-space-size=20480 training/prepare_smoke_data.mjs --tokenization character",
     "smoke:model": "npm run smoke:data && python3 training/run_smoke.py --epochs 2",

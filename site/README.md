@@ -8,13 +8,15 @@
 
 默认品牌文字标志为「好｜读」，由 `layouts/_partials/brand-wordmark.html` 统一生成。导航栏和移动端菜单通过本地 `header/header.html` 覆盖使用它；该文件保留 Doks 1.9.3 的导航模板，仅替换这两处品牌标题，升级主题时需同步检查。品牌分隔线与正文共用颜色及随字号缩放的比例，固定显示，不受阅读辅助开关影响。站点名称、页面元数据中的品牌名仍为「好读」。
 
+网站 favicon 与插件图标统一为透明底的红色粗竖线，颜色为 `#ff1744`；在仓库根目录运行 `npm run icons:generate` 可同时重新生成 SVG、插件各尺寸 PNG 和 `static/favicon.png`。
+
 首页的切分示例是静态演示，不加载模型或运行推理。在 `content/_index.md` 的 `reader-demo` shortcode 内用 `｜` 指定示意断点；构建时生成分隔线。阅读辅助开关与安装入口并排，使用 Bootstrap 类保持等宽等高；安装入口使用 `btn-primary`，开关使用 `btn-outline-primary`。开关统一控制本页标题、简介及所有演示段落中的分隔线。卡片保留自定义的 [CSS Scan #32](https://getcssscan.com/css-box-shadow-examples) 纸张阴影，间距使用 Bootstrap 的 `p-3 p-md-4`。没有 JavaScript 时仍显示静态示例，开关隐藏。
 
 首页主标题 `headline` 和副标题 `lead` 也用 `｜` 指定固定断点，构建时由 `layouts/_partials/reader-copy.html` 转为与演示相同的红色分隔线，不显示字面量竖线，也不运行模型。每个语意块优先保持完整，分隔线随前一块一起换行，避免单独落在行首。`title` 和 `seo.title` 保留不带分隔标记的纯文本，供页面元信息使用。
 
 官网与扩展的分隔线均以桌面正文的 18px 字号、3px 线宽为基准：高度 `1em`、宽度 `calc(1em / 6)`，间距和垂直偏移也使用 `em`。标题和小字按同一比例缩放；使用实色伪元素绘制，避免边框宽度取整改变细线比例。
 
-站点布局和样式优先使用 Bootstrap 预定义类，包括栅格、间距、排版、背景和按钮；标题语意块使用 `d-inline-block mw-100`，正文使用 `lh-lg text-break`。自定义 CSS 的例外是阅读分隔线绘制规则和演示卡片的纸张阴影，均保留在 `assets/scss/common/_custom.scss`。后续样式调整也优先组合现有类，避免在这些例外之外新增项目 CSS 或内联样式。
+站点布局和样式优先使用 Bootstrap 预定义类，包括栅格、间距、排版、背景和按钮；标题语意块使用 `d-inline-block mw-100`，正文使用 `lh-lg text-break`。自定义 CSS 的例外是阅读分隔线绘制规则和演示卡片的纸张纹理、阴影，均保留在 `assets/scss/common/_custom.scss`。纹理用内嵌 SVG 生成单色颗粒，以 200px 方块平铺；SVG 中的 `opacity='0.05'` 控制颗粒强度，不影响文字透明度。后续样式调整也优先组合现有类，避免在这些例外之外新增项目 CSS 或内联样式。
 
 全站通过 `layouts/_partials/head/custom-head.html` 在 HTML 的 `<head>` 中输出 `<meta name="super-reader" content="off">`。即使扩展全局开启，也会跳过这些页面，不运行切分推理，避免影响静态演示开关；其他网站仍按全局设置处理。此标记不依赖域名或页面 JavaScript，部署后同样生效。已安装旧版开发扩展时，重新加载扩展及页面后该规则生效。
 

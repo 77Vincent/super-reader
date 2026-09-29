@@ -1,5 +1,5 @@
 // Use Bootstrap classes for layout and appearance, except for the proportional
-// reading divider and the demo card's paper shadow.
+// reading divider and the demo card's paper texture and shadow.
 .reader-divider::before,
 .brand-divider::before {
   display: inline-block;
@@ -14,9 +14,16 @@
 }
 
 .reader-demo-paper {
+  // Tile fine monochrome grain at a fixed scale. The SVG rect's opacity controls
+  // texture strength without fading the text, dividers or shadow.
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200'%3E%3Cfilter id='noiseFilter' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  background-repeat: repeat;
+  background-blend-mode: multiply;
+
   // CSS Scan example #32: https://getcssscan.com/css-box-shadow-examples
   box-shadow:
     rgba(60, 64, 67, 0.3) 0px 1px 2px 0px,
     rgba(118, 120, 122, 0.15) 0px 2px 6px 2px;
-  background-color: #fcfbf9;
+  background-color: #fffefb;
 }
