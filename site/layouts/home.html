@@ -10,7 +10,7 @@
             {{ $chromeURL := site.Params.chromeWebStoreURL | default "" }}
             {{ $edgeURL := site.Params.edgeAddonsURL | default "" }}
             {{ $installURL := site.Params.repositoryURL }}
-            {{ $installLabel := "查看项目与安装方法" }}
+            {{ $installLabel := "使用" }}
             {{ if $chromeURL }}
               {{ $installURL = $chromeURL }}
               {{ $installLabel = "添加到 Chrome" }}
@@ -26,7 +26,7 @@
       </div>
     </div>
   </section>
-  <section class="container-fluid pt-0 pb-5">
+  <section id="demo" class="container-fluid pt-0 pb-5">
     <div class="row justify-content-center">
       <div class="col-lg-12 col-xl-10 lh-lg text-break">
         {{ .Content }}

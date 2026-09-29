@@ -8,7 +8,7 @@ const links = {
   fallbackUrl: 'https://github.com/77Vincent/super-reader',
 };
 const chromeUA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36';
-const fallback = { href: links.fallbackUrl, label: '查看项目与安装方法' };
+const fallback = { href: links.fallbackUrl, label: '使用' };
 
 test('desktop Chrome opens its configured store', async () => {
   const { selectInstallTarget } = await targetModule;

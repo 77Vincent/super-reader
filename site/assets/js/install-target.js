@@ -1,6 +1,6 @@
 // Low-entropy browser hints are sufficient; no network requests are needed.
 export function selectInstallTarget({ chromeUrl = '', edgeUrl = '', fallbackUrl }, browser = {}) {
-  const fallback = { href: fallbackUrl, label: '查看项目与安装方法' };
+  const fallback = { href: fallbackUrl, label: '使用' };
   const userAgent = browser.userAgent || '';
   const hints = browser.userAgentData;
   const hasBrand = (name) => hints?.brands?.some(({ brand }) => brand === name);

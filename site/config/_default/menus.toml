@@ -1,11 +1,6 @@
 [[main]]
-  name = '功能'
-  url = './#features'
-  weight = 10
-
-[[main]]
-  name = '安装'
-  url = './#usage'
+  name = '例句'
+  url = './#demo'
   weight = 20
 
 [[social]]
