@@ -27,3 +27,14 @@
     rgba(118, 120, 122, 0.15) 0px 2px 6px 2px;
   background-color: #fffefb;
 }
+
+@include color-mode(dark) {
+  .reader-demo-paper {
+    background-color: var(--bs-tertiary-bg);
+    // A faint light grain on dark paper, with the theme's inherited light text.
+    background-blend-mode: screen;
+    box-shadow:
+      rgba(0, 0, 0, 0.3) 0px 1px 2px 0px,
+      rgba(0, 0, 0, 0.18) 0px 2px 6px 2px;
+  }
+}

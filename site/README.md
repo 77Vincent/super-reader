@@ -16,7 +16,7 @@
 
 官网与扩展的分隔线均以桌面正文的 18px 字号、3px 线宽为基准：高度 `1em`、宽度 `calc(1em / 6)`，间距和垂直偏移也使用 `em`。标题和小字按同一比例缩放；使用实色伪元素绘制，避免边框宽度取整改变细线比例。
 
-站点布局和样式优先使用 Bootstrap 预定义类，包括栅格、间距、排版、背景和按钮；标题语意块使用 `d-inline-block mw-100`，正文使用 `lh-lg text-break`。自定义 CSS 的例外是阅读分隔线绘制规则和演示卡片的纸张纹理、阴影，均保留在 `assets/scss/common/_custom.scss`。纹理用内嵌 SVG 生成单色颗粒，以 200px 方块平铺；SVG 中的 `opacity='0.05'` 控制颗粒强度，不影响文字透明度。后续样式调整也优先组合现有类，避免在这些例外之外新增项目 CSS 或内联样式。
+站点布局和样式优先使用 Bootstrap 预定义类，包括栅格、间距、排版、背景和按钮；标题语意块使用 `d-inline-block mw-100`，正文使用 `lh-lg text-break`。自定义 CSS 的例外是阅读分隔线绘制规则和演示卡片的纸张纹理、阴影，均保留在 `assets/scss/common/_custom.scss`。纹理用内嵌 SVG 生成单色颗粒，以 200px 方块平铺；SVG 中的 `opacity='0.05'` 控制颗粒强度，不影响文字透明度。浅色模式使用暖白纸面和 multiply 纹理，深色模式跟随 Bootstrap 的 `--bs-tertiary-bg`，用 screen 混合淡色颗粒及更适合深色背景的阴影；文字继承主题配色。后续样式调整也优先组合现有类，避免在这些例外之外新增项目 CSS 或内联样式。
 
 全站通过 `layouts/_partials/head/custom-head.html` 在 HTML 的 `<head>` 中输出 `<meta name="super-reader" content="off">`。即使扩展全局开启，也会跳过这些页面，不运行切分推理，避免影响静态演示开关；其他网站仍按全局设置处理。此标记不依赖域名或页面 JavaScript，部署后同样生效。已安装旧版开发扩展时，重新加载扩展及页面后该规则生效。
 
