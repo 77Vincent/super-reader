@@ -72,7 +72,7 @@ HTML 建议 `Cache-Control: no-cache`；带内容指纹的 CSS/JS 可以长缓�
 
 - 正式域名、选定的托管服务及部署账号配置。
 - Chrome Web Store 开发者账号和上架材料最终确认。
-- 小宣传图及真实扩展使用截图。
+- 小宣传图；首张预览图已准备在 `release/assets/store-preview-1280x800.jpg`（见商店材料）。
 - 上线后的域名访问、HTTPS 与商店安装验证。
 
 本地构建、ZIP 校验和单元测试不等于商店审核通过。
