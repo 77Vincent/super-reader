@@ -1,5 +1,5 @@
 title = '好读'
-description = '好读是一款中文阅读辅助浏览器扩展，使用本地神经网络为网页长句添加分隔线，让中文更好读。支持 Chrome 和 Edge。'
+description = '中文阅读辅助，按人类习惯，将长句划分为短句，让阅读更轻松。'
 repositoryURL = 'https://github.com/77Vincent/super-reader'
 chromeWebStoreURL = ''
 edgeAddonsURL = ''

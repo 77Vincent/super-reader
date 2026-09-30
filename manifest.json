@@ -3,7 +3,7 @@
   "name": "好读",
   "version": "0.1.0",
   "minimum_chrome_version": "109",
-  "description": "按人类习惯，将长句拆分为短句，让阅读更轻松。",
+  "description": "中文阅读辅助，按人类习惯，将长句划分为短句，让阅读更轻松。",
   "permissions": ["offscreen", "scripting", "storage"],
   "host_permissions": ["http://*/*", "https://*/*", "file:///*"],
   "icons": {
