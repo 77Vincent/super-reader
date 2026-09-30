@@ -2,7 +2,7 @@
 
 网站与插件独立发布。网站只上传静态页面；插件只上传运行文件。不要把仓库根目录或整个 `dist/` 上传到任意一方。
 
-当前准备方向：Chrome Web Store 首发；站点优先考虑中国大陆的访问体验，正式域名和托管地域待确定。此目录记录准备步骤，不表示已经上线或通过商店审核。
+当前方向：Chrome Web Store 首发；`haodu.site` 的域名注册保留在阿里云，站点已通过 API 部署到腾讯云 SCF 上海并验证文件和在线响应。已领取 0 元、3 个月的 SCF 试用套餐。备案、DNS、加速与 HTTPS 尚待完成，正式域名尚未上线。具体配置与进度见 [腾讯云部署说明](tencent-cloud.md)。原阿里云 OSS 私有文件暂时保留，见 [历史部署记录](aliyun-oss.md)。
 
 ## 1. 构建插件
 
@@ -54,7 +54,9 @@ HTML 建议 `Cache-Control: no-cache`；带内容指纹的 CSS/JS 可以长缓�
 
 - 已有备案域名：可使用阿里云 OSS 大陆地域静态托管，按需要配合大陆 CDN。
 - 暂无备案：可考虑 OSS 香港地域和自有域名，先做大陆多网络访问测试；它仍是跨境访问，不能保证各运营商的延迟和稳定性。
-- 自有域名、HTTPS、目录首页和错误页配置，在上传文件后仍需配置并实测。具体控制台/CLI部署步骤待域名和地域确定后补齐。
+- 本项目已选择 `haodu.site` 和腾讯云 SCF 上海地域，实际由 Serverless 承载站点并办理备案；部署方案见 [腾讯云部署说明](tencent-cloud.md)。
+
+站点发布使用官方 TCCLI 调用 API：`npm run deploy:site -- --dry-run` 构建并检查目标，`npm run deploy:site` 更新现有函数。服务授权和专用 CAM 凭证已配置。命令上传 SCF 代码包并逐个校验云端文件；重建流程与最小权限见 [API 发布](tencent-cloud.md#构建与-api-发布)。历史 OSS 发布入口为 `npm run deploy:site:oss`。
 
 依据：[阿里云自定义域名与备案要求](https://www.alibabacloud.com/help/en/oss/user-guide/access-buckets-via-custom-domain-names)。普通 Cloudflare 托管不等于大陆网络；其[中国网络需企业套餐另购](https://developers.cloudflare.com/china-network/get-started/)。
 
@@ -70,7 +72,7 @@ HTML 建议 `Cache-Control: no-cache`；带内容指纹的 CSS/JS 可以长缓�
 
 ## 尚需提供或完成
 
-- 正式域名、选定的托管服务及部署账号配置。
+- 完成首次 ICP 备案、DNS、加速及 HTTPS 配置，并验证正式域名公开访问。腾讯云 API 部署已完成；阿里云历史测试证书不作为腾讯云正式上线已完成的依据。
 - Chrome Web Store 开发者账号和上架材料最终确认。
 - 小宣传图；首张预览图已准备在 `release/assets/store-preview-1280x800.jpg`（见商店材料）。
 - 上线后的域名访问、HTTPS 与商店安装验证。

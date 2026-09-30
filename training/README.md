@@ -30,8 +30,10 @@ structural symbols, single invisible controls, every physical line's first
 fragment, and an unterminated last fragment. Bounded symbol windows, explicit
 source-deletion barriers, signed-number protection and neighbor rules remain. It does not change the CNN architecture
 or token IDs. Training, validation and test preparation share
-this contract. Older corpora are retained for provenance and cannot be silently
-mixed into a new run.
+this contract. Historical corpora cannot be silently mixed into a new run.
+The [2026-09-30 disk cleanup](DISK_CLEANUP.md) removed obsolete prepared data
+and experiment intermediates while preserving the current corpus, historical
+deduplication dependencies, model checkpoints and experiment reports.
 
 ## Input and labels
 
