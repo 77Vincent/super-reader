@@ -2,7 +2,7 @@
 
 网站与插件独立发布。网站只上传静态页面；插件只上传运行文件。不要把仓库根目录或整个 `dist/` 上传到任意一方。
 
-当前方向：Chrome Web Store 首发；`haodu.site` 的域名注册保留在阿里云，站点已通过 API 部署到腾讯云 SCF 上海并验证文件和在线响应。已领取 0 元、3 个月的 SCF 试用套餐。备案、DNS、加速与 HTTPS 尚待完成，正式域名尚未上线。具体配置与进度见 [腾讯云部署说明](tencent-cloud.md)。原阿里云 OSS 私有文件暂时保留，见 [历史部署记录](aliyun-oss.md)。
+当前方向：Chrome Web Store 首发；`haodu.site` 的域名注册与站点托管统一使用阿里云。静态文件已通过 API 部署到上海 OSS Bucket `haodu-site` 并逐个校验。Bucket 当前为私有，备案审核、域名绑定、DNS 与 HTTPS 尚待完成，正式域名尚未上线。具体配置与进度见 [阿里云 OSS 部署说明](aliyun-oss.md)。
 
 ## 1. 构建插件
 
@@ -50,15 +50,21 @@ CI 也可以通过 `SITE_BASE_URL` 传入地址。正式地址必须包含 HTTPS
 
 HTML 建议 `Cache-Control: no-cache`；带内容指纹的 CSS/JS 可以长缓存；favicon 等无指纹资源使用短缓存。此站点所有构建资源均由本站提供，部署不依赖浏览器访问 npm、GitHub 或外部字体 CDN。
 
-## 3. 中国访问优先的托管选择
+## 3. 发布到阿里云 OSS
 
-- 已有备案域名：可使用阿里云 OSS 大陆地域静态托管，按需要配合大陆 CDN。
-- 暂无备案：可考虑 OSS 香港地域和自有域名，先做大陆多网络访问测试；它仍是跨境访问，不能保证各运营商的延迟和稳定性。
-- 本项目已选择 `haodu.site` 和腾讯云 SCF 上海地域，实际由 Serverless 承载站点并办理备案；部署方案见 [腾讯云部署说明](tencent-cloud.md)。
+站点部署到阿里云 OSS 上海地域（`cn-shanghai`）的 `haodu-site` Bucket，正式地址为 `https://haodu.site/`。使用官方 ossutil 调用 API，专用 RAM 用户只负责上传和校验网站文件。
 
-站点发布使用官方 TCCLI 调用 API：`npm run deploy:site -- --dry-run` 构建并检查目标，`npm run deploy:site` 更新现有函数。服务授权和专用 CAM 凭证已配置。命令上传 SCF 代码包并逐个校验云端文件；重建流程与最小权限见 [API 发布](tencent-cloud.md#构建与-api-发布)。历史 OSS 发布入口为 `npm run deploy:site:oss`。
+```sh
+# 构建并检查发布清单，不调用云 API。
+npm run deploy:site -- --dry-run
 
-依据：[阿里云自定义域名与备案要求](https://www.alibabacloud.com/help/en/oss/user-guide/access-buckets-via-custom-domain-names)。普通 Cloudflare 托管不等于大陆网络；其[中国网络需企业套餐另购](https://developers.cloudflare.com/china-network/get-started/)。
+# 使用本机已配置的专用凭证上传并校验。
+npm run deploy:site -- --profile haodu-site
+```
+
+发布命令会重新构建生产站点，先上传资源、后上传 HTML，首页最后上传；每个文件上传后通过 ETag 校验。凭证配置、权限范围与完整上线步骤见 [API 发布](aliyun-oss.md#api-发布)。
+
+文件上传与网站公开上线是两个步骤。完成 ICP 备案后，再配置 Bucket 的域名绑定、DNS、HTTPS 和公共读权限；发布脚本不修改这些设置。依据：[阿里云自定义域名与备案要求](https://help.aliyun.com/zh/oss/user-guide/access-buckets-via-custom-domain-names)。
 
 ## 4. 上架顺序
 
@@ -72,7 +78,7 @@ HTML 建议 `Cache-Control: no-cache`；带内容指纹的 CSS/JS 可以长缓�
 
 ## 尚需提供或完成
 
-- 完成首次 ICP 备案、DNS、加速及 HTTPS 配置，并验证正式域名公开访问。腾讯云 API 部署已完成；阿里云历史测试证书不作为腾讯云正式上线已完成的依据。
+- 完成首次 ICP 备案、OSS 域名绑定、DNS、HTTPS 与公共读配置，并验证正式域名公开访问。OSS 文件已上传，证书已签发但尚未部署，网站尚未公开上线。
 - Chrome Web Store 开发者账号和上架材料最终确认。
 - 小宣传图；首张预览图已准备在 `release/assets/store-preview-1280x800.jpg`（见商店材料）。
 - 上线后的域名访问、HTTPS 与商店安装验证。

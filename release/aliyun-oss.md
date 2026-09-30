@@ -1,6 +1,6 @@
 # haodu.site 阿里云静态站点部署
 
-> 历史部署记录：2026-09-29 已决定迁移至腾讯云，当前方案与进度见 [腾讯云部署说明](tencent-cloud.md)。以下阿里云资源暂时保留；旧 API 发布命令为 `deploy:site:oss`，默认 `deploy:site` 已改为腾讯云。
+本站统一使用阿里云：域名为 `haodu.site`，网站由上海 OSS 静态托管。默认发布入口为 `npm run deploy:site`。
 
 目标域名为 `https://haodu.site/`。2026-09-29 已将生产构建的 21 个静态文件（共 286,494 字节）通过官方 ossutil 2.4.0 上传至 OSS Bucket `haodu-site`，并逐个通过 ETag 校验。Bucket 位于华东 2（上海，`cn-shanghai`），使用标准存储、本地冗余 LRS，静态托管配置已保存。文件部署已完成；Bucket 当前仍为私有，域名尚未公开上线。中国内地 Bucket 需要域名完成 ICP 备案后才能绑定上线。
 
@@ -14,7 +14,7 @@
 npm run release:site -- --base-url https://haodu.site/
 ```
 
-仅上传 `dist/site/` 内的文件，保持目录结构。不要上传整个仓库、插件或训练文件。`site/config/production/hugo.toml` 同时记录了正式站点地址；单独运行 `release:site` 时仍需显式指定域名，`deploy:site:oss` 已固定使用 `https://haodu.site/`。
+仅上传 `dist/site/` 内的文件，保持目录结构。不要上传整个仓库、插件或训练文件。`site/config/production/hugo.toml` 同时记录了正式站点地址；单独运行 `release:site` 时仍需显式指定域名，`deploy:site` 已固定使用 `https://haodu.site/`。
 
 ## API 发布
 
@@ -34,16 +34,16 @@ chmod 600 ~/.ossutilconfig
 运行发布预览（不需要凭证，也不调用 OSS）：
 
 ```sh
-npm run deploy:site:oss -- --dry-run
+npm run deploy:site -- --dry-run
 ```
 
 执行实际上传（本机凭证已配置）：
 
 ```sh
-npm run deploy:site:oss -- --profile haodu-site
+npm run deploy:site -- --profile haodu-site
 ```
 
-CI 可通过密钥存储注入 `OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`；使用 STS 时还需 `OSS_SESSION_TOKEN`，此时运行 `npm run deploy:site:oss` 即可。不要把密钥直接放进命令行参数。
+CI 可通过密钥存储注入 `OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`；使用 STS 时还需 `OSS_SESSION_TOKEN`，此时运行 `npm run deploy:site` 即可。不要把密钥直接放进命令行参数。
 
 发布脚本重新构建生产站点，只上传 `dist/site/` 内容，保持路径并设置 MIME 和缓存头。资源先上传、HTML 后上传、首页最后上传，每次上传后用 `HeadObject` 的 `If-Match` 校验本次单次 `PutObject` 生成的 ETag；失败立即停止。它保留云端旧资源，避免影响仍使用旧页面的访客。该命令只负责文件发布，不会自动更改 Bucket 权限、域名解析或证书配置，也不能代替备案后的网站访问验证。
 
