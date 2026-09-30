@@ -68,19 +68,19 @@ npm run deploy:site -- --profile haodu-site
 
 ## 4. 上架顺序
 
-1. 确定正式域名、托管平台及地域；部署站点，确认首页、`/privacy/`、404、CSS/JS、明暗切换、演示按钮均正常。
+1. 确认公开隐私政策与支持链接可访问。官网备案期间，可使用公开仓库的 [隐私政策](https://github.com/77Vincent/super-reader/blob/main/site/content/privacy.md) 和项目首页提交商店，无需等待正式域名上线。官网上线后，再验证首页、`/privacy/`、404、CSS/JS、明暗切换与演示按钮。
 2. 用 `dist/extension/` 做最终安装验证，避免与旧的开发版同时启用。检查开关、页面刷新、滚动、跨标签页和本地推理；官网应保持静态演示。
 3. 在 Chrome Web Store 开发者后台创建项目，上传 ZIP，参考 [商店材料](chrome-web-store.md) 填写文案、权限、隐私页和支持链接，并补齐真实截图与宣传图。
 4. 获得商店项目 ID 后，保留它作为后续升级的同一项目；不要把本地开发扩展的 ID 当成商店 ID。
 5. 商店详情页可公开访问后，填写 `site/config/_default/params.toml` 的 `chromeWebStoreURL` 并重新部署站点。`edgeAddonsURL` 暂留空，现有逻辑让桌面 Edge 使用同一个 Chrome 商店链接。
 
-首次提交需要开发者账号及后台要求的账号验证。网站先上线、商店审核后再更新安装按钮，中间阶段按钮继续链接到项目安装说明，不填写虚构的商店地址。
+首次提交需要开发者账号及后台要求的账号验证。网站备案与商店审核可分别推进；商店详情页公开后再更新安装按钮，中间阶段按钮继续链接到项目安装说明，不填写虚构的商店地址。
 
 ## 尚需提供或完成
 
 - 完成首次 ICP 备案、OSS 域名绑定、DNS、HTTPS 与公共读配置，并验证正式域名公开访问。OSS 文件已上传，证书已签发但尚未部署，网站尚未公开上线。
 - Chrome Web Store 开发者账号和上架材料最终确认。
-- 小宣传图；首张预览图已准备在 `release/assets/store-preview-1280x800.jpg`（见商店材料）。
+- 实际扩展截图与最终安装验证；小宣传图 `release/assets/store-promo-440x280.jpg` 和官网静态预览图 `release/assets/store-preview-1280x800.jpg` 已准备（见商店材料）。
 - 上线后的域名访问、HTTPS 与商店安装验证。
 
 本地构建、ZIP 校验和单元测试不等于商店审核通过。

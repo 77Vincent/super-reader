@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="280" viewBox="0 0 440 280">
+  <rect width="440" height="280" fill="#fff"/>
+  <rect width="440" height="6" fill="#ff1744"/>
+  <g font-family="PingFang SC, Noto Sans CJK SC, sans-serif" fill="#192b33">
+    <text x="135" y="135" font-size="68" font-weight="600">好</text>
+    <rect x="215" y="77" width="8" height="63" fill="#ff1744"/>
+    <text x="236" y="135" font-size="68" font-weight="600">读</text>
+    <text x="220" y="194" font-size="25" text-anchor="middle">让中文更好读</text>
+    <text x="220" y="230" font-size="13" text-anchor="middle" fill="#687880">本地运行 · 保留原文</text>
+  </g>
+</svg>

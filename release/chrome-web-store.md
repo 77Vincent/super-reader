@@ -1,6 +1,16 @@
 # Chrome Web Store 首发材料
 
-基于当前 `manifest.json` 的 0.1.0 版；首发 Chrome Web Store，Edge 商店地址暂留空。以下可用于填写商店，但开发者账号、真实域名、小宣传图和审核提交仍需完成。
+基于当前 `manifest.json` 的 0.1.0 版；首发 Chrome Web Store，Edge 商店地址暂留空。发布材料与实际提交进度分别记录，不能把本地构建成功当成商店发布成功。
+
+## 当前进度（2026-09-30）
+
+- `npm test`：254 项通过，无失败或跳过。
+- `npm run release:extension`：生成 `dist/haodu-0.1.0.zip`，27 个运行文件，约 14 MB；`unzip -t` 校验通过。
+- ZIP SHA-256：`3768328404b0298ff9cc8ac88efc03d1a6c5435ed482c1376c2bc3b388ed5207`。
+- 已核对源代码：模型与运行脚本均随包提供，开关写入 `chrome.storage.local`，没有向外部服务发送正文的代码。
+- 公开隐私政策与支持链接已具备，440 × 280 小宣传图已准备。
+- 尚未上传或提交审核：用户已手动打开开发者后台并确认登录，但 Chrome 仍拒绝浏览器工具读取或截图，返回 `The extensions gallery cannot be scripted.`。这不是登录问题；当前工具无法代为操作这个商店页面。需要手动创建项目、上传 ZIP 并填写首次上架资料。账号注册及验证状态无法从受限页面确认。
+- 现有商店预览图是官网静态演示。另提供不含阅读脚本的真实扩展截图用例页，实际扩展截图和最终安装验证仍待完成。
 
 ## 名称与摘要
 
@@ -43,9 +53,9 @@
 
 扩展读取网页文本用于当前本地推理，不向开发者或第三方传输正文、URL、历史记录或使用统计。除开关设置外，没有持久化的用户数据。商店隐私字段应与网站 `/privacy/` 一致；按提交时表单定义填写，不把“本地读取正文”描述成“完全不接触用户数据”。
 
-网站地址：部署后的正式 HTTPS 首页。
+网站地址：<https://github.com/77Vincent/super-reader>。正式官网 `https://haodu.site/` 尚未公开上线，暂不填写不可访问的网址。
 
-隐私政策地址：同一站点的 `/privacy/`（若部署到子路径，则包含子路径）。
+隐私政策地址：<https://github.com/77Vincent/super-reader/blob/main/site/content/privacy.md>。该文件已在公开仓库中可访问，与站点使用同一份政策；官网上线后可改为 `https://haodu.site/privacy/`。
 
 支持地址：<https://github.com/77Vincent/super-reader/issues>
 
@@ -54,10 +64,16 @@
 ## 图片材料
 
 - 128 × 128 图标：`icons/on-128.png`，已包含在 ZIP。
-- 440 × 280 小宣传图：待准备。
+- 440 × 280 小宣传图：[store-promo-440x280.jpg](assets/store-promo-440x280.jpg)，对应可编辑源文件 [store-promo-440x280.svg](assets/store-promo-440x280.svg)。
 - 首张预览图：[store-preview-1280x800.jpg](assets/store-preview-1280x800.jpg)，1280 × 800，已保存，可用于商店 Overview 上方的图片展示区。按照 2026-09-29 用户选定的截图内容，保留标题、本地神经网络简介、两个按钮及第一张纸张示例卡片。
   - 图片说明：官网阅读辅助预览。该图展示官网的静态演示，不声称是此时运行扩展模型得到的结果。
   - 用户原附件为 1706 × 894 的内存截图，没有磁盘原文件。当前版本取自本地页面的同一组内容，按商店尺寸重新排版并截图，不是原附件的逐像素副本。
+- 真实扩展截图用例：[store-reading-preview.html](assets/store-reading-preview.html)。该页没有阅读脚本，也没有人工插入的正文分隔线。通过本地 HTTP 服务打开后，开启待发布扩展，确认分隔线实际出现，再按 1280 × 800 截图。不能将未处理页面或人工标记页面描述为扩展运行结果。
+
+```sh
+python3 -m http.server 8096 --bind 127.0.0.1 --directory release/assets
+# 打开 http://127.0.0.1:8096/store-reading-preview.html
+```
 
 ![好读官网阅读辅助预览](assets/store-preview-1280x800.jpg)
 
@@ -67,3 +83,4 @@
 - [隐私字段与权限解释](https://developer.chrome.com/docs/webstore/cws-dashboard-privacy)。
 - [图片规格](https://developer.chrome.com/docs/webstore/images)。
 - [提交发布](https://developer.chrome.com/docs/webstore/publish/)：在开发者后台上传 ZIP、补齐材料并提交审核。
+- [官方 API](https://developer.chrome.com/docs/webstore/api/reference/rest)：V2 的上传接口针对已有项目，没有首次创建项目或填写商店文案、隐私表单的接口。[API 使用说明](https://developer.chrome.com/docs/webstore/using-api)仍要求在开发者后台完成商店详情与隐私字段；API 无法替代首次上架的全部后台步骤。
