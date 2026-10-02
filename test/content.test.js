@@ -271,7 +271,7 @@ test("the Chrome adapter leaves a demo page's own markers and controls independe
   marker.className = "reader-divider";
   marker.setAttribute("aria-hidden", "true");
   const button = page.element("button", page.document.body);
-  page.text("关闭阅读辅助", button);
+  page.text("关闭辅助预览", button);
   const originalNodes = [...page.paragraph.childNodes];
   assert.equal(page.applySetting(true).enabled, false);
   await page.finish();
@@ -283,7 +283,7 @@ test("the Chrome adapter leaves a demo page's own markers and controls independe
   assert.deepEqual(page.paragraph.childNodes, originalNodes);
   assert.equal(page.paragraph.textContent, sampleText);
   assert.equal(button.isConnected, true);
-  assert.equal(button.textContent, "关闭阅读辅助");
+  assert.equal(button.textContent, "关闭辅助预览");
 });
 
 test("one request includes all visible texts, including strings longer than 128 UTF-16 units", async () => {

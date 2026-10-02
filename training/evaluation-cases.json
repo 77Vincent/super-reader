@@ -1,7 +1,7 @@
 [
   {
     "id": "demo-intro",
-    "texts": ["加载扩展后，点击浏览器工具栏中的 Super Reader 按钮开启阅读辅助，再次点击即可关闭。"]
+    "texts": ["加载扩展后，点击浏览器工具栏中的 Super Reader 按钮开启辅助预览，再次点击即可关闭。"]
   },
   {
     "id": "demo-reading",

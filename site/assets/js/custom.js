@@ -25,7 +25,7 @@ if (readerToggle) {
     const enabled = readerToggle.getAttribute('aria-pressed') !== 'true';
     markers.forEach((marker) => { marker.hidden = !enabled; });
     readerToggle.setAttribute('aria-pressed', String(enabled));
-    readerToggle.textContent = enabled ? '关闭阅读辅助' : '开启阅读辅助';
+    readerToggle.textContent = enabled ? '关闭辅助预览' : '开启辅助预览';
   });
   readerToggle.hidden = false;
 }

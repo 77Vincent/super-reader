@@ -118,7 +118,7 @@ Cases are stored in `evaluation-cases.json`; no DOM traversal runs in this check
 
 | Case | Current output |
 | --- | --- |
-| Demo intro | 加载扩展后，点击浏览器｜工具栏中的 Super Reader 按钮｜开启阅读辅助，再次点击即可关闭。 |
+| Demo intro | 加载扩展后，点击浏览器｜工具栏中的 Super Reader 按钮｜开启辅助预览，再次点击即可关闭。 |
 | Demo reading | 真正高效的阅读｜并不是追求速度，而是帮助大脑｜更快地识别信息｜结构。 |
 | Demo breakfast | 我一直在思考｜明天早上的早餐｜吃什么，也希望阅读的时候｜能够更加｜轻松地找到｜句子中的重点。 |
 | Demo inline nodes | `这里有` / `需要保留的｜加粗文字` / `，以及 ` / `需要保留的链接｜文字` / `。` |
