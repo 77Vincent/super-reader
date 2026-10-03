@@ -2,10 +2,14 @@
   <rect width="440" height="280" fill="#fff"/>
   <rect width="440" height="6" fill="#ff1744"/>
   <g font-family="PingFang SC, Noto Sans CJK SC, sans-serif" fill="#192b33">
-    <text x="135" y="135" font-size="68" font-weight="600">好</text>
-    <rect x="215" y="77" width="8" height="63" fill="#ff1744"/>
-    <text x="236" y="135" font-size="68" font-weight="600">读</text>
-    <text x="220" y="194" font-size="25" text-anchor="middle">让中文更好读</text>
-    <text x="220" y="230" font-size="13" text-anchor="middle" fill="#687880">本地运行 · 保留原文</text>
+    <!-- Match the site wordmark: 18px type, 3x18 divider, .08em gaps,
+         divider bottom .15em below the baseline. Scale the whole group. -->
+    <g transform="translate(94.36 130) scale(6)" font-size="18" font-weight="600">
+      <text x="0" y="0">好</text>
+      <rect x="19.44" y="-15.3" width="3" height="18" fill="#ff1744"/>
+      <text x="23.88" y="0">读</text>
+    </g>
+    <text x="220" y="199" font-size="42" text-anchor="middle">让中文更好读</text>
+    <text x="220" y="254" font-size="20" font-weight="500" text-anchor="middle" fill="#42545c">保留原文，智能分段，本地运行，安全高效</text>
   </g>
 </svg>

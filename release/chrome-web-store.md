@@ -65,6 +65,7 @@
 
 - 128 × 128 图标：`icons/on-128.png`，已包含在 ZIP。
 - 440 × 280 小宣传图：[store-promo-440x280.jpg](assets/store-promo-440x280.jpg)，对应可编辑源文件 [store-promo-440x280.svg](assets/store-promo-440x280.svg)。
+- 1400 × 560 横幅宣传图（Marquee）：[store-marquee-1400x560.jpg](assets/store-marquee-1400x560.jpg)，RGB JPEG，无透明通道；对应可编辑源文件 [store-marquee-1400x560.svg](assets/store-marquee-1400x560.svg)。
 - 商店截图：[store-screenshot-1280x800.jpg](assets/store-screenshot-1280x800.jpg)，1280 × 800、RGB JPEG，无透明通道。截自阅读示例页，正文中的分隔线来自实际运行的插件，可上传至 Screenshots。
 - 官网预览图：[store-preview-1280x800.jpg](assets/store-preview-1280x800.jpg)，1280 × 800。按照 2026-09-29 用户选定的截图内容，保留标题、本地神经网络简介、两个按钮及第一张纸张示例卡片。
   - 图片说明：官网阅读辅助预览。该图展示官网的静态演示，不声称是此时运行扩展模型得到的结果。
