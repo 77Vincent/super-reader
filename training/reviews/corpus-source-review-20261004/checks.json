@@ -1,0 +1,15 @@
+{
+  "readme_hashes_verified": 8,
+  "gated_readmes": 2,
+  "notebook_code_cells_executed": 4,
+  "execution_mode": "sequential Python standard library; no Jupyter kernel",
+  "notebook_structure_checked": true,
+  "local_revision_matches_observed_upstream": true,
+  "current_extractor_columns": [
+    "content",
+    "source"
+  ],
+  "no_new_quality_sample": true,
+  "no_training_started": true,
+  "manifest_sha256": "cf6f1a982861efa4015d587fbe7c1a922772edf5c34395a239a401781909de2b"
+}

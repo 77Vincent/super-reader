@@ -1,0 +1,12 @@
+[
+  {
+    "file": "paper.html",
+    "url": "https://arxiv.org/html/2505.05427v1",
+    "sha256": "cebad2d235cae4f4a8eea4bcc992b4e52862ec30f28103465aa7bd8d5806dfa2"
+  },
+  {
+    "file": "classifier-infer.py",
+    "url": "https://huggingface.co/openbmb/Ultra-FineWeb-classifier/raw/main/scripts/local_scripts/infer_folder.py",
+    "sha256": "60ab58120f467c5f6e17669b7aa25a7f979d1dac097115b1ed74328c5cad16bf"
+  }
+]

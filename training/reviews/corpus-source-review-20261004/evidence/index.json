@@ -1,0 +1,111 @@
+[
+  {
+    "repository": "openbmb/Ultra-FineWeb",
+    "observed_at": "2026-10-04T09:07:18.548030+00:00",
+    "revision": "02c85641e3d19a854be2e09139c25adaa9518063",
+    "last_modified": "2026-08-20T06:11:45.000Z",
+    "gated": false,
+    "license": "apache-2.0",
+    "readme_url": "https://huggingface.co/datasets/openbmb/Ultra-FineWeb/raw/02c85641e3d19a854be2e09139c25adaa9518063/README.md",
+    "readme_sha256": "b93fcf284a97f9fb9b1e34b66c052b544e7bb2c8b564cbc10cfc7224b7aa0ab1",
+    "readme_bytes": 11806
+  },
+  {
+    "repository": "epfml/FineWeb2-HQ",
+    "observed_at": "2026-10-04T09:07:18.548407+00:00",
+    "revision": "c0c06e94fd3a44ae9e802b2b0fc533817601eb5e",
+    "last_modified": "2025-02-19T21:39:01.000Z",
+    "gated": false,
+    "license": "odc-by",
+    "readme_url": "https://huggingface.co/datasets/epfml/FineWeb2-HQ/raw/c0c06e94fd3a44ae9e802b2b0fc533817601eb5e/README.md",
+    "readme_sha256": "3382e62ff31050348de8a1cd5f1f09a643419aa8d8d70334e9d6fa80ff59b157",
+    "readme_bytes": 9609
+  },
+  {
+    "repository": "HuggingFaceFW/fineweb-2",
+    "observed_at": "2026-10-04T09:07:18.548538+00:00",
+    "revision": "af9c13333eb981300149d5ca60a8e9d659b276b9",
+    "last_modified": "2025-10-27T18:32:07.000Z",
+    "gated": false,
+    "license": "odc-by",
+    "readme_url": "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/raw/af9c13333eb981300149d5ca60a8e9d659b276b9/README.md",
+    "readme_sha256": "08d38a7e5cb7aae4b6fcc284fec4dd636ea653e4e5e74ef66a60d9616005b090",
+    "readme_bytes": 329009
+  },
+  {
+    "repository": "opencsg/Fineweb-Edu-Chinese-V2.1",
+    "observed_at": "2026-10-04T09:07:18.548647+00:00",
+    "revision": "a5b574efa48beb3a8f6887ef0b093becf004328b",
+    "last_modified": "2026-01-28T00:36:48.000Z",
+    "gated": false,
+    "license": "apache-2.0",
+    "readme_url": "https://huggingface.co/datasets/opencsg/Fineweb-Edu-Chinese-V2.1/raw/a5b574efa48beb3a8f6887ef0b093becf004328b/README.md",
+    "readme_sha256": "507829a953999aca22370919a3d41e225a09e5ab6cbc5eb3f64e3f76311ac26c",
+    "readme_bytes": 6754
+  },
+  {
+    "repository": "opencsg/Fineweb-Edu-Chinese-V2.2",
+    "observed_at": "2026-10-04T09:07:18.548757+00:00",
+    "revision": "ab9e282ac7f146b52ea19df00c0225146b784129",
+    "last_modified": "2026-02-02T11:54:10.000Z",
+    "gated": false,
+    "license": "apache-2.0",
+    "readme_url": "https://huggingface.co/datasets/opencsg/Fineweb-Edu-Chinese-V2.2/raw/ab9e282ac7f146b52ea19df00c0225146b784129/README.md",
+    "readme_sha256": "6f971114bf9a2a6772bb89f19b33521c803a3d85ebc736fc9a24ece531e7c6de",
+    "readme_bytes": 19187
+  },
+  {
+    "repository": "opencsg/Fineweb-Edu-Chinese-V3",
+    "observed_at": "2026-10-04T09:07:18.548863+00:00",
+    "revision": "e9fb36d4968663032ba5307e154924615b5c3420",
+    "last_modified": "2026-09-08T08:40:13.000Z",
+    "gated": false,
+    "license": "other",
+    "readme_url": "https://huggingface.co/datasets/opencsg/Fineweb-Edu-Chinese-V3/raw/e9fb36d4968663032ba5307e154924615b5c3420/README.md",
+    "readme_sha256": "ee7dbfda5b481ae4307e70ed9528cb14a50ab4f2571d3f608bf404a76bba71f1",
+    "readme_bytes": 44120
+  },
+  {
+    "repository": "CASIA-LM/ChineseWebText2.0",
+    "observed_at": "2026-10-04T09:07:29.310371+00:00",
+    "revision": "9b647306646e5ddd85cc239870fc39bfb60e9531",
+    "last_modified": "2024-12-02T08:43:03.000Z",
+    "gated": false,
+    "license": "apache-2.0",
+    "readme_url": "https://huggingface.co/datasets/CASIA-LM/ChineseWebText2.0/raw/9b647306646e5ddd85cc239870fc39bfb60e9531/README.md",
+    "readme_sha256": "374455164776d86cca64b5023ec583da34fac9b6c96f228fecfac889640310f8",
+    "readme_bytes": 12383
+  },
+  {
+    "repository": "BAAI/CCI3-HQ",
+    "observed_at": "2026-10-04T09:07:29.323430+00:00",
+    "revision": "d6f3aa30cebfef497e822ff968ed68a18bf90b8f",
+    "last_modified": "2024-11-11T12:27:29.000Z",
+    "gated": "auto",
+    "license": null,
+    "error": "HTTP Error 401: Unauthorized"
+  },
+  {
+    "repository": "BAAI/CCI4.0-M2-Base-v1",
+    "observed_at": "2026-10-04T09:07:29.336880+00:00",
+    "revision": "f8d5c95fb101c0d1d4e49a43d75182a71bdca3ff",
+    "last_modified": "2025-06-10T01:28:41.000Z",
+    "gated": "auto",
+    "license": null,
+    "error": "HTTP Error 401: Unauthorized"
+  },
+  {
+    "repository": "HuggingFaceFW/finewiki",
+    "observed_at": "2026-10-04T09:07:29.367651+00:00",
+    "revision": "8bd13e72e6a002407649b3e898535f42ceb1aeb9",
+    "last_modified": "2025-10-22T11:02:22.000Z",
+    "gated": false,
+    "license": [
+      "cc-by-sa-4.0",
+      "gfdl"
+    ],
+    "readme_url": "https://huggingface.co/datasets/HuggingFaceFW/finewiki/raw/8bd13e72e6a002407649b3e898535f42ceb1aeb9/README.md",
+    "readme_sha256": "669dd8da189c5cbbd9d1a63d28fb4325f23ca988f80be156141b2d158116ad3f",
+    "readme_bytes": 39827
+  }
+]

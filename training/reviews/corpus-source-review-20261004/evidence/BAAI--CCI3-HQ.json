@@ -1,0 +1,2111 @@
+{
+  "_id": "66ebb7af703a567feca77e83",
+  "id": "BAAI/CCI3-HQ",
+  "author": "BAAI",
+  "sha": "d6f3aa30cebfef497e822ff968ed68a18bf90b8f",
+  "lastModified": "2024-11-11T12:27:29.000Z",
+  "private": false,
+  "gated": "auto",
+  "disabled": false,
+  "tags": [
+    "task_categories:text-generation",
+    "language:zh",
+    "size_categories:10M<n<100M",
+    "format:json",
+    "modality:text",
+    "library:datasets",
+    "library:dask",
+    "library:mlcroissant",
+    "arxiv:2410.18505",
+    "region:us"
+  ],
+  "description": "\n\t\n\t\t\n\t\n\t\n\t\tData Description\n\t\n\nTo address the scarcity of high-quality safety datasets in the Chinese, we open-sourced the CCI (Chinese Corpora Internet) dataset on November 29, 2023. \nBuilding on this foundation, we continue to expand the data source, adopt stricter data cleaning methods, and complete the construction of the CCI 3.0 dataset. This dataset is composed of high-quality, reliable Internet data from trusted sources. \nAnd then with more stricter filtering, The CCI 3.0 HQ corpus… See the full description on the dataset page: https://huggingface.co/datasets/BAAI/CCI3-HQ.",
+  "downloads": 10837,
+  "likes": 67,
+  "cardData": {
+    "task_categories": [
+      "text-generation"
+    ],
+    "language": [
+      "zh"
+    ],
+    "dataset_info": {
+      "features": [
+        {
+          "name": "id",
+          "dtype": "string"
+        },
+        {
+          "name": "text",
+          "dtype": "string"
+        },
+        {
+          "name": "score",
+          "dtype": "float"
+        }
+      ],
+      "splits": [
+        {
+          "name": "train"
+        }
+      ]
+    },
+    "configs": [
+      {
+        "config_name": "default",
+        "data_files": [
+          {
+            "split": "train",
+            "path": "data/part_*"
+          }
+        ]
+      }
+    ],
+    "extra_gated_prompt": "You agree to not use the dataset to conduct experiments that cause harm to human subjects.",
+    "extra_gated_fields": {
+      "Company/Organization": "text",
+      "Country": "country"
+    }
+  },
+  "siblings": [
+    {
+      "rfilename": ".gitattributes"
+    },
+    {
+      "rfilename": "README.md"
+    },
+    {
+      "rfilename": "README_zh.md"
+    },
+    {
+      "rfilename": "data/part_000000.jsonl"
+    },
+    {
+      "rfilename": "data/part_000001.jsonl"
+    },
+    {
+      "rfilename": "data/part_000002.jsonl"
+    },
+    {
+      "rfilename": "data/part_000003.jsonl"
+    },
+    {
+      "rfilename": "data/part_000004.jsonl"
+    },
+    {
+      "rfilename": "data/part_000005.jsonl"
+    },
+    {
+      "rfilename": "data/part_000006.jsonl"
+    },
+    {
+      "rfilename": "data/part_000007.jsonl"
+    },
+    {
+      "rfilename": "data/part_000008.jsonl"
+    },
+    {
+      "rfilename": "data/part_000009.jsonl"
+    },
+    {
+      "rfilename": "data/part_000010.jsonl"
+    },
+    {
+      "rfilename": "data/part_000011.jsonl"
+    },
+    {
+      "rfilename": "data/part_000012.jsonl"
+    },
+    {
+      "rfilename": "data/part_000013.jsonl"
+    },
+    {
+      "rfilename": "data/part_000014.jsonl"
+    },
+    {
+      "rfilename": "data/part_000015.jsonl"
+    },
+    {
+      "rfilename": "data/part_000016.jsonl"
+    },
+    {
+      "rfilename": "data/part_000017.jsonl"
+    },
+    {
+      "rfilename": "data/part_000018.jsonl"
+    },
+    {
+      "rfilename": "data/part_000019.jsonl"
+    },
+    {
+      "rfilename": "data/part_000020.jsonl"
+    },
+    {
+      "rfilename": "data/part_000021.jsonl"
+    },
+    {
+      "rfilename": "data/part_000022.jsonl"
+    },
+    {
+      "rfilename": "data/part_000023.jsonl"
+    },
+    {
+      "rfilename": "data/part_000024.jsonl"
+    },
+    {
+      "rfilename": "data/part_000025.jsonl"
+    },
+    {
+      "rfilename": "data/part_000026.jsonl"
+    },
+    {
+      "rfilename": "data/part_000027.jsonl"
+    },
+    {
+      "rfilename": "data/part_000028.jsonl"
+    },
+    {
+      "rfilename": "data/part_000029.jsonl"
+    },
+    {
+      "rfilename": "data/part_000030.jsonl"
+    },
+    {
+      "rfilename": "data/part_000031.jsonl"
+    },
+    {
+      "rfilename": "data/part_000032.jsonl"
+    },
+    {
+      "rfilename": "data/part_000033.jsonl"
+    },
+    {
+      "rfilename": "data/part_000034.jsonl"
+    },
+    {
+      "rfilename": "data/part_000035.jsonl"
+    },
+    {
+      "rfilename": "data/part_000036.jsonl"
+    },
+    {
+      "rfilename": "data/part_000037.jsonl"
+    },
+    {
+      "rfilename": "data/part_000038.jsonl"
+    },
+    {
+      "rfilename": "data/part_000039.jsonl"
+    },
+    {
+      "rfilename": "data/part_000040.jsonl"
+    },
+    {
+      "rfilename": "data/part_000041.jsonl"
+    },
+    {
+      "rfilename": "data/part_000043.jsonl"
+    },
+    {
+      "rfilename": "data/part_000044.jsonl"
+    },
+    {
+      "rfilename": "data/part_000045.jsonl"
+    },
+    {
+      "rfilename": "data/part_000046.jsonl"
+    },
+    {
+      "rfilename": "data/part_000047.jsonl"
+    },
+    {
+      "rfilename": "data/part_000048.jsonl"
+    },
+    {
+      "rfilename": "data/part_000049.jsonl"
+    },
+    {
+      "rfilename": "data/part_000050.jsonl"
+    },
+    {
+      "rfilename": "data/part_000051.jsonl"
+    },
+    {
+      "rfilename": "data/part_000052.jsonl"
+    },
+    {
+      "rfilename": "data/part_000053.jsonl"
+    },
+    {
+      "rfilename": "data/part_000054.jsonl"
+    },
+    {
+      "rfilename": "data/part_000055.jsonl"
+    },
+    {
+      "rfilename": "data/part_000056.jsonl"
+    },
+    {
+      "rfilename": "data/part_000057.jsonl"
+    },
+    {
+      "rfilename": "data/part_000058.jsonl"
+    },
+    {
+      "rfilename": "data/part_000059.jsonl"
+    },
+    {
+      "rfilename": "data/part_000060.jsonl"
+    },
+    {
+      "rfilename": "data/part_000061.jsonl"
+    },
+    {
+      "rfilename": "data/part_000062.jsonl"
+    },
+    {
+      "rfilename": "data/part_000063.jsonl"
+    },
+    {
+      "rfilename": "data/part_000064.jsonl"
+    },
+    {
+      "rfilename": "data/part_000065.jsonl"
+    },
+    {
+      "rfilename": "data/part_000066.jsonl"
+    },
+    {
+      "rfilename": "data/part_000067.jsonl"
+    },
+    {
+      "rfilename": "data/part_000068.jsonl"
+    },
+    {
+      "rfilename": "data/part_000069.jsonl"
+    },
+    {
+      "rfilename": "data/part_000070.jsonl"
+    },
+    {
+      "rfilename": "data/part_000071.jsonl"
+    },
+    {
+      "rfilename": "data/part_000072.jsonl"
+    },
+    {
+      "rfilename": "data/part_000073.jsonl"
+    },
+    {
+      "rfilename": "data/part_000074.jsonl"
+    },
+    {
+      "rfilename": "data/part_000075.jsonl"
+    },
+    {
+      "rfilename": "data/part_000076.jsonl"
+    },
+    {
+      "rfilename": "data/part_000077.jsonl"
+    },
+    {
+      "rfilename": "data/part_000078.jsonl"
+    },
+    {
+      "rfilename": "data/part_000079.jsonl"
+    },
+    {
+      "rfilename": "data/part_000080.jsonl"
+    },
+    {
+      "rfilename": "data/part_000081.jsonl"
+    },
+    {
+      "rfilename": "data/part_000082.jsonl"
+    },
+    {
+      "rfilename": "data/part_000083.jsonl"
+    },
+    {
+      "rfilename": "data/part_000084.jsonl"
+    },
+    {
+      "rfilename": "data/part_000085.jsonl"
+    },
+    {
+      "rfilename": "data/part_000086.jsonl"
+    },
+    {
+      "rfilename": "data/part_000087.jsonl"
+    },
+    {
+      "rfilename": "data/part_000088.jsonl"
+    },
+    {
+      "rfilename": "data/part_000089.jsonl"
+    },
+    {
+      "rfilename": "data/part_000090.jsonl"
+    },
+    {
+      "rfilename": "data/part_000091.jsonl"
+    },
+    {
+      "rfilename": "data/part_000092.jsonl"
+    },
+    {
+      "rfilename": "data/part_000093.jsonl"
+    },
+    {
+      "rfilename": "data/part_000094.jsonl"
+    },
+    {
+      "rfilename": "data/part_000095.jsonl"
+    },
+    {
+      "rfilename": "data/part_000096.jsonl"
+    },
+    {
+      "rfilename": "data/part_000097.jsonl"
+    },
+    {
+      "rfilename": "data/part_000098.jsonl"
+    },
+    {
+      "rfilename": "data/part_000099.jsonl"
+    },
+    {
+      "rfilename": "data/part_000100.jsonl"
+    },
+    {
+      "rfilename": "data/part_000101.jsonl"
+    },
+    {
+      "rfilename": "data/part_000102.jsonl"
+    },
+    {
+      "rfilename": "data/part_000103.jsonl"
+    },
+    {
+      "rfilename": "data/part_000104.jsonl"
+    },
+    {
+      "rfilename": "data/part_000105.jsonl"
+    },
+    {
+      "rfilename": "data/part_000106.jsonl"
+    },
+    {
+      "rfilename": "data/part_000107.jsonl"
+    },
+    {
+      "rfilename": "data/part_000108.jsonl"
+    },
+    {
+      "rfilename": "data/part_000109.jsonl"
+    },
+    {
+      "rfilename": "data/part_000110.jsonl"
+    },
+    {
+      "rfilename": "data/part_000111.jsonl"
+    },
+    {
+      "rfilename": "data/part_000112.jsonl"
+    },
+    {
+      "rfilename": "data/part_000113.jsonl"
+    },
+    {
+      "rfilename": "data/part_000114.jsonl"
+    },
+    {
+      "rfilename": "data/part_000115.jsonl"
+    },
+    {
+      "rfilename": "data/part_000116.jsonl"
+    },
+    {
+      "rfilename": "data/part_000117.jsonl"
+    },
+    {
+      "rfilename": "data/part_000118.jsonl"
+    },
+    {
+      "rfilename": "data/part_000119.jsonl"
+    },
+    {
+      "rfilename": "data/part_000120.jsonl"
+    },
+    {
+      "rfilename": "data/part_000121.jsonl"
+    },
+    {
+      "rfilename": "data/part_000122.jsonl"
+    },
+    {
+      "rfilename": "data/part_000123.jsonl"
+    },
+    {
+      "rfilename": "data/part_000124.jsonl"
+    },
+    {
+      "rfilename": "data/part_000125.jsonl"
+    },
+    {
+      "rfilename": "data/part_000126.jsonl"
+    },
+    {
+      "rfilename": "data/part_000127.jsonl"
+    },
+    {
+      "rfilename": "data/part_000128.jsonl"
+    },
+    {
+      "rfilename": "data/part_000129.jsonl"
+    },
+    {
+      "rfilename": "data/part_000130.jsonl"
+    },
+    {
+      "rfilename": "data/part_000131.jsonl"
+    },
+    {
+      "rfilename": "data/part_000132.jsonl"
+    },
+    {
+      "rfilename": "data/part_000133.jsonl"
+    },
+    {
+      "rfilename": "data/part_000134.jsonl"
+    },
+    {
+      "rfilename": "data/part_000135.jsonl"
+    },
+    {
+      "rfilename": "data/part_000136.jsonl"
+    },
+    {
+      "rfilename": "data/part_000137.jsonl"
+    },
+    {
+      "rfilename": "data/part_000138.jsonl"
+    },
+    {
+      "rfilename": "data/part_000139.jsonl"
+    },
+    {
+      "rfilename": "data/part_000140.jsonl"
+    },
+    {
+      "rfilename": "data/part_000141.jsonl"
+    },
+    {
+      "rfilename": "data/part_000142.jsonl"
+    },
+    {
+      "rfilename": "data/part_000143.jsonl"
+    },
+    {
+      "rfilename": "data/part_000144.jsonl"
+    },
+    {
+      "rfilename": "data/part_000145.jsonl"
+    },
+    {
+      "rfilename": "data/part_000146.jsonl"
+    },
+    {
+      "rfilename": "data/part_000147.jsonl"
+    },
+    {
+      "rfilename": "data/part_000148.jsonl"
+    },
+    {
+      "rfilename": "data/part_000149.jsonl"
+    },
+    {
+      "rfilename": "data/part_000150.jsonl"
+    },
+    {
+      "rfilename": "data/part_000151.jsonl"
+    },
+    {
+      "rfilename": "data/part_000152.jsonl"
+    },
+    {
+      "rfilename": "data/part_000153.jsonl"
+    },
+    {
+      "rfilename": "data/part_000154.jsonl"
+    },
+    {
+      "rfilename": "data/part_000155.jsonl"
+    },
+    {
+      "rfilename": "data/part_000156.jsonl"
+    },
+    {
+      "rfilename": "data/part_000157.jsonl"
+    },
+    {
+      "rfilename": "data/part_000158.jsonl"
+    },
+    {
+      "rfilename": "data/part_000159.jsonl"
+    },
+    {
+      "rfilename": "data/part_000160.jsonl"
+    },
+    {
+      "rfilename": "data/part_000161.jsonl"
+    },
+    {
+      "rfilename": "data/part_000162.jsonl"
+    },
+    {
+      "rfilename": "data/part_000163.jsonl"
+    },
+    {
+      "rfilename": "data/part_000164.jsonl"
+    },
+    {
+      "rfilename": "data/part_000165.jsonl"
+    },
+    {
+      "rfilename": "data/part_000166.jsonl"
+    },
+    {
+      "rfilename": "data/part_000167.jsonl"
+    },
+    {
+      "rfilename": "data/part_000168.jsonl"
+    },
+    {
+      "rfilename": "data/part_000169.jsonl"
+    },
+    {
+      "rfilename": "data/part_000170.jsonl"
+    },
+    {
+      "rfilename": "data/part_000171.jsonl"
+    },
+    {
+      "rfilename": "data/part_000172.jsonl"
+    },
+    {
+      "rfilename": "data/part_000173.jsonl"
+    },
+    {
+      "rfilename": "data/part_000174.jsonl"
+    },
+    {
+      "rfilename": "data/part_000175.jsonl"
+    },
+    {
+      "rfilename": "data/part_000176.jsonl"
+    },
+    {
+      "rfilename": "data/part_000177.jsonl"
+    },
+    {
+      "rfilename": "data/part_000178.jsonl"
+    },
+    {
+      "rfilename": "data/part_000179.jsonl"
+    },
+    {
+      "rfilename": "data/part_000180.jsonl"
+    },
+    {
+      "rfilename": "data/part_000181.jsonl"
+    },
+    {
+      "rfilename": "data/part_000182.jsonl"
+    },
+    {
+      "rfilename": "data/part_000183.jsonl"
+    },
+    {
+      "rfilename": "data/part_000184.jsonl"
+    },
+    {
+      "rfilename": "data/part_000185.jsonl"
+    },
+    {
+      "rfilename": "data/part_000186.jsonl"
+    },
+    {
+      "rfilename": "data/part_000187.jsonl"
+    },
+    {
+      "rfilename": "data/part_000188.jsonl"
+    },
+    {
+      "rfilename": "data/part_000189.jsonl"
+    },
+    {
+      "rfilename": "data/part_000190.jsonl"
+    },
+    {
+      "rfilename": "data/part_000191.jsonl"
+    },
+    {
+      "rfilename": "data/part_000192.jsonl"
+    },
+    {
+      "rfilename": "data/part_000193.jsonl"
+    },
+    {
+      "rfilename": "data/part_000194.jsonl"
+    },
+    {
+      "rfilename": "data/part_000195.jsonl"
+    },
+    {
+      "rfilename": "data/part_000196.jsonl"
+    },
+    {
+      "rfilename": "data/part_000197.jsonl"
+    },
+    {
+      "rfilename": "data/part_000198.jsonl"
+    },
+    {
+      "rfilename": "data/part_000199.jsonl"
+    },
+    {
+      "rfilename": "data/part_000200.jsonl"
+    },
+    {
+      "rfilename": "data/part_000201.jsonl"
+    },
+    {
+      "rfilename": "data/part_000202.jsonl"
+    },
+    {
+      "rfilename": "data/part_000203.jsonl"
+    },
+    {
+      "rfilename": "data/part_000204.jsonl"
+    },
+    {
+      "rfilename": "data/part_000205.jsonl"
+    },
+    {
+      "rfilename": "data/part_000206.jsonl"
+    },
+    {
+      "rfilename": "data/part_000207.jsonl"
+    },
+    {
+      "rfilename": "data/part_000208.jsonl"
+    },
+    {
+      "rfilename": "data/part_000209.jsonl"
+    },
+    {
+      "rfilename": "data/part_000210.jsonl"
+    },
+    {
+      "rfilename": "data/part_000211.jsonl"
+    },
+    {
+      "rfilename": "data/part_000212.jsonl"
+    },
+    {
+      "rfilename": "data/part_000213.jsonl"
+    },
+    {
+      "rfilename": "data/part_000214.jsonl"
+    },
+    {
+      "rfilename": "data/part_000215.jsonl"
+    },
+    {
+      "rfilename": "data/part_000216.jsonl"
+    },
+    {
+      "rfilename": "data/part_000217.jsonl"
+    },
+    {
+      "rfilename": "data/part_000218.jsonl"
+    },
+    {
+      "rfilename": "data/part_000219.jsonl"
+    },
+    {
+      "rfilename": "data/part_000220.jsonl"
+    },
+    {
+      "rfilename": "data/part_000221.jsonl"
+    },
+    {
+      "rfilename": "data/part_000222.jsonl"
+    },
+    {
+      "rfilename": "data/part_000223.jsonl"
+    },
+    {
+      "rfilename": "data/part_000224.jsonl"
+    },
+    {
+      "rfilename": "data/part_000225.jsonl"
+    },
+    {
+      "rfilename": "data/part_000226.jsonl"
+    },
+    {
+      "rfilename": "data/part_000227.jsonl"
+    },
+    {
+      "rfilename": "data/part_000228.jsonl"
+    },
+    {
+      "rfilename": "data/part_000229.jsonl"
+    },
+    {
+      "rfilename": "data/part_000230.jsonl"
+    },
+    {
+      "rfilename": "data/part_000231.jsonl"
+    },
+    {
+      "rfilename": "data/part_000232.jsonl"
+    },
+    {
+      "rfilename": "data/part_000233.jsonl"
+    },
+    {
+      "rfilename": "data/part_000234.jsonl"
+    },
+    {
+      "rfilename": "data/part_000235.jsonl"
+    },
+    {
+      "rfilename": "data/part_000236.jsonl"
+    },
+    {
+      "rfilename": "data/part_000237.jsonl"
+    },
+    {
+      "rfilename": "data/part_000238.jsonl"
+    },
+    {
+      "rfilename": "data/part_000239.jsonl"
+    },
+    {
+      "rfilename": "data/part_000240.jsonl"
+    },
+    {
+      "rfilename": "data/part_000241.jsonl"
+    },
+    {
+      "rfilename": "data/part_000242.jsonl"
+    },
+    {
+      "rfilename": "data/part_000243.jsonl"
+    },
+    {
+      "rfilename": "data/part_000244.jsonl"
+    },
+    {
+      "rfilename": "data/part_000245.jsonl"
+    },
+    {
+      "rfilename": "data/part_000246.jsonl"
+    },
+    {
+      "rfilename": "data/part_000247.jsonl"
+    },
+    {
+      "rfilename": "data/part_000248.jsonl"
+    },
+    {
+      "rfilename": "data/part_000249.jsonl"
+    },
+    {
+      "rfilename": "data/part_000250.jsonl"
+    },
+    {
+      "rfilename": "data/part_000251.jsonl"
+    },
+    {
+      "rfilename": "data/part_000252.jsonl"
+    },
+    {
+      "rfilename": "data/part_000253.jsonl"
+    },
+    {
+      "rfilename": "data/part_000254.jsonl"
+    },
+    {
+      "rfilename": "data/part_000255.jsonl"
+    },
+    {
+      "rfilename": "data/part_000256.jsonl"
+    },
+    {
+      "rfilename": "data/part_000257.jsonl"
+    },
+    {
+      "rfilename": "data/part_000258.jsonl"
+    },
+    {
+      "rfilename": "data/part_000259.jsonl"
+    },
+    {
+      "rfilename": "data/part_000260.jsonl"
+    },
+    {
+      "rfilename": "data/part_000261.jsonl"
+    },
+    {
+      "rfilename": "data/part_000262.jsonl"
+    },
+    {
+      "rfilename": "data/part_000263.jsonl"
+    },
+    {
+      "rfilename": "data/part_000264.jsonl"
+    },
+    {
+      "rfilename": "data/part_000265.jsonl"
+    },
+    {
+      "rfilename": "data/part_000266.jsonl"
+    },
+    {
+      "rfilename": "data/part_000267.jsonl"
+    },
+    {
+      "rfilename": "data/part_000268.jsonl"
+    },
+    {
+      "rfilename": "data/part_000269.jsonl"
+    },
+    {
+      "rfilename": "data/part_000270.jsonl"
+    },
+    {
+      "rfilename": "data/part_000271.jsonl"
+    },
+    {
+      "rfilename": "data/part_000272.jsonl"
+    },
+    {
+      "rfilename": "data/part_000273.jsonl"
+    },
+    {
+      "rfilename": "data/part_000274.jsonl"
+    },
+    {
+      "rfilename": "data/part_000275.jsonl"
+    },
+    {
+      "rfilename": "data/part_000276.jsonl"
+    },
+    {
+      "rfilename": "data/part_000277.jsonl"
+    },
+    {
+      "rfilename": "data/part_000278.jsonl"
+    },
+    {
+      "rfilename": "data/part_000279.jsonl"
+    },
+    {
+      "rfilename": "data/part_000280.jsonl"
+    },
+    {
+      "rfilename": "data/part_000281.jsonl"
+    },
+    {
+      "rfilename": "data/part_000282.jsonl"
+    },
+    {
+      "rfilename": "data/part_000283.jsonl"
+    },
+    {
+      "rfilename": "data/part_000284.jsonl"
+    },
+    {
+      "rfilename": "data/part_000285.jsonl"
+    },
+    {
+      "rfilename": "data/part_000286.jsonl"
+    },
+    {
+      "rfilename": "data/part_000287.jsonl"
+    },
+    {
+      "rfilename": "data/part_000288.jsonl"
+    },
+    {
+      "rfilename": "data/part_000289.jsonl"
+    },
+    {
+      "rfilename": "data/part_000290.jsonl"
+    },
+    {
+      "rfilename": "data/part_000291.jsonl"
+    },
+    {
+      "rfilename": "data/part_000292.jsonl"
+    },
+    {
+      "rfilename": "data/part_000293.jsonl"
+    },
+    {
+      "rfilename": "data/part_000294.jsonl"
+    },
+    {
+      "rfilename": "data/part_000295.jsonl"
+    },
+    {
+      "rfilename": "data/part_000296.jsonl"
+    },
+    {
+      "rfilename": "data/part_000297.jsonl"
+    },
+    {
+      "rfilename": "data/part_000298.jsonl"
+    },
+    {
+      "rfilename": "data/part_000299.jsonl"
+    },
+    {
+      "rfilename": "data/part_000300.jsonl"
+    },
+    {
+      "rfilename": "data/part_000301.jsonl"
+    },
+    {
+      "rfilename": "data/part_000302.jsonl"
+    },
+    {
+      "rfilename": "data/part_000303.jsonl"
+    },
+    {
+      "rfilename": "data/part_000304.jsonl"
+    },
+    {
+      "rfilename": "data/part_000305.jsonl"
+    },
+    {
+      "rfilename": "data/part_000306.jsonl"
+    },
+    {
+      "rfilename": "data/part_000307.jsonl"
+    },
+    {
+      "rfilename": "data/part_000308.jsonl"
+    },
+    {
+      "rfilename": "data/part_000309.jsonl"
+    },
+    {
+      "rfilename": "data/part_000310.jsonl"
+    },
+    {
+      "rfilename": "data/part_000311.jsonl"
+    },
+    {
+      "rfilename": "data/part_000312.jsonl"
+    },
+    {
+      "rfilename": "data/part_000313.jsonl"
+    },
+    {
+      "rfilename": "data/part_000314.jsonl"
+    },
+    {
+      "rfilename": "data/part_000315.jsonl"
+    },
+    {
+      "rfilename": "data/part_000316.jsonl"
+    },
+    {
+      "rfilename": "data/part_000317.jsonl"
+    },
+    {
+      "rfilename": "data/part_000318.jsonl"
+    },
+    {
+      "rfilename": "data/part_000319.jsonl"
+    },
+    {
+      "rfilename": "data/part_000320.jsonl"
+    },
+    {
+      "rfilename": "data/part_000321.jsonl"
+    },
+    {
+      "rfilename": "data/part_000322.jsonl"
+    },
+    {
+      "rfilename": "data/part_000323.jsonl"
+    },
+    {
+      "rfilename": "data/part_000324.jsonl"
+    },
+    {
+      "rfilename": "data/part_000325.jsonl"
+    },
+    {
+      "rfilename": "data/part_000326.jsonl"
+    },
+    {
+      "rfilename": "data/part_000327.jsonl"
+    },
+    {
+      "rfilename": "data/part_000328.jsonl"
+    },
+    {
+      "rfilename": "data/part_000329.jsonl"
+    },
+    {
+      "rfilename": "data/part_000330.jsonl"
+    },
+    {
+      "rfilename": "data/part_000331.jsonl"
+    },
+    {
+      "rfilename": "data/part_000332.jsonl"
+    },
+    {
+      "rfilename": "data/part_000333.jsonl"
+    },
+    {
+      "rfilename": "data/part_000334.jsonl"
+    },
+    {
+      "rfilename": "data/part_000335.jsonl"
+    },
+    {
+      "rfilename": "data/part_000336.jsonl"
+    },
+    {
+      "rfilename": "data/part_000337.jsonl"
+    },
+    {
+      "rfilename": "data/part_000338.jsonl"
+    },
+    {
+      "rfilename": "data/part_000339.jsonl"
+    },
+    {
+      "rfilename": "data/part_000340.jsonl"
+    },
+    {
+      "rfilename": "data/part_000341.jsonl"
+    },
+    {
+      "rfilename": "data/part_000342.jsonl"
+    },
+    {
+      "rfilename": "data/part_000343.jsonl"
+    },
+    {
+      "rfilename": "data/part_000344.jsonl"
+    },
+    {
+      "rfilename": "data/part_000345.jsonl"
+    },
+    {
+      "rfilename": "data/part_000346.jsonl"
+    },
+    {
+      "rfilename": "data/part_000347.jsonl"
+    },
+    {
+      "rfilename": "data/part_000348.jsonl"
+    },
+    {
+      "rfilename": "data/part_000349.jsonl"
+    },
+    {
+      "rfilename": "data/part_000350.jsonl"
+    },
+    {
+      "rfilename": "data/part_000351.jsonl"
+    },
+    {
+      "rfilename": "data/part_000352.jsonl"
+    },
+    {
+      "rfilename": "data/part_000353.jsonl"
+    },
+    {
+      "rfilename": "data/part_000354.jsonl"
+    },
+    {
+      "rfilename": "data/part_000355.jsonl"
+    },
+    {
+      "rfilename": "data/part_000356.jsonl"
+    },
+    {
+      "rfilename": "data/part_000357.jsonl"
+    },
+    {
+      "rfilename": "data/part_000358.jsonl"
+    },
+    {
+      "rfilename": "data/part_000359.jsonl"
+    },
+    {
+      "rfilename": "data/part_000360.jsonl"
+    },
+    {
+      "rfilename": "data/part_000361.jsonl"
+    },
+    {
+      "rfilename": "data/part_000362.jsonl"
+    },
+    {
+      "rfilename": "data/part_000363.jsonl"
+    },
+    {
+      "rfilename": "data/part_000364.jsonl"
+    },
+    {
+      "rfilename": "data/part_000365.jsonl"
+    },
+    {
+      "rfilename": "data/part_000366.jsonl"
+    },
+    {
+      "rfilename": "data/part_000367.jsonl"
+    },
+    {
+      "rfilename": "data/part_000368.jsonl"
+    },
+    {
+      "rfilename": "data/part_000369.jsonl"
+    },
+    {
+      "rfilename": "data/part_000370.jsonl"
+    },
+    {
+      "rfilename": "data/part_000371.jsonl"
+    },
+    {
+      "rfilename": "data/part_000372.jsonl"
+    },
+    {
+      "rfilename": "data/part_000373.jsonl"
+    },
+    {
+      "rfilename": "data/part_000374.jsonl"
+    },
+    {
+      "rfilename": "data/part_000375.jsonl"
+    },
+    {
+      "rfilename": "data/part_000376.jsonl"
+    },
+    {
+      "rfilename": "data/part_000377.jsonl"
+    },
+    {
+      "rfilename": "data/part_000378.jsonl"
+    },
+    {
+      "rfilename": "data/part_000379.jsonl"
+    },
+    {
+      "rfilename": "data/part_000380.jsonl"
+    },
+    {
+      "rfilename": "data/part_000381.jsonl"
+    },
+    {
+      "rfilename": "data/part_000382.jsonl"
+    },
+    {
+      "rfilename": "data/part_000383.jsonl"
+    },
+    {
+      "rfilename": "data/part_000384.jsonl"
+    },
+    {
+      "rfilename": "data/part_000385.jsonl"
+    },
+    {
+      "rfilename": "data/part_000386.jsonl"
+    },
+    {
+      "rfilename": "data/part_000387.jsonl"
+    },
+    {
+      "rfilename": "data/part_000388.jsonl"
+    },
+    {
+      "rfilename": "data/part_000389.jsonl"
+    },
+    {
+      "rfilename": "data/part_000390.jsonl"
+    },
+    {
+      "rfilename": "data/part_000391.jsonl"
+    },
+    {
+      "rfilename": "data/part_000392.jsonl"
+    },
+    {
+      "rfilename": "data/part_000393.jsonl"
+    },
+    {
+      "rfilename": "data/part_000394.jsonl"
+    },
+    {
+      "rfilename": "data/part_000395.jsonl"
+    },
+    {
+      "rfilename": "data/part_000396.jsonl"
+    },
+    {
+      "rfilename": "data/part_000397.jsonl"
+    },
+    {
+      "rfilename": "data/part_000398.jsonl"
+    },
+    {
+      "rfilename": "data/part_000399.jsonl"
+    },
+    {
+      "rfilename": "data/part_000400.jsonl"
+    },
+    {
+      "rfilename": "data/part_000401.jsonl"
+    },
+    {
+      "rfilename": "data/part_000402.jsonl"
+    },
+    {
+      "rfilename": "data/part_000403.jsonl"
+    },
+    {
+      "rfilename": "data/part_000404.jsonl"
+    },
+    {
+      "rfilename": "data/part_000405.jsonl"
+    },
+    {
+      "rfilename": "data/part_000406.jsonl"
+    },
+    {
+      "rfilename": "data/part_000407.jsonl"
+    },
+    {
+      "rfilename": "data/part_000408.jsonl"
+    },
+    {
+      "rfilename": "data/part_000409.jsonl"
+    },
+    {
+      "rfilename": "data/part_000410.jsonl"
+    },
+    {
+      "rfilename": "data/part_000411.jsonl"
+    },
+    {
+      "rfilename": "data/part_000412.jsonl"
+    },
+    {
+      "rfilename": "data/part_000413.jsonl"
+    },
+    {
+      "rfilename": "data/part_000414.jsonl"
+    },
+    {
+      "rfilename": "data/part_000415.jsonl"
+    },
+    {
+      "rfilename": "data/part_000416.jsonl"
+    },
+    {
+      "rfilename": "data/part_000417.jsonl"
+    },
+    {
+      "rfilename": "data/part_000418.jsonl"
+    },
+    {
+      "rfilename": "data/part_000419.jsonl"
+    },
+    {
+      "rfilename": "data/part_000420.jsonl"
+    },
+    {
+      "rfilename": "data/part_000421.jsonl"
+    },
+    {
+      "rfilename": "data/part_000422.jsonl"
+    },
+    {
+      "rfilename": "data/part_000423.jsonl"
+    },
+    {
+      "rfilename": "data/part_000424.jsonl"
+    },
+    {
+      "rfilename": "data/part_000425.jsonl"
+    },
+    {
+      "rfilename": "data/part_000426.jsonl"
+    },
+    {
+      "rfilename": "data/part_000427.jsonl"
+    },
+    {
+      "rfilename": "data/part_000428.jsonl"
+    },
+    {
+      "rfilename": "data/part_000429.jsonl"
+    },
+    {
+      "rfilename": "data/part_000430.jsonl"
+    },
+    {
+      "rfilename": "data/part_000431.jsonl"
+    },
+    {
+      "rfilename": "data/part_000432.jsonl"
+    },
+    {
+      "rfilename": "data/part_000433.jsonl"
+    },
+    {
+      "rfilename": "data/part_000434.jsonl"
+    },
+    {
+      "rfilename": "data/part_000435.jsonl"
+    },
+    {
+      "rfilename": "data/part_000436.jsonl"
+    },
+    {
+      "rfilename": "data/part_000437.jsonl"
+    },
+    {
+      "rfilename": "data/part_000438.jsonl"
+    },
+    {
+      "rfilename": "data/part_000439.jsonl"
+    },
+    {
+      "rfilename": "data/part_000440.jsonl"
+    },
+    {
+      "rfilename": "data/part_000441.jsonl"
+    },
+    {
+      "rfilename": "data/part_000442.jsonl"
+    },
+    {
+      "rfilename": "data/part_000443.jsonl"
+    },
+    {
+      "rfilename": "data/part_000444.jsonl"
+    },
+    {
+      "rfilename": "data/part_000445.jsonl"
+    },
+    {
+      "rfilename": "data/part_000446.jsonl"
+    },
+    {
+      "rfilename": "data/part_000447.jsonl"
+    },
+    {
+      "rfilename": "data/part_000448.jsonl"
+    },
+    {
+      "rfilename": "data/part_000449.jsonl"
+    },
+    {
+      "rfilename": "data/part_000450.jsonl"
+    },
+    {
+      "rfilename": "data/part_000451.jsonl"
+    },
+    {
+      "rfilename": "data/part_000452.jsonl"
+    },
+    {
+      "rfilename": "data/part_000453.jsonl"
+    },
+    {
+      "rfilename": "data/part_000454.jsonl"
+    },
+    {
+      "rfilename": "data/part_000455.jsonl"
+    },
+    {
+      "rfilename": "data/part_000456.jsonl"
+    },
+    {
+      "rfilename": "data/part_000457.jsonl"
+    },
+    {
+      "rfilename": "data/part_000458.jsonl"
+    },
+    {
+      "rfilename": "data/part_000459.jsonl"
+    },
+    {
+      "rfilename": "data/part_000460.jsonl"
+    },
+    {
+      "rfilename": "data/part_000461.jsonl"
+    },
+    {
+      "rfilename": "data/part_000462.jsonl"
+    },
+    {
+      "rfilename": "data/part_000463.jsonl"
+    },
+    {
+      "rfilename": "data/part_000464.jsonl"
+    },
+    {
+      "rfilename": "data/part_000465.jsonl"
+    },
+    {
+      "rfilename": "data/part_000466.jsonl"
+    },
+    {
+      "rfilename": "data/part_000467.jsonl"
+    },
+    {
+      "rfilename": "data/part_000468.jsonl"
+    },
+    {
+      "rfilename": "data/part_000469.jsonl"
+    },
+    {
+      "rfilename": "data/part_000470.jsonl"
+    },
+    {
+      "rfilename": "data/part_000471.jsonl"
+    },
+    {
+      "rfilename": "data/part_000472.jsonl"
+    },
+    {
+      "rfilename": "data/part_000473.jsonl"
+    },
+    {
+      "rfilename": "data/part_000474.jsonl"
+    },
+    {
+      "rfilename": "data/part_000475.jsonl"
+    },
+    {
+      "rfilename": "data/part_000476.jsonl"
+    },
+    {
+      "rfilename": "data/part_000477.jsonl"
+    },
+    {
+      "rfilename": "data/part_000478.jsonl"
+    },
+    {
+      "rfilename": "data/part_000479.jsonl"
+    },
+    {
+      "rfilename": "data/part_000480.jsonl"
+    },
+    {
+      "rfilename": "data/part_000481.jsonl"
+    },
+    {
+      "rfilename": "data/part_000482.jsonl"
+    },
+    {
+      "rfilename": "data/part_000483.jsonl"
+    },
+    {
+      "rfilename": "data/part_000484.jsonl"
+    },
+    {
+      "rfilename": "data/part_000485.jsonl"
+    },
+    {
+      "rfilename": "data/part_000486.jsonl"
+    },
+    {
+      "rfilename": "data/part_000487.jsonl"
+    },
+    {
+      "rfilename": "data/part_000488.jsonl"
+    },
+    {
+      "rfilename": "data/part_000489.jsonl"
+    },
+    {
+      "rfilename": "data/part_000490.jsonl"
+    },
+    {
+      "rfilename": "data/part_000491.jsonl"
+    },
+    {
+      "rfilename": "data/part_000492.jsonl"
+    },
+    {
+      "rfilename": "data/part_000493.jsonl"
+    },
+    {
+      "rfilename": "data/part_000494.jsonl"
+    },
+    {
+      "rfilename": "data/part_000495.jsonl"
+    },
+    {
+      "rfilename": "data/part_000496.jsonl"
+    },
+    {
+      "rfilename": "data/part_000497.jsonl"
+    },
+    {
+      "rfilename": "data/part_000498.jsonl"
+    },
+    {
+      "rfilename": "data/part_000499.jsonl"
+    },
+    {
+      "rfilename": "data/part_000500.jsonl"
+    },
+    {
+      "rfilename": "data/part_000501.jsonl"
+    },
+    {
+      "rfilename": "data/part_000502.jsonl"
+    },
+    {
+      "rfilename": "data/part_000503.jsonl"
+    },
+    {
+      "rfilename": "data/part_000504.jsonl"
+    },
+    {
+      "rfilename": "data/part_000505.jsonl"
+    },
+    {
+      "rfilename": "data/part_000506.jsonl"
+    },
+    {
+      "rfilename": "data/part_000507.jsonl"
+    },
+    {
+      "rfilename": "data/part_000508.jsonl"
+    },
+    {
+      "rfilename": "data/part_000509.jsonl"
+    },
+    {
+      "rfilename": "data/part_000510.jsonl"
+    },
+    {
+      "rfilename": "data/part_000511.jsonl"
+    },
+    {
+      "rfilename": "data/part_000512.jsonl"
+    },
+    {
+      "rfilename": "data/part_000513.jsonl"
+    },
+    {
+      "rfilename": "data/part_000514.jsonl"
+    },
+    {
+      "rfilename": "data/part_000515.jsonl"
+    },
+    {
+      "rfilename": "data/part_000516.jsonl"
+    },
+    {
+      "rfilename": "data/part_000517.jsonl"
+    },
+    {
+      "rfilename": "data/part_000518.jsonl"
+    },
+    {
+      "rfilename": "data/part_000519.jsonl"
+    },
+    {
+      "rfilename": "data/part_000520.jsonl"
+    },
+    {
+      "rfilename": "data/part_000521.jsonl"
+    },
+    {
+      "rfilename": "data/part_000522.jsonl"
+    },
+    {
+      "rfilename": "data/part_000523.jsonl"
+    },
+    {
+      "rfilename": "data/part_000524.jsonl"
+    },
+    {
+      "rfilename": "data/part_000525.jsonl"
+    },
+    {
+      "rfilename": "data/part_000526.jsonl"
+    },
+    {
+      "rfilename": "data/part_000527.jsonl"
+    },
+    {
+      "rfilename": "data/part_000528.jsonl"
+    },
+    {
+      "rfilename": "data/part_000529.jsonl"
+    },
+    {
+      "rfilename": "data/part_000530.jsonl"
+    },
+    {
+      "rfilename": "data/part_000531.jsonl"
+    },
+    {
+      "rfilename": "data/part_000532.jsonl"
+    },
+    {
+      "rfilename": "data/part_000533.jsonl"
+    },
+    {
+      "rfilename": "data/part_000534.jsonl"
+    },
+    {
+      "rfilename": "data/part_000535.jsonl"
+    },
+    {
+      "rfilename": "data/part_000536.jsonl"
+    },
+    {
+      "rfilename": "data/part_000537.jsonl"
+    },
+    {
+      "rfilename": "data/part_000538.jsonl"
+    },
+    {
+      "rfilename": "data/part_000539.jsonl"
+    },
+    {
+      "rfilename": "data/part_000540.jsonl"
+    },
+    {
+      "rfilename": "data/part_000541.jsonl"
+    },
+    {
+      "rfilename": "data/part_000542.jsonl"
+    },
+    {
+      "rfilename": "data/part_000543.jsonl"
+    },
+    {
+      "rfilename": "data/part_000544.jsonl"
+    },
+    {
+      "rfilename": "data/part_000545.jsonl"
+    },
+    {
+      "rfilename": "data/part_000546.jsonl"
+    },
+    {
+      "rfilename": "data/part_000547.jsonl"
+    },
+    {
+      "rfilename": "data/part_000548.jsonl"
+    },
+    {
+      "rfilename": "data/part_000549.jsonl"
+    },
+    {
+      "rfilename": "data/part_000550.jsonl"
+    },
+    {
+      "rfilename": "data/part_000551.jsonl"
+    },
+    {
+      "rfilename": "data/part_000552.jsonl"
+    },
+    {
+      "rfilename": "data/part_000553.jsonl"
+    },
+    {
+      "rfilename": "data/part_000554.jsonl"
+    },
+    {
+      "rfilename": "data/part_000555.jsonl"
+    },
+    {
+      "rfilename": "data/part_000556.jsonl"
+    },
+    {
+      "rfilename": "data/part_000557.jsonl"
+    },
+    {
+      "rfilename": "data/part_000558.jsonl"
+    },
+    {
+      "rfilename": "data/part_000559.jsonl"
+    },
+    {
+      "rfilename": "data/part_000560.jsonl"
+    },
+    {
+      "rfilename": "data/part_000561.jsonl"
+    },
+    {
+      "rfilename": "data/part_000562.jsonl"
+    },
+    {
+      "rfilename": "data/part_000563.jsonl"
+    },
+    {
+      "rfilename": "data/part_000564.jsonl"
+    },
+    {
+      "rfilename": "data/part_000565.jsonl"
+    },
+    {
+      "rfilename": "data/part_000566.jsonl"
+    },
+    {
+      "rfilename": "data/part_000567.jsonl"
+    },
+    {
+      "rfilename": "data/part_000568.jsonl"
+    },
+    {
+      "rfilename": "data/part_000569.jsonl"
+    },
+    {
+      "rfilename": "data/part_000570.jsonl"
+    },
+    {
+      "rfilename": "data/part_000571.jsonl"
+    },
+    {
+      "rfilename": "data/part_000572.jsonl"
+    },
+    {
+      "rfilename": "data/part_000573.jsonl"
+    },
+    {
+      "rfilename": "data/part_000574.jsonl"
+    },
+    {
+      "rfilename": "data/part_000575.jsonl"
+    },
+    {
+      "rfilename": "data/part_000576.jsonl"
+    },
+    {
+      "rfilename": "data/part_000577.jsonl"
+    },
+    {
+      "rfilename": "data/part_000578.jsonl"
+    },
+    {
+      "rfilename": "data/part_000579.jsonl"
+    },
+    {
+      "rfilename": "data/part_000580.jsonl"
+    },
+    {
+      "rfilename": "data/part_000581.jsonl"
+    },
+    {
+      "rfilename": "data/part_000582.jsonl"
+    },
+    {
+      "rfilename": "data/part_000583.jsonl"
+    },
+    {
+      "rfilename": "data/part_000584.jsonl"
+    },
+    {
+      "rfilename": "data/part_000585.jsonl"
+    },
+    {
+      "rfilename": "data/part_000586.jsonl"
+    },
+    {
+      "rfilename": "data/part_000587.jsonl"
+    },
+    {
+      "rfilename": "data/part_000588.jsonl"
+    },
+    {
+      "rfilename": "data/part_000589.jsonl"
+    },
+    {
+      "rfilename": "data/part_000590.jsonl"
+    },
+    {
+      "rfilename": "data/part_000591.jsonl"
+    },
+    {
+      "rfilename": "data/part_000592.jsonl"
+    },
+    {
+      "rfilename": "data/part_000593.jsonl"
+    },
+    {
+      "rfilename": "data/part_000594.jsonl"
+    },
+    {
+      "rfilename": "data/part_000595.jsonl"
+    },
+    {
+      "rfilename": "data/part_000596.jsonl"
+    },
+    {
+      "rfilename": "data/part_000597.jsonl"
+    },
+    {
+      "rfilename": "data/part_000598.jsonl"
+    },
+    {
+      "rfilename": "data/part_000599.jsonl"
+    },
+    {
+      "rfilename": "data/part_000600.jsonl"
+    },
+    {
+      "rfilename": "data/part_000601.jsonl"
+    },
+    {
+      "rfilename": "data/part_000602.jsonl"
+    },
+    {
+      "rfilename": "data/part_000603.jsonl"
+    },
+    {
+      "rfilename": "data/part_000604.jsonl"
+    },
+    {
+      "rfilename": "data/part_000605.jsonl"
+    },
+    {
+      "rfilename": "data/part_000606.jsonl"
+    },
+    {
+      "rfilename": "data/part_000607.jsonl"
+    },
+    {
+      "rfilename": "data/part_000608.jsonl"
+    },
+    {
+      "rfilename": "data/part_000609.jsonl"
+    },
+    {
+      "rfilename": "data/part_000610.jsonl"
+    },
+    {
+      "rfilename": "data/part_000611.jsonl"
+    },
+    {
+      "rfilename": "data/part_000612.jsonl"
+    },
+    {
+      "rfilename": "data/part_000613.jsonl"
+    },
+    {
+      "rfilename": "data/part_000614.jsonl"
+    },
+    {
+      "rfilename": "data/part_000615.jsonl"
+    },
+    {
+      "rfilename": "data/part_000616.jsonl"
+    },
+    {
+      "rfilename": "data/part_000617.jsonl"
+    },
+    {
+      "rfilename": "data/part_000618.jsonl"
+    },
+    {
+      "rfilename": "data/part_000619.jsonl"
+    },
+    {
+      "rfilename": "data/part_000620.jsonl"
+    },
+    {
+      "rfilename": "data/part_000621.jsonl"
+    },
+    {
+      "rfilename": "data/part_000622.jsonl"
+    },
+    {
+      "rfilename": "data/part_000623.jsonl"
+    },
+    {
+      "rfilename": "data/part_000624.jsonl"
+    },
+    {
+      "rfilename": "data/part_000625.jsonl"
+    },
+    {
+      "rfilename": "data/part_000626.jsonl"
+    },
+    {
+      "rfilename": "data/part_000627.jsonl"
+    },
+    {
+      "rfilename": "data/part_000628.jsonl"
+    },
+    {
+      "rfilename": "data/part_000629.jsonl"
+    },
+    {
+      "rfilename": "data/part_000630.jsonl"
+    },
+    {
+      "rfilename": "data/part_000631.jsonl"
+    },
+    {
+      "rfilename": "data/part_000632.jsonl"
+    },
+    {
+      "rfilename": "data/part_000633.jsonl"
+    },
+    {
+      "rfilename": "data/part_000634.jsonl"
+    },
+    {
+      "rfilename": "data/part_000635.jsonl"
+    },
+    {
+      "rfilename": "data/part_000636.jsonl"
+    },
+    {
+      "rfilename": "data/part_000637.jsonl"
+    },
+    {
+      "rfilename": "data/part_000638.jsonl"
+    },
+    {
+      "rfilename": "data/part_000639.jsonl"
+    },
+    {
+      "rfilename": "data/part_000640.jsonl"
+    },
+    {
+      "rfilename": "data/part_000641.jsonl"
+    },
+    {
+      "rfilename": "data/part_000642.jsonl"
+    },
+    {
+      "rfilename": "data/part_000643.jsonl"
+    },
+    {
+      "rfilename": "data/part_000644.jsonl"
+    },
+    {
+      "rfilename": "data/part_000645.jsonl"
+    },
+    {
+      "rfilename": "data/part_000646.jsonl"
+    },
+    {
+      "rfilename": "data/part_000648.jsonl"
+    },
+    {
+      "rfilename": "data/part_000649.jsonl"
+    },
+    {
+      "rfilename": "data/part_000650.jsonl"
+    },
+    {
+      "rfilename": "data/part_000651.jsonl"
+    },
+    {
+      "rfilename": "data/part_000652.jsonl"
+    },
+    {
+      "rfilename": "data/part_000653.jsonl"
+    },
+    {
+      "rfilename": "data/part_000654.jsonl"
+    },
+    {
+      "rfilename": "data/part_000655.jsonl"
+    },
+    {
+      "rfilename": "data/part_000656.jsonl"
+    },
+    {
+      "rfilename": "data/part_000657.jsonl"
+    },
+    {
+      "rfilename": "data/part_000658.jsonl"
+    },
+    {
+      "rfilename": "data/part_000659.jsonl"
+    },
+    {
+      "rfilename": "data/part_000660.jsonl"
+    },
+    {
+      "rfilename": "data/part_000661.jsonl"
+    },
+    {
+      "rfilename": "data/part_000662.jsonl"
+    },
+    {
+      "rfilename": "data/part_000663.jsonl"
+    },
+    {
+      "rfilename": "data/part_000664.jsonl"
+    },
+    {
+      "rfilename": "data/part_000665.jsonl"
+    },
+    {
+      "rfilename": "data/part_000666.jsonl"
+    },
+    {
+      "rfilename": "data/part_000667.jsonl"
+    },
+    {
+      "rfilename": "data/part_000668.jsonl"
+    },
+    {
+      "rfilename": "data/part_000669.jsonl"
+    },
+    {
+      "rfilename": "data/part_000670.jsonl"
+    },
+    {
+      "rfilename": "data/part_000671.jsonl"
+    },
+    {
+      "rfilename": "data/part_000672.jsonl"
+    },
+    {
+      "rfilename": "data/part_000673.jsonl"
+    },
+    {
+      "rfilename": "exp_metrics.png"
+    },
+    {
+      "rfilename": "lighteval_tasks_v2.py"
+    },
+    {
+      "rfilename": "tech_report.pdf"
+    },
+    {
+      "rfilename": "training_metrics_curve.png"
+    }
+  ],
+  "createdAt": "2024-09-19T05:33:35.000Z",
+  "usedStorage": 541077073870
+}

@@ -1,0 +1,13 @@
+{
+  "frozen_at": "2026-10-04T09:37:32.177381+00:00",
+  "phase": "Before score unblinding and per-score annotation statistics",
+  "sha256": {
+    "sample.json": "9dabdfe50a1242be60ee5a5e711374609160ec85df4331548fe5eb6c0e535727",
+    "annotations.json": "e3650dfcaa05c932e7622502870b71eef8021187019c2c469e70a997028bc7e8",
+    "annotations-initial.json": "529390f3e0ba6346a0c9114ada4f51bc50c44b0979c25cdef201f215d3726ecc",
+    "review-log.json": "87d2f57dfde9acad22bc61e21d63d9efa4d8218803602d76466b570e7e57a63d",
+    "protocol.json": "6906bad67eb6066cd592b96c2a490bb8cd3ca03f74b716c8720595b00f4ed047",
+    "analyze.py": "343c31808c035a49cdf517c11827ca0a13e7f118fcd982692525b3781850eb7d",
+    "review.py": "4d0513f0e367b74eb4676b08962239000e019cfb5a920db500cf767068b679b9"
+  }
+}

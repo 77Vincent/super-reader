@@ -1,0 +1,356 @@
+{
+  "changes": [
+    {
+      "review_id": "S0137",
+      "before": {
+        "review_id": "S0137",
+        "code": "A",
+        "boundary": "A",
+        "text_type": "ordinary",
+        "reason": "标记处的分句、句间、并列、话题或说明边界可接受；不要求唯一切点。",
+        "reviewer": "Codex AI first pass"
+      },
+      "after": {
+        "review_id": "S0137",
+        "code": "D",
+        "boundary": "A",
+        "text_type": "damaged",
+        "reason": "原文多处搭配异常；“排兵布阵需求考虑国内赛事的组织”措辞受损，句间边界可接受。",
+        "reviewer": "Codex AI first pass"
+      },
+      "phase": "score-blind context adjudication / random A recheck"
+    },
+    {
+      "review_id": "S0145",
+      "before": {
+        "review_id": "S0145",
+        "code": "U",
+        "boundary": "U",
+        "text_type": "uncertain",
+        "reason": "右侧“怎样学好英语 想学好英语”可能为标题与正文混合，暂留待原文复核。",
+        "reviewer": "Codex AI first pass"
+      },
+      "after": {
+        "review_id": "S0145",
+        "code": "D",
+        "boundary": "A",
+        "text_type": "damaged",
+        "reason": "原文确认“怎样学好英语”为标题，与“想学好英语”正文粘连；标记处的句间边界仍可接受。",
+        "reviewer": "Codex AI first pass"
+      },
+      "phase": "score-blind context adjudication / random A recheck"
+    },
+    {
+      "review_id": "S0199",
+      "before": {
+        "review_id": "S0199",
+        "code": "U",
+        "boundary": "U",
+        "text_type": "uncertain",
+        "reason": "“窗口/控制”可能是完整列举或词组被截断，需要原文。",
+        "reviewer": "Codex AI first pass"
+      },
+      "after": {
+        "review_id": "S0199",
+        "code": "A",
+        "boundary": "A",
+        "text_type": "ordinary",
+        "reason": "原文是应用程序实例、窗口、控制、位图、GDI对象的列举，边界可接受。",
+        "reviewer": "Codex AI first pass"
+      },
+      "phase": "score-blind context adjudication / random A recheck"
+    },
+    {
+      "review_id": "S0225",
+      "before": {
+        "review_id": "S0225",
+        "code": "U",
+        "boundary": "U",
+        "text_type": "uncertain",
+        "reason": "“之最/著作”是孤立结构，需原文确认。",
+        "reviewer": "Codex AI first pass"
+      },
+      "after": {
+        "review_id": "S0225",
+        "code": "B",
+        "boundary": "A",
+        "text_type": "boilerplate",
+        "reason": "原文为“本文关键词”的词项列表；边界可接受，但属于页面附属文字。",
+        "reviewer": "Codex AI first pass"
+      },
+      "phase": "score-blind context adjudication / random A recheck"
+    },
+    {
+      "review_id": "S0230",
+      "before": {
+        "review_id": "S0230",
+        "code": "U",
+        "boundary": "U",
+        "text_type": "uncertain",
+        "reason": "右侧连写多个安全措施，疑有格式或标点缺失，需原文复核。",
+        "reviewer": "Codex AI first pass"
+      },
+      "after": {
+        "review_id": "S0230",
+        "code": "D",
+        "boundary": "A",
+        "text_type": "damaged",
+        "reason": "原文将多条安全措施连写；右片段缺少“受攻击面／使用伪装”的分隔，标记处仍可接受。",
+        "reviewer": "Codex AI first pass"
+      },
+      "phase": "score-blind context adjudication / random A recheck"
+    },
+    {
+      "review_id": "S0233",
+      "before": {
+        "review_id": "S0233",
+        "code": "U",
+        "boundary": "U",
+        "text_type": "uncertain",
+        "reason": "“现在连个装杂志的几乎都没有”缺少可确认的中心语，需原文复核。",
+        "reviewer": "Codex AI first pass"
+      },
+      "after": {
+        "review_id": "S0233",
+        "code": "D",
+        "boundary": "A",
+        "text_type": "damaged",
+        "reason": "原文也未补足“装杂志的”的所指对象，并有多处不连贯表达；标记处的分句边界仍可接受。",
+        "reviewer": "Codex AI first pass"
+      },
+      "phase": "score-blind context adjudication / random A recheck"
+    },
+    {
+      "review_id": "S0269",
+      "before": {
+        "review_id": "S0269",
+        "code": "U",
+        "boundary": "U",
+        "text_type": "uncertain",
+        "reason": "“Y整个结构叫氢键”疑为化学式／上下文丢失，查看原文再判。",
+        "reviewer": "Codex AI first pass"
+      },
+      "after": {
+        "review_id": "S0269",
+        "code": "D",
+        "boundary": "A",
+        "text_type": "damaged",
+        "reason": "原文为“第一种把X－H…Y整个结构叫氢键”；公式中的省略号被当作片段边界，样本丢失左侧公式与主语，目标逗号本身仍可接受。",
+        "reviewer": "Codex AI first pass"
+      },
+      "phase": "score-blind context adjudication / random A recheck"
+    },
+    {
+      "review_id": "S0305",
+      "before": {
+        "review_id": "S0305",
+        "code": "U",
+        "boundary": "U",
+        "text_type": "uncertain",
+        "reason": "两个片段疑为标题或段落结构残留，待查原文。",
+        "reviewer": "Codex AI first pass"
+      },
+      "after": {
+        "review_id": "S0305",
+        "code": "A",
+        "boundary": "A",
+        "text_type": "ordinary",
+        "reason": "原文接“都有辅助改善的作用”，话题与介词短语之间的边界可接受；不评估医学陈述真伪。",
+        "reviewer": "Codex AI first pass"
+      },
+      "phase": "score-blind context adjudication / random A recheck"
+    },
+    {
+      "review_id": "S0379",
+      "before": {
+        "review_id": "S0379",
+        "code": "U",
+        "boundary": "U",
+        "text_type": "uncertain",
+        "reason": "“不用说了/花圃”关系不明，需要原文。",
+        "reviewer": "Codex AI first pass"
+      },
+      "after": {
+        "review_id": "S0379",
+        "code": "A",
+        "boundary": "A",
+        "text_type": "ordinary",
+        "reason": "原文为旅行照片说明，花圃是下一条说明；句间边界可接受。",
+        "reviewer": "Codex AI first pass"
+      },
+      "phase": "score-blind context adjudication / random A recheck"
+    },
+    {
+      "review_id": "S0470",
+      "before": {
+        "review_id": "S0470",
+        "code": "D",
+        "boundary": "A",
+        "text_type": "damaged",
+        "reason": "“在这里看上去是塑造形象具体的战士”语序表达损坏，句间切点仍可。",
+        "reviewer": "Codex AI first pass"
+      },
+      "after": {
+        "review_id": "S0470",
+        "code": "A",
+        "boundary": "A",
+        "text_type": "ordinary",
+        "reason": "原文为美育课程笔记，后文解释具象人物与抽象精神的关系；表达口语化但不足以确认文字损坏。",
+        "reviewer": "Codex AI first pass"
+      },
+      "phase": "score-blind context adjudication / random A recheck"
+    },
+    {
+      "review_id": "S0479",
+      "before": {
+        "review_id": "S0479",
+        "code": "X",
+        "boundary": "U",
+        "text_type": "damaged",
+        "reason": "游戏名称、编号、评语大段无结构拼接，标记前后关系不可靠。",
+        "reviewer": "Codex AI first pass"
+      },
+      "after": {
+        "review_id": "S0479",
+        "code": "D",
+        "boundary": "A",
+        "text_type": "damaged",
+        "reason": "原文确认游戏编号、名称、评语连写；“超高科技／不玩白活”为两个可接受的评价片段，其他正文结构仍受损。",
+        "reviewer": "Codex AI first pass"
+      },
+      "phase": "score-blind context adjudication / random A recheck"
+    }
+  ],
+  "context_reviewed": [
+    60,
+    61,
+    145,
+    164,
+    186,
+    199,
+    204,
+    225,
+    230,
+    232,
+    233,
+    241,
+    243,
+    265,
+    269,
+    288,
+    305,
+    331,
+    359,
+    362,
+    363,
+    365,
+    375,
+    378,
+    379,
+    399,
+    421,
+    439,
+    460,
+    470,
+    471,
+    479,
+    499,
+    500,
+    501,
+    505,
+    509,
+    542,
+    544,
+    545,
+    548,
+    562,
+    564,
+    610,
+    137
+  ],
+  "random_A_recheck": [
+    55,
+    394,
+    528,
+    79,
+    533,
+    582,
+    503,
+    616,
+    153,
+    137,
+    426,
+    635,
+    10,
+    483,
+    167,
+    166,
+    90,
+    526,
+    432,
+    66,
+    598,
+    147,
+    146,
+    370,
+    255,
+    639,
+    409,
+    480,
+    248,
+    283,
+    291,
+    604,
+    428,
+    109,
+    247,
+    311,
+    37,
+    450,
+    552,
+    126,
+    110,
+    64,
+    559,
+    523,
+    625,
+    75,
+    411,
+    175,
+    325,
+    491,
+    455,
+    430,
+    154,
+    189,
+    298,
+    280,
+    138,
+    299,
+    107,
+    20,
+    307,
+    482,
+    513,
+    251,
+    400,
+    1,
+    438,
+    33,
+    80,
+    87,
+    132,
+    127,
+    338,
+    611,
+    436,
+    134,
+    372,
+    266,
+    46,
+    39
+  ],
+  "reviewer": "Same Codex AI, no independent human review",
+  "severity_rule": "minor: spacing, typo or questionable word choice without major structural loss; structural_or_severe: missing content, mixed layout, duplication or incoherence",
+  "scores_hidden_until_freeze": true
+}

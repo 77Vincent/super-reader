@@ -1,0 +1,38 @@
+{
+  "assessment": "Share with caveats",
+  "raw_documents": 131006462,
+  "sampled_documents": 4800,
+  "semantic_reviews": 640,
+  "primary_quality_metric": "Boundary acceptability only; text damage excluded from decision",
+  "reused_frozen_annotations": true,
+  "new_semantic_reviews": 0,
+  "preferred_score_threshold": null,
+  "acceptable": 637,
+  "wrong": 0,
+  "uncertain": 3,
+  "frozen_hashes_verified": true,
+  "sql_reconciliation": true,
+  "notebook_code_cells_executed": 5,
+  "notebook_execution_mode": "Sequential Python standard library, not a Jupyter kernel",
+  "statistical_caveats": [
+    "Clustered sample; unadjusted Wilson reference only",
+    "AI review, no independent human gold",
+    "Document-weighted semantic sample",
+    "No measured model improvement"
+  ],
+  "no_training_started": true,
+  "production_configuration_unchanged": true,
+  "required_structure": "summary; visual findings; definitions before findings; methodology; limitations and sensitivity; recommendations; open questions",
+  "visual_qa": {
+    "artifact_validation": "passed",
+    "portable_packaging": "passed",
+    "html_structure": "passed",
+    "browser_visual_verification": "not_completed",
+    "reason": "No bundled Chromium headless shell; existing Chrome timed out during the prior run, so no repeated launch."
+  },
+  "artifact_sha256": {
+    "artifact.json": "c00e0b6b8d60ac3a06256e94334c711c0eace50273621c72c8f91dc610ae2d78",
+    "report.html": "3c71c68c2a1d56b5a2622bcbfae05444247a80d9f2733017ce4c67aa70a6614c",
+    "evidence.sqlite": "688c3dd596b4d1df53a5bc0c40527a9a5263a55ad900733bb4d2d212c55fef81"
+  }
+}
