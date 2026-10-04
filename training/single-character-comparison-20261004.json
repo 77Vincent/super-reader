@@ -1,0 +1,515 @@
+{
+  "scope": "One seeded short continuation from a model previously trained on single-character sides; not training from scratch. Training rows are removed without replacement. Shard/row order and batching algorithm/seed are retained, but removing rows changes shuffled batches and potentially update count. Same reused validation, including single-character sides; no test or promotion.",
+  "plan": {
+    "control_run": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004",
+    "control_plan_sha256": "9b2dbf14f18310c6f3eb03730da67863bb698c9114f7b44b86c4979a3ebce2f4",
+    "control_source_hashes": {
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-000.jsonl": "f51c35d854a6aa071015b919d061a3d3f3f9dc2afe4952bebc1975cc7a4ba489",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-000.source.jsonl": "3d1148c91b4097316afdbb583437e0dcaeda27d1e52309b4b6b37f52280bd65b",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-001.jsonl": "baa4b04d028e2d100aa12e716f25368a3171c9ab575221946f314a4cf4d7b1fd",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-001.source.jsonl": "e537e2ed2c3a60032b5908d9ebb82af1e03a01280f36e6f6099f6d5dbccf5771",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-002.jsonl": "3deebb5d4c79537fff2571d7f298c8eda5fceac974453764d9f66a5ff4af57b4",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-002.source.jsonl": "3745e2fb79b180313c02f858d16ec22fd6c7e2f0fd70b591fefc64c20924ca60",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-003.jsonl": "44ccd91bb912fd03f2ea97c9e085bd8b94f51ee5a3c54b24b0f8d0a71dd7e6ab",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-003.source.jsonl": "834505ae0be8a946ee97f65fea626e918efea194a4226bd56eb424bc71eaa103",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-004.jsonl": "723decd03644ef55335601c899f32ecffad4c351048534caa429de996224e873",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-004.source.jsonl": "d008f507315659801274c6480e0fca3c572402d2af683e80c1d483893cfa907c",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-005.jsonl": "f6cedd7893ff1ff252fcf69b496d2c06386bd3c0823cf4988fab51300dd5ce20",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-005.source.jsonl": "6d5f7c7fae9ba8ec24357221dc813bffef42d4c17210334fabdcd88f9d9add56",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-006.jsonl": "66583b0a54d727eb6f2632e7ce088fd52dcbb9a218c13a8f8f39a074887be987",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-006.source.jsonl": "f4eedecdf9fc964b3627e8567e546e415d23d05a163fdd98fee3173b0bdb483b",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-007.jsonl": "d803b027c0a916b587808ab23397abd1998220b5af6959943f2756422d9d3bb0",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-007.source.jsonl": "407227dff9e75c160738a0492d711038efc6d16c6b74867a7c24884d3e72ebca",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-008.jsonl": "8c5bc238778ee69540f31ebf8083365f503e4438c98256090f02ce0c9370a6ef",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-008.source.jsonl": "266831538634755d746327587fa1bebf72c131e74fdfd5a5d631a403076892d3",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-009.jsonl": "dea9292f8f96d5228ae8f3b61aae21dfccf9c1834daad4322da81afeda755e38",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-009.source.jsonl": "994cc1d24293bb89bf78bbaf6f783e7a9bddf5f79373b8b3f03b40cd07552528",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-010.jsonl": "55ffbd2b50b85520220926fde8bb4765d812611f46c7d8c6aba160ab4154f7fc",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-010.source.jsonl": "7e5fc5f5f497362d44045598c2907cd1efe55127777df11f7a8dd1451a0a0ee4",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-011.jsonl": "385cc55e2b1bc0bd9745b124451b235c1c140a5bc627a954cde053e18db22482",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-011.source.jsonl": "3b869a12a075da710411a10d734fedf7d96c8524a06cf4d49bf73255e891b88d",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-012.jsonl": "95eb3ae4f6c7a2bc528faa7d8290a4985d7daf2984ddc698ae29ad0eaef5d92b",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-012.source.jsonl": "a5186330c1cc7ab6078058e34dc2ed8053b752a360598e80f1b886d325d884f8",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-013.jsonl": "9fc03e450eef3a26deafe75ff6f6f0d1f745a9caae437def7d5fec6240580d28",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-013.source.jsonl": "97470a33737d20b9be3a8808352017880836c2e31b6349d904167cd383ed97dd",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-014.jsonl": "2146b7439d6a4cb7953f803984fa0987c4f2b1c116be94808560d8f853044832",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-014.source.jsonl": "3aa804be199dcbb5fe7fcd875d6fc741ab5e64802ce468fc9a8502f892657488",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-015.jsonl": "71e78b7646bc64c9054e969c0ba51569fdbca813b9674b90dfc4848bf6fbacce",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-015.source.jsonl": "c71ca6d0048710dff3eb93e463af4a54a2e8a7bb786c626c9b0358b310c60284",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-016.jsonl": "6b1dcf995ee437178ac65f4fa9a8e571b38b153b4685fb943949801c8340e32e",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-016.source.jsonl": "dada4667cf93eac875a339bd6d380c0c0de4ace1fa24586052a95ce3137a9aa6",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-017.jsonl": "5ef36ac6ca77848ea90205d644d8cc4d2c2276c2ab3b3bebcc44155e493385c8",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-017.source.jsonl": "1f5de6406ddaaf9e0c4a7437167a0510dfcfded7fbc816438e91538bbc0a7c79",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-018.jsonl": "533ab5361768c21d3ea032ad84c7bc14a9c5173ea8305e026e1802350235e4f7",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-018.source.jsonl": "e00e81c222085fe5fb49ba9d28dfb0caecd5240ca06ddcd46f53d8b0d34d8b7e",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-019.jsonl": "92d77cd274a46343be29c67426eedd4e86d76f3e794f0bc7b7b2b7577617221c",
+      "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-019.source.jsonl": "fad375fcff1414910d524ab1d462659197465a0a618db02b1fd18f8f99eb4600"
+    },
+    "control_samples": 1000000,
+    "samples": 997774,
+    "removed": 2226,
+    "removed_by_shard": [
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-000.jsonl",
+        "removed": 120
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-001.jsonl",
+        "removed": 118
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-002.jsonl",
+        "removed": 116
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-003.jsonl",
+        "removed": 122
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-004.jsonl",
+        "removed": 101
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-005.jsonl",
+        "removed": 86
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-006.jsonl",
+        "removed": 100
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-007.jsonl",
+        "removed": 107
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-008.jsonl",
+        "removed": 107
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-009.jsonl",
+        "removed": 107
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-010.jsonl",
+        "removed": 127
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-011.jsonl",
+        "removed": 129
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-012.jsonl",
+        "removed": 119
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-013.jsonl",
+        "removed": 115
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-014.jsonl",
+        "removed": 119
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-015.jsonl",
+        "removed": 108
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-016.jsonl",
+        "removed": 110
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-017.jsonl",
+        "removed": 116
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-018.jsonl",
+        "removed": 106
+      },
+      {
+        "source": "/Users/01258615/Documents/git/77Vincent/super-reader/training/artifacts/position-ablation-1m-20261004/data/train-019.jsonl",
+        "removed": 93
+      }
+    ],
+    "validation_count": 100000,
+    "maximum_sample_length": 256,
+    "seed": 2026100409,
+    "training": {
+      "epochs": 1,
+      "learning_rate": 3e-05,
+      "domain_weight_power": 0.65,
+      "batch_size": 512,
+      "max_tokens_per_batch": 8192
+    },
+    "initialization_sha256": "874f451a904a3358c3c45d570fa52af0fb22be604a3f4724df8d8549e68d89aa",
+    "weighting_manifest_sha256": "cf6f1a982861efa4015d587fbe7c1a922772edf5c34395a239a401781909de2b",
+    "source_hashes": {
+      "run_position_ablation.py": "ebb809f29849091d2d8c2a7edee3726b7165d18c8b60010739e595a5f6683dd7",
+      "train_sharded.py": "e51fcfee6eb6248a0326d54706904690076806abe6b9adf5cb56a8e58c362119",
+      "train_smoke.py": "8408c18080bc3a2f3dd975d4135bd3529c4963ec42d47583a7043f3f342da672",
+      "text_policy.py": "872b6c9870c9dcb7be195c63c75f6aff3b2afdb906180ea331d65867e3cb497f",
+      "text-policy.json": "e642ecd7668f4981a8c446a245a337792a5d47cfdeafd5da569975935c726db5",
+      "unicode-symbols.json": "024a3a72c99787d47611fc6b75dc10b465db93c1c62f5f853c40290641abbc72",
+      "run_single_character_ablation.py": "c528d4c29a2165733ee2d56e56698a392b05fe192d6bbe01ae9074b50752df46"
+    },
+    "data_hashes": {
+      "manifest.json": "d227b9c8aec45eb9a4a8a57d682473167d5582d61740d63fb900e3a48f12abeb",
+      "validation.jsonl": "740072c0a4658e03e6a06133403555e2ab367edca6dddf548a96bf90074bbe6a",
+      "summary.json": "dfd2c4d60b731be502f2d16b04d6c4b6e5e970067f4f4cdeb03012d1d477ba23",
+      "vocabulary.json": "625ec1bb79f24c47948a2f2cfdaf7515335b911b9694f33cd14e85b2e433aac2"
+    },
+    "control_hashes": {
+      "paired-predictions.npz": "61ce37530d00cdf25fc06a4ee2b90f44f4147c1596c6969db16823a0510c20ea",
+      "comparison.json": "dfaf352a120c19685335304dba589f921440690d79181926540b4276e0bde5d7"
+    },
+    "comparison": "Within each position-weight setting, remove only rows with either side exactly one normalized code point. Freeze domain/position tables; recompute actual subset mean normalization. Keep all candidate gaps.",
+    "limitations": "One seeded short continuation from a model previously trained on single-character sides; not training from scratch. Training rows are removed without replacement. Shard/row order and batching algorithm/seed are retained, but removing rows changes shuffled batches and potentially update count. Same reused validation, including single-character sides; no test or promotion."
+  },
+  "arms": {
+    "inverse-cell": {
+      "groups": {
+        "all": {
+          "count": 100000,
+          "unfiltered_correct": 89468,
+          "filtered_correct": 89542,
+          "unfiltered_accuracy": 0.89468,
+          "filtered_accuracy": 0.89542,
+          "difference_pp": 0.074,
+          "newly_correct": 395,
+          "newly_wrong": 321,
+          "paired_document_bootstrap_95_percent_interval_pp": [
+            0.0177801078020981,
+            0.12731972607405792
+          ]
+        },
+        "single_character_side": {
+          "count": 252,
+          "unfiltered_correct": 203,
+          "filtered_correct": 164,
+          "unfiltered_accuracy": 0.8055555555555556,
+          "filtered_accuracy": 0.6507936507936508,
+          "difference_pp": -15.476190476190476,
+          "newly_correct": 0,
+          "newly_wrong": 39,
+          "paired_document_bootstrap_95_percent_interval_pp": [
+            -19.91737288135593,
+            -10.483137829912025
+          ]
+        },
+        "both_sides_at_least_two": {
+          "count": 99748,
+          "unfiltered_correct": 89265,
+          "filtered_correct": 89378,
+          "unfiltered_accuracy": 0.8949051610057345,
+          "filtered_accuracy": 0.8960380157998156,
+          "difference_pp": 0.11328547940810843,
+          "newly_correct": 395,
+          "newly_wrong": 282,
+          "paired_document_bootstrap_95_percent_interval_pp": [
+            0.06406388531028029,
+            0.16664883172976397
+          ]
+        }
+      },
+      "strata": {
+        "position": {
+          "0": {
+            "count": 1166,
+            "unfiltered_accuracy": 0.8927958833619211,
+            "filtered_accuracy": 0.888507718696398
+          },
+          "1": {
+            "count": 4279,
+            "unfiltered_accuracy": 0.8871231596167329,
+            "filtered_accuracy": 0.886188361766768
+          },
+          "2": {
+            "count": 8842,
+            "unfiltered_accuracy": 0.8907486993892785,
+            "filtered_accuracy": 0.8923320515720425
+          },
+          "3": {
+            "count": 14231,
+            "unfiltered_accuracy": 0.8943854964514089,
+            "filtered_accuracy": 0.8953692642822009
+          },
+          "4": {
+            "count": 18067,
+            "unfiltered_accuracy": 0.8963303260087452,
+            "filtered_accuracy": 0.8970498699285991
+          },
+          "5": {
+            "count": 23225,
+            "unfiltered_accuracy": 0.8997201291711517,
+            "filtered_accuracy": 0.9015285252960172
+          },
+          "6": {
+            "count": 15940,
+            "unfiltered_accuracy": 0.8924717691342534,
+            "filtered_accuracy": 0.8936010037641154
+          },
+          "7": {
+            "count": 8691,
+            "unfiltered_accuracy": 0.886894488551375,
+            "filtered_accuracy": 0.887354734783109
+          },
+          "8": {
+            "count": 4449,
+            "unfiltered_accuracy": 0.8914362778152394,
+            "filtered_accuracy": 0.8885142728703079
+          },
+          "9": {
+            "count": 1110,
+            "unfiltered_accuracy": 0.9342342342342342,
+            "filtered_accuracy": 0.9261261261261261
+          }
+        },
+        "length": {
+          "8": {
+            "count": 3081,
+            "unfiltered_accuracy": 0.8935410580980201,
+            "filtered_accuracy": 0.9042518662771827
+          },
+          "16": {
+            "count": 18956,
+            "unfiltered_accuracy": 0.8926461278750791,
+            "filtered_accuracy": 0.8956530913694872
+          },
+          "32": {
+            "count": 47758,
+            "unfiltered_accuracy": 0.9013987185393023,
+            "filtered_accuracy": 0.9015662297416139
+          },
+          "64": {
+            "count": 25392,
+            "unfiltered_accuracy": 0.8857514177693762,
+            "filtered_accuracy": 0.8846487082545683
+          },
+          "128": {
+            "count": 4354,
+            "unfiltered_accuracy": 0.8849333945796969,
+            "filtered_accuracy": 0.8849333945796969
+          },
+          "256": {
+            "count": 459,
+            "unfiltered_accuracy": 0.8736383442265795,
+            "filtered_accuracy": 0.8823529411764706
+          }
+        }
+      },
+      "endpoint_validation_unfiltered": {
+        "loss": 0.31551596650645136,
+        "accuracy": 0.89468,
+        "mean_reciprocal_rank": 0.9397583498001099,
+        "ranking_tie_break": "descending score, ascending gap index (same first maximum as argmax)",
+        "mean_absolute_character_error": 0.74329,
+        "within_one_character_accuracy": 0.90424,
+        "within_two_characters_accuracy": 0.92726,
+        "per_domain_accuracy": {
+          "academic": 0.8235294117647058,
+          "dialogue": 0.9478672985781991,
+          "encyclopedia": 0.8928571428571429,
+          "news": 0.9523809523809523,
+          "web": 0.8947165580547964,
+          "wikipedia": 0.8937626044367617
+        }
+      },
+      "endpoint_validation_filtered": {
+        "loss": 0.3127440640667453,
+        "accuracy": 0.89542,
+        "mean_reciprocal_rank": 0.9402514175415039,
+        "ranking_tie_break": "descending score, ascending gap index (same first maximum as argmax)",
+        "mean_absolute_character_error": 0.74386,
+        "within_one_character_accuracy": 0.90515,
+        "within_two_characters_accuracy": 0.9278,
+        "per_domain_accuracy": {
+          "academic": 0.8235294117647058,
+          "dialogue": 0.9478672985781991,
+          "encyclopedia": 0.8928571428571429,
+          "news": 0.9523809523809523,
+          "web": 0.8954639945810852,
+          "wikipedia": 0.894482857966004
+        }
+      },
+      "filtered_best_epoch": 1,
+      "combined_mean_before": 0.9747230237539514,
+      "combined_mean_after": 0.9448165988222021
+    },
+    "none": {
+      "groups": {
+        "all": {
+          "count": 100000,
+          "unfiltered_correct": 90084,
+          "filtered_correct": 90054,
+          "unfiltered_accuracy": 0.90084,
+          "filtered_accuracy": 0.90054,
+          "difference_pp": -0.03,
+          "newly_correct": 220,
+          "newly_wrong": 250,
+          "paired_document_bootstrap_95_percent_interval_pp": [
+            -0.07425137151411466,
+            0.012988029025729448
+          ]
+        },
+        "single_character_side": {
+          "count": 252,
+          "unfiltered_correct": 179,
+          "filtered_correct": 153,
+          "unfiltered_accuracy": 0.7103174603174603,
+          "filtered_accuracy": 0.6071428571428571,
+          "difference_pp": -10.317460317460316,
+          "newly_correct": 0,
+          "newly_wrong": 26,
+          "paired_document_bootstrap_95_percent_interval_pp": [
+            -14.035087719298245,
+            -6.993751881963266
+          ]
+        },
+        "both_sides_at_least_two": {
+          "count": 99748,
+          "unfiltered_correct": 89905,
+          "filtered_correct": 89901,
+          "unfiltered_accuracy": 0.9013213297509725,
+          "filtered_accuracy": 0.9012812286963147,
+          "difference_pp": -0.004010105465773749,
+          "newly_correct": 220,
+          "newly_wrong": 224,
+          "paired_document_bootstrap_95_percent_interval_pp": [
+            -0.045787532548931115,
+            0.03718280934372439
+          ]
+        }
+      },
+      "strata": {
+        "position": {
+          "0": {
+            "count": 1166,
+            "unfiltered_accuracy": 0.8018867924528302,
+            "filtered_accuracy": 0.7967409948542024
+          },
+          "1": {
+            "count": 4279,
+            "unfiltered_accuracy": 0.8553400327179248,
+            "filtered_accuracy": 0.8539378359429773
+          },
+          "2": {
+            "count": 8842,
+            "unfiltered_accuracy": 0.8882605745306492,
+            "filtered_accuracy": 0.887355801854784
+          },
+          "3": {
+            "count": 14231,
+            "unfiltered_accuracy": 0.9035204834516197,
+            "filtered_accuracy": 0.9035204834516197
+          },
+          "4": {
+            "count": 18067,
+            "unfiltered_accuracy": 0.9122709913101235,
+            "filtered_accuracy": 0.9127691371007915
+          },
+          "5": {
+            "count": 23225,
+            "unfiltered_accuracy": 0.9168998923573736,
+            "filtered_accuracy": 0.9168137782561895
+          },
+          "6": {
+            "count": 15940,
+            "unfiltered_accuracy": 0.9044542032622334,
+            "filtered_accuracy": 0.9040150564617315
+          },
+          "7": {
+            "count": 8691,
+            "unfiltered_accuracy": 0.8844781958347716,
+            "filtered_accuracy": 0.885513749856173
+          },
+          "8": {
+            "count": 4449,
+            "unfiltered_accuracy": 0.8736794785345021,
+            "filtered_accuracy": 0.8705327039784221
+          },
+          "9": {
+            "count": 1110,
+            "unfiltered_accuracy": 0.909009009009009,
+            "filtered_accuracy": 0.9045045045045045
+          }
+        },
+        "length": {
+          "8": {
+            "count": 3081,
+            "unfiltered_accuracy": 0.9107432651736449,
+            "filtered_accuracy": 0.9091204154495294
+          },
+          "16": {
+            "count": 18956,
+            "unfiltered_accuracy": 0.8999788985017936,
+            "filtered_accuracy": 0.8996096222831821
+          },
+          "32": {
+            "count": 47758,
+            "unfiltered_accuracy": 0.9072406717199213,
+            "filtered_accuracy": 0.9071778550190543
+          },
+          "64": {
+            "count": 25392,
+            "unfiltered_accuracy": 0.8906742281033396,
+            "filtered_accuracy": 0.8902410207939508
+          },
+          "128": {
+            "count": 4354,
+            "unfiltered_accuracy": 0.88929719797887,
+            "filtered_accuracy": 0.8881488286632981
+          },
+          "256": {
+            "count": 459,
+            "unfiltered_accuracy": 0.8758169934640523,
+            "filtered_accuracy": 0.8779956427015251
+          }
+        }
+      },
+      "endpoint_validation_unfiltered": {
+        "loss": 0.297311267157197,
+        "accuracy": 0.90084,
+        "mean_reciprocal_rank": 0.9434687545585633,
+        "ranking_tie_break": "descending score, ascending gap index (same first maximum as argmax)",
+        "mean_absolute_character_error": 0.67016,
+        "within_one_character_accuracy": 0.91056,
+        "within_two_characters_accuracy": 0.93322,
+        "per_domain_accuracy": {
+          "academic": 0.7941176470588235,
+          "dialogue": 0.933649289099526,
+          "encyclopedia": 0.8973214285714286,
+          "news": 0.9523809523809523,
+          "web": 0.9007310863522762,
+          "wikipedia": 0.9012532411408816
+        }
+      },
+      "endpoint_validation_filtered": {
+        "loss": 0.2984881370900571,
+        "accuracy": 0.90054,
+        "mean_reciprocal_rank": 0.9432851151657105,
+        "ranking_tie_break": "descending score, ascending gap index (same first maximum as argmax)",
+        "mean_absolute_character_error": 0.67381,
+        "within_one_character_accuracy": 0.91036,
+        "within_two_characters_accuracy": 0.9329,
+        "per_domain_accuracy": {
+          "academic": 0.7941176470588235,
+          "dialogue": 0.933649289099526,
+          "encyclopedia": 0.8973214285714286,
+          "news": 1.0,
+          "web": 0.9004624763506411,
+          "wikipedia": 0.9006770383174878
+        }
+      },
+      "filtered_best_epoch": 1,
+      "combined_mean_before": 0.9954105256698106,
+      "combined_mean_after": 0.9961631074137983
+    }
+  },
+  "validation_unchanged": true,
+  "test_evaluated": false,
+  "promoted": false,
+  "checkpoint_sha256": {
+    "inverse-cell": "db759b82f73f6e576a3ce99be67b361a4f222eca3a869d85b109acd2d9f97cd3",
+    "none": "e7beb1f5bdd0a7721a3dc5e1613a23a0f122b0fed714cf673039c73248580f3e"
+  },
+  "filtered_predictions_sha256": "13935ca256a2f40b776876e82dc505eae8e1792e9eca7f4dc252372764552fa4"
+}

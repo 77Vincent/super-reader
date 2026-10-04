@@ -1,0 +1,34 @@
+{
+  "validation": "training/artifacts/position-ablation-1m-20261004/data/validation.jsonl",
+  "validation_sha256": "740072c0a4658e03e6a06133403555e2ab367edca6dddf548a96bf90074bbe6a",
+  "sample_sha256": "f052db41158579c76678ecee077dd65625a85eb2df1534d2f779caa3fbb1f7b2",
+  "seed": 2026100417,
+  "population": {
+    "single": 252,
+    "ordinary": 99748
+  },
+  "review_counts": {
+    "single": 252,
+    "ordinary": 200
+  },
+  "selection": "All 252 single-character-side rows; random.sample without replacement of 200/99748 other rows; Python random.Random, sorted into validation order.",
+  "reviewer": "Codex AI first-pass semantic review; human confirmation pending",
+  "blinding": "No predictions in review input. Some examples were seen in previous discussion; not an independent blind human review.",
+  "unit": "Acceptability of the marked boundary for reading in the prepared two-fragment input. Not article factual correctness or original-author correctness.",
+  "verdicts": {
+    "A": "Marked boundary defensible; no alternative enumerated. Does not imply uniqueness.",
+    "M": "Marked boundary defensible and at least one explicitly enumerated alternative also defensible; alternatives are not exhaustive.",
+    "E": "Clear lexical/name/structural defect at the target under natural reading segmentation.",
+    "U": "Insufficient context, ambiguous extraction/structure, or unresolved boundary judgment."
+  },
+  "cuts": "1-based character count to the LEFT of a cut; zero-based model gap index + 1. Measured on normalized prepared text.",
+  "context": "No raw source document recovery in this audit; document_id/source identify prepared provenance only.",
+  "constraints": [
+    "Length, model disagreement, subject matter, and source are not sufficient grounds for E.",
+    "Input residue or missing outer context does not automatically invalidate a locally defensible boundary.",
+    "Dictionary/list/heading ambiguity is U unless the local boundary is clearly defensible or clearly defective.",
+    "Annotation frozen and hashed before joining predictions.",
+    "Do not pool the oversampled 452 rows into a corpus error rate.",
+    "Training/validation/test data and released model remain unchanged."
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "frozen_at": "2026-10-04T05:44:11.844806+00:00",
+  "stage": "Before joining model predictions",
+  "annotations_sha256": "e8f10fc76c71903a6dbedd9c1ff8661d55a3cf07c2eab585b420284dff68dd2e",
+  "sample_sha256": "f052db41158579c76678ecee077dd65625a85eb2df1534d2f779caa3fbb1f7b2",
+  "reviewer": "Codex AI first pass; no human adjudication"
+}

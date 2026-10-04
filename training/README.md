@@ -236,6 +236,99 @@ an aggregate/edge tradeoff, not universal superiority of either training objecti
 The prior uses only the smoke training subset while the models also inherit
 earlier training; this is not an upper bound on all possible text-blind predictors.
 
+```sh
+npm run model:compare-single-character
+```
+
+This follow-up starts both position-weight settings from the original smoke's
+initial checkpoint, using its frozen trainer and hyperparameters. It removes a
+training row if either side of its labeled gap is exactly one normalized code
+point. The original 1,000,000-row sample loses 2,226 rows (0.2226%); the remaining
+997,774 rows and their source pointers keep their bytes and shard order. No rows
+are relabeled or replaced. The vocabulary and complete 100,000-row validation
+file stay identical, including 252 validation rows with a single-character side.
+All candidate gaps remain available to the model, including the first and last.
+
+The original full-population position/domain tables remain fixed; their combined
+mean is recomputed on the retained training rows for loss normalization. The
+same batching algorithm and seed are used, but removing rows changes shuffled
+batch composition and can change the update count. This is a one-seed short
+continuation from weights that previously saw single-character boundaries;
+it does not establish the effect of training from scratch without them.
+
+Artifacts live under `artifacts/single-character-ablation-1m-20261004/` with
+frozen sources, a filter plan, aligned source pointers, checkpoints, and logs.
+`filter-comparison.json` compares each filtered epoch endpoint with its original
+unfiltered counterpart, using full validation, the single-character subgroup,
+and its complement. It includes paired document-bootstrap intervals and
+length/position breakdowns. The two disjoint groups must reconcile to the full
+validation counts. No test scoring, permanent corpus filtering, or shipped-model
+replacement is performed. Rerun the same command to resume the experiment.
+
+The [2026-10-04 single-character filter result](single-character-comparison-20261004.json)
+uses the unchanged validation population:
+
+| Position weights | Full validation before / after | Single-character sides before / after | Other samples before / after |
+| --- | ---: | ---: | ---: |
+| Inverse-cell | 89.468% / 89.542% | 80.556% / 65.079% | 89.491% / 89.604% |
+| None | 90.084% / 90.054% | 71.032% / 60.714% | 90.132% / 90.128% |
+
+The weighted arm gains 113 net correct answers on the other 99,748 rows but loses
+39 on the 252 single-character rows, for a net +74 (+0.074 percentage points;
+paired document-bootstrap 95% interval +0.018 to +0.127). The unweighted arm loses
+4 and 26 respectively, for a net -30 (-0.030 points; interval -0.074 to +0.013).
+Its non-single-character subgroup shows no improvement in this run. Validation
+NLL changes from 0.315516 to 0.312744 with weights, and 0.297311 to 0.298488 without.
+Both filtered arms lose single-character accuracy, with no newly correct answers
+in that subgroup. This does not support adopting a blanket single-character
+filter for the currently higher-accuracy unweighted setup.
+
+The intervals describe validation document sampling, not variability across
+training seeds. Each original arm made 5,329 updates versus 5,302 after filtering;
+batch composition also changes as described above. The existing initialization
+had seen single-character labels previously. The tiny aggregate differences
+should not be treated as definitive from-scratch training or data-quality results.
+
+The [2026-10-04 label review](reviews/boundary-quality-20261004/findings.json)
+audits all 252 single-character validation rows plus 200 randomly selected other
+rows (seed 2026100417). It is a **single AI review, not human-adjudicated gold**.
+Predictions were hidden during initial annotation, although earlier discussion
+had exposed some examples. Sample and annotation hashes were frozen before
+joining predictions. [The protocol](reviews/boundary-quality-20261004/protocol.json),
+[all labels](reviews/boundary-quality-20261004/annotations.jsonl), and an
+[executed notebook](reviews/boundary-quality-20261004/audit.ipynb) preserve the audit.
+
+| Reviewed cohort | Acceptable A | Acceptable with listed alternatives M | Clear issue E | Uncertain U |
+| --- | ---: | ---: | ---: | ---: |
+| All 252 single-character rows in smoke validation | 133 | 4 | 4 | 111 |
+| 200 random rows from the remaining 99,748 | 133 | 50 | 0 | 17 |
+
+A does not mean a unique answer; listed alternatives are not exhaustive. U is
+not an error. These differently sampled groups must not be pooled into a corpus
+noise rate. Original documents were not recovered, so source IDs identify
+prepared provenance rather than independently verified original text.
+
+A separate, explicitly unblinded diagnostic reviews the 29 distinct A/M rows
+that newly miss their original label after filtering. Of the weighted arm's 22
+such misses, 8 alternative cuts remain acceptable, 7 are clearly defective and 7
+uncertain; the unweighted arm's 14 split into 6, 5 and 3 respectively. The groups
+overlap. This distinguishes reasonable alternatives from actual word splits;
+it is not an independent semantic accuracy measurement. Confirmed defects support
+cause-specific cleanup, not blanket removal of single-character examples.
+No permanent corpus filtering, test scoring, training or model promotion occurred.
+
+```sh
+python3 training/audit_boundary_labels.py --analyze
+# Optional report/notebook regeneration needs nbformat; execution needs nbclient/ipykernel.
+python3 training/build_boundary_audit_report.py
+```
+
+Generated outputs are in `artifacts/label-quality-20261004/`: `artifact.json`,
+the packaged [portable report](artifacts/label-quality-20261004/report.html),
+`reviewed.csv`, and `human-review.csv` with blank human judgments and no AI labels
+or model predictions. The canonical payload is packaged with the data-analytics
+plugin's `npm run report:deliver -- --input <artifact.json> --output <report.html>`.
+
 New web-data preparations retain a `web-train-*.provenance.jsonl` sidecar for
 each compact training shard. Its rows contain the document byte offset, eligible
 pair ordinal before deduplication, and original punctuation. A shared
