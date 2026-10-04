@@ -61,8 +61,46 @@ async function readerStatus(tabId) {
   } catch (_) { /* The document may not have a reader yet. */ }
 }
 
-function supportsReader(tab) {
-  return tab?.id != null && !tab.discarded && tab.status !== "loading" && /^(https?|file):/u.test(tab.url || "");
+async function supportsReader(tab) {
+  if (tab?.id == null || tab.discarded || tab.status === "loading" || !/^(https?|file):/u.test(tab.url || "")) return false;
+  const url = new URL(tab.url);
+  const host = url.hostname.replace(/\.$/u, "");
+  // Chrome protects both Web Store domains, including their subdomains.
+  if (["chrome.google.com", "webstore.google.com"].some((domain) => host === domain || host.endsWith(`.${domain}`))) return false;
+  return url.protocol !== "file:" || await chrome.extension.isAllowedFileSchemeAccess();
+}
+
+function isPageAccessDenied(error) {
+  // Scripting API rejections have messages, not typed error codes. Restrict
+  // this classification to injection; reader/model errors must remain visible.
+  const message = error?.message || "";
+  return message.startsWith("Cannot access contents of ") || [
+    "The extensions gallery cannot be scripted.",
+    "The New Tab Page cannot be scripted.",
+    "Cannot access a chrome:// URL",
+    "Cannot access a chrome-extension:// URL of different extension",
+    "This page cannot be scripted due to an ExtensionsSettings policy.",
+    "Blocked",
+  ].includes(message);
+}
+
+async function injectReader(tabId) {
+  try {
+    await chrome.scripting.insertCSS({ target: { tabId }, files: ["src/content.css"] });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: [
+        "src/frontend/dom-tree.js", "src/frontend/viewport.js", "src/frontend/visibility.js", "src/frontend/processed-text.js",
+        "src/frontend/read.js", "src/frontend/write.js", "src/frontend/content-changes.js", "src/app/reader.js",
+        "src/platform/chrome/content.js", "src/start-reader.js",
+      ],
+    });
+    return true;
+  } catch (error) {
+    // Permissions, policy, or the page itself can change after the URL check.
+    if (isPageAccessDenied(error)) return false;
+    throw error;
+  }
 }
 
 async function activeTab() {
@@ -71,20 +109,12 @@ async function activeTab() {
 }
 
 async function applyToTab(tab) {
-  if (!supportsReader(tab)) return;
   try {
+    if (!await supportsReader(tab)) return;
     const ready = await readerStatus(tab.id);
     if (!ready) {
       if (!enabled) return;
-      await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["src/content.css"] });
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: [
-          "src/frontend/dom-tree.js", "src/frontend/viewport.js", "src/frontend/visibility.js", "src/frontend/processed-text.js",
-          "src/frontend/read.js", "src/frontend/write.js", "src/frontend/content-changes.js", "src/app/reader.js",
-          "src/platform/chrome/content.js", "src/start-reader.js",
-        ],
-      });
+      if (!await injectReader(tab.id)) return;
     }
     // Injection can outlast a tab switch. Leave that page inert until visited.
     if ((await activeTab())?.id !== tab.id) return;
@@ -126,7 +156,7 @@ async function toggleGlobal(tab) {
     await settingsReady;
     // Only the clicked page's task locks this click. Other tabs apply the new
     // setting when visited, without interrupting their current operation.
-    if ((await readerStatus(tab.id))?.busy) return;
+    if (await supportsReader(tab) && (await readerStatus(tab.id))?.busy) return;
     const next = !enabled;
     await chrome.storage.local.set({ enabled: next });
     enabled = next;

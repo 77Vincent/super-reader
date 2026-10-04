@@ -13,6 +13,7 @@ function createBackground(saved = {}) {
   let click, message, navigate, activate, focusWindow, startup, install;
   let activeId = null;
   let offscreen = false;
+  let fileAccess = false;
   let creations = 0;
   const tabs = new Map();
   const pages = new Map();
@@ -25,7 +26,9 @@ function createBackground(saved = {}) {
   const queries = [];
   const writes = [];
   const injected = [];
+  const cssInjections = [];
   const injectedFiles = [];
+  const injectionErrors = new Map();
   const requests = [];
   const injectionDelays = new Map();
   const statusDelays = new Map();
@@ -128,11 +131,18 @@ function createBackground(saved = {}) {
       async get(defaults) { return { ...defaults, ...saved }; },
       async set(value) { Object.assign(saved, value); writes.push({ ...value }); },
     } },
+    extension: { async isAllowedFileSchemeAccess() { return fileAccess; } },
     scripting: {
-      async insertCSS() {},
+      async insertCSS({ target }) {
+        cssInjections.push(target.tabId);
+        const failure = injectionErrors.get(target.tabId);
+        if (failure?.method === "insertCSS") throw new Error(failure.message);
+      },
       async executeScript({ target, files }) {
         injected.push(target.tabId);
         injectedFiles.push(Array.from(files));
+        const failure = injectionErrors.get(target.tabId);
+        if (failure?.method === "executeScript") throw new Error(failure.message);
         await injectionDelays.get(target.tabId);
         injectPage(target.tabId);
       },
@@ -152,7 +162,7 @@ function createBackground(saved = {}) {
     },
   };
   const manifest = JSON.parse(readFileSync(join(__dirname, "../manifest.json"), "utf8"));
-  const boot = () => runScript(manifest.background.service_worker, vm.createContext({ console, chrome }));
+  const boot = () => runScript(manifest.background.service_worker, vm.createContext({ console, chrome, URL }));
   boot();
 
   function addTab(id, url = "https://example.com/", status = "complete") {
@@ -167,7 +177,8 @@ function createBackground(saved = {}) {
 
   return {
     pages, badges, icons, titles, disabled, commands, queries, writes, saved, tabs, injected, injectedFiles, requests,
-    addTab, optedOutTabs,
+    addTab, optedOutTabs, cssInjections, injectionErrors,
+    setFileAccess(allowed) { fileAccess = allowed; },
     pauseInjection(id) {
       let resume;
       injectionDelays.set(id, new Promise((resolve) => { resume = resolve; }));
@@ -463,8 +474,125 @@ test("restricted pages allow switching the global preference without script inje
   await background.click(1);
   assert.equal(background.saved.enabled, true);
   assert.equal(background.injected.length, 0);
+  assert.equal(background.cssInjections.length, 0);
+  assert.equal(background.commands.length, 0);
+  assert.equal(background.badges.get(1), "");
   await background.focus(2);
   assert.equal(background.pages.get(2).reader.status().enabled, true);
+});
+
+test("protected pages are skipped before contacting or injecting into the page", async () => {
+  const background = createBackground({ enabled: true });
+  for (const url of [
+    "https://chrome.google.com/webstore/devconsole/publisher/item/listing",
+    "https://webstore.google.com/detail/reader/item",
+    "https://chrome.google.com/",
+    "https://sub.webstore.google.com/",
+    "https://WEBSTORE.GOOGLE.COM./",
+    "chrome://extensions/",
+    "chrome-extension://another-extension/viewer.html",
+    "about:blank",
+  ]) {
+    background.addTab(1, url);
+    background.badges.set(1, "ERR");
+    await background.focus(1);
+    assert.equal(background.badges.get(1), "", url);
+    assert.equal(background.titles.get(1), "好读（点击关闭）", url);
+  }
+  assert.equal(background.commands.length, 0);
+  assert.equal(background.cssInjections.length, 0);
+  assert.equal(background.injected.length, 0);
+  assert.equal(background.creations(), 0);
+  assert.equal(background.writes.length, 0);
+  await background.focus(2);
+  assert.equal(background.pages.get(2).reader.status().enabled, true);
+});
+
+test("the Web Store exclusion does not block other Google sites or similar URLs", async () => {
+  const background = createBackground({ enabled: true });
+  let id = 0;
+  for (const url of [
+    "https://www.google.com/search?q=chrome",
+    "https://developer.chrome.com/docs/extensions/",
+    "https://example.com/webstore.google.com/",
+    "https://webstore.google.com.example.com/",
+  ]) {
+    background.addTab(++id, url);
+    await background.focus(id);
+    assert.equal(background.pages.get(id).reader.status().enabled, true, url);
+  }
+});
+
+test("local files are quietly skipped until file access is allowed", async () => {
+  const background = createBackground({ enabled: true });
+  background.addTab(1, "file:///tmp/reader.html");
+  await background.focus(1);
+  assert.equal(background.commands.length, 0);
+  assert.equal(background.cssInjections.length, 0);
+  assert.equal(background.injected.length, 0);
+  assert.equal(background.badges.get(1), "");
+  assert.equal(background.saved.enabled, true);
+  background.setFileAccess(true);
+  await background.focus(1);
+  assert.equal(background.pages.get(1).reader.status().enabled, true);
+  assert.equal(background.badges.get(1), "");
+});
+
+test("Chrome access denials are quiet for both CSS and script injection and do not prevent later access", async () => {
+  for (const method of ["insertCSS", "executeScript"]) {
+    for (const message of [
+      "The extensions gallery cannot be scripted.",
+      "The New Tab Page cannot be scripted.",
+      "Cannot access a chrome:// URL",
+      "Cannot access a chrome-extension:// URL of different extension",
+      "Cannot access contents of the page. Extension manifest must request permission to access the respective host.",
+      'Cannot access contents of url "https://example.com/". Extension manifest must request permission to access this host.',
+      "This page cannot be scripted due to an ExtensionsSettings policy.",
+      "Blocked",
+    ]) {
+      const background = createBackground({ enabled: true });
+      background.injectionErrors.set(1, { method, message });
+      await background.focus(1);
+      assert.equal(background.badges.get(1), "", `${method}: ${message}`);
+      assert.equal(background.pages.has(1), false);
+      assert.equal(background.creations(), 0);
+      assert.equal(background.writes.length, 0);
+      assert.ok(!background.commands.some(({ type }) => type === "SUPER_READER_APPLY_SETTING"));
+      if (method === "insertCSS") assert.equal(background.injected.length, 0);
+
+      await background.focus(2);
+      assert.equal(background.pages.get(2).reader.status().enabled, true);
+      background.injectionErrors.delete(1);
+      await background.focus(1);
+      assert.equal(background.pages.get(1).reader.status().enabled, true);
+      assert.equal(background.badges.get(1), "");
+    }
+  }
+});
+
+test("unexpected injection failures still show ERR", async () => {
+  for (const method of ["insertCSS", "executeScript"]) {
+    const background = createBackground({ enabled: true });
+    const message = "Could not load file: 'missing-resource'";
+    background.injectionErrors.set(1, { method, message });
+    await background.focus(1);
+    assert.equal(background.badges.get(1), "ERR");
+    assert.equal(background.titles.get(1), message);
+    assert.equal(background.saved.enabled, true);
+  }
+});
+
+test("access-like errors from the reader are not mistaken for injection denials", async () => {
+  const background = createBackground({ enabled: true });
+  await background.focus(1);
+  const page = background.pages.get(1);
+  page.reader.toggle(false);
+  page.process = async () => { throw new Error("Blocked"); };
+  page.reader.toggle(true);
+  await drain();
+  assert.equal(background.badges.get(1), "ERR");
+  await background.focus(1);
+  assert.equal(background.badges.get(1), "ERR");
 });
 
 test("switching away during script loading leaves that tab inert until it is focused again", async () => {
