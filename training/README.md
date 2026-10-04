@@ -23,9 +23,10 @@ selection rule; their recorded test results reuse that initial checkpoint and
 do not measure the new endpoints. That pilot did not replace the backend. The recorded
 run can be inspected with `python3 training/run_source_comparison.py --resume`.
 
-The current data contract is **unicode-context-v7**, defined in
+The current data contract is **unicode-context-v8**, defined in
 [text-policy.json](text-policy.json). Its model input representation remains
-**unicode-context-v1**. In addition to requiring Han in each fragment, v7 rejects
+**unicode-context-v1**. V8 adds literal whitespace/control escape rejection to
+v7's existing filters. In addition to requiring Han in each fragment, it rejects
 structural symbols, single invisible controls, every physical line's first
 fragment, and an unterminated last fragment. Bounded symbol windows, explicit
 source-deletion barriers, signed-number protection and neighbor rules remain. It does not change the CNN architecture
@@ -105,7 +106,7 @@ this is a conservative rule, not a guarantee of clean semantics.
 Discard pairs touching explicit placeholders (`$P$`, `(I_M_G)`), fill-in blanks,
 empty templates, Markdown heading markers, even single invisible controls, or a
 whole fragment that is a known web control such as `更多`. HTML/Wiki/Markdown
-residue, literal `\r`/`\n`, replacement characters and URL fragments are also
+residue, literal whitespace/control escapes, replacement characters and URL fragments are also
 rejected; matched code/format spans are masked with barriers instead of repaired. Rejected fragments
 remain barriers: A / rejected / B does not become A+B. Ordinary extra spaces,
 code identifiers such as `__init__`, and semantic topic changes are retained
@@ -116,6 +117,38 @@ The structural-symbol gate intentionally also loses legitimate formulas and
 names containing `&`. Invisible controls are checked before whitespace folding,
 including U+FEFF; zero-width joiner emoji are also rejected by this conservative
 policy. Ordinary spaces and single non-joiner emoji remain eligible.
+
+V8 (`surface-noise-v5`) rejects these literal escapes **after normal source
+parsing**, when backslashes and letters/digits still remain in the text:
+
+| Kind | Literal spellings |
+| --- | --- |
+| Spaces | `\u0020`, `\u00A0`, `\u1680`, `\u2000`–`\u200A`, `\u202F`, `\u205F`, `\u3000` |
+| Zero-width characters and direction marks | `\u200B`–`\u200F`, `\u2060`, `\uFEFF` |
+| Line/paragraph separators | `\u0085`, `\u2028`, `\u2029` |
+| Basic controls | `\u0000`–`\u001F`, `\u007F` |
+| Short escapes | `\r`, `\n`, `\t`, `\b`, `\f`, `\v`, `\0` |
+
+The Unicode list contains exactly 60 code points; hexadecimal letters are
+case-insensitive. All spellings accept one or more consecutive backslashes.
+This does not decode or remove an escape, and does not turn a literal newline
+into a physical line break. The complete affected fragment remains a barrier;
+for `引句。甲，\u3000乙，丙，丁。`, only `丙｜丁` survives. Retained labels,
+fragment ordinals and normalized code-point indices keep their existing meaning.
+Ordinary actual spaces, including U+3000, still normalize as before. Other
+Unicode escapes such as `\u4E00` are not covered by this rule. This is a
+conservative training-input filter, so deliberate textual explanations containing
+these listed escapes can also be excluded; a match is not proof of a bad target.
+
+Rejection counters keep `literal_line_escape` for `\r`/`\n` and add
+`literal_control_escape` and `literal_unicode_residue`. Counts describe rejected
+candidate pairs (including overlaps with other reasons), not unique documents
+or wrong-label counts. Both Python and JavaScript preparation use this shared
+policy. Fresh v8 datasets must be regenerated from source into a new directory;
+do not relabel an old v7 manifest or edit characters inside old training rows.
+Policy validators reject v7 and missing/altered escape rules. Existing corpora,
+frozen historical experiments and shipped weights are not migrated automatically.
+
 No Japanese-script blacklist is added: Japanese/mixed-language fragments may
 remain if they satisfy the existing Han and boundary rules. Kana presence in
 an audit is a script indicator, not a language classifier.

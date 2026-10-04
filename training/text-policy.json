@@ -1,5 +1,5 @@
 {
-  "standard": "unicode-context-v7",
+  "standard": "unicode-context-v8",
   "input_representation": "unicode-context-v1",
   "tokenization": "character",
   "proxy_punctuation": [
@@ -15,7 +15,7 @@
   "boundary_context": "Require at least one Han neighbor at normalized, whitespace-trimmed fragment edges; do not skip quotes or symbols; Han means CJK unified/compatibility ideograph blocks plus U+3007",
   "line_boundaries": "\\r\\n|[\\n\\r\\v\\f\\u001c-\\u001e\\u0085\\u2028\\u2029]",
   "sample_filter": {
-    "version": "surface-noise-v4",
+    "version": "surface-noise-v5",
     "require_han": true,
     "line_edges": {
       "discard_first_fragment": true,
@@ -31,6 +31,8 @@
       "discarded_source": "\\u0000",
       "replacement_character": "\\ufffd",
       "literal_line_escape": "\\\\+[rn]",
+      "literal_control_escape": "\\\\+[tbfv0]",
+      "literal_unicode_residue": "\\\\+u(?:00(?:[01][0-9A-Fa-f]|20|7[Ff]|85|[Aa]0)|1680|200[0-9A-Fa-f]|202[89Ff]|205[Ff]|2060|3000|[Ff][Ee][Ff][Ff])",
       "markdown_residue": "\\*{2,}|`|!?(?:\\[[^\\]]*\\])\\([^)]*\\)",
       "html_residue": "<\\s*/?[A-Za-z][A-Za-z0-9:_-]*(?:\\s|>|/>)|&(?:[A-Za-z][A-Za-z0-9]+|#[0-9]+|#x[0-9A-Fa-f]+);",
       "url": "https?://\\S+",

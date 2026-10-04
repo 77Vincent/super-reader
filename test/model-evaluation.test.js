@@ -30,7 +30,7 @@ test("evaluation uses regenerated list fragments and records the Unicode context
     ...contextSummary, splits: { validation: { sha256: fixture.sha256 } },
   }));
   const result = await loadEvaluationSamples(fixture.input, 1);
-  assert.equal(result.standard, "unicode-context-v7");
+  assert.equal(result.standard, "unicode-context-v8");
   assert.deepEqual(result.proxyPunctuation, ["，", "。", "；", "！", "？", "…"]);
   assert.equal(result.inputSha256, fixture.sha256);
   assert.match(result.summarySha256, /^[a-f0-9]{64}$/u);
@@ -47,6 +47,7 @@ test("evaluation rejects missing or legacy metadata even when rows have no enume
     { ...contextSummary, tokenization: "word" },
     { ...contextSummary, standard: "unicode-context-v1" },
     { ...contextSummary, standard: "unicode-context-v3" },
+    { ...contextSummary, standard: "unicode-context-v7" },
     { ...contextSummary, proxy_punctuation: undefined },
     { ...contextSummary, proxy_punctuation: ["，"] },
     { ...contextSummary, proxy_punctuation: [...contextSummary.proxy_punctuation, ","] },
@@ -54,7 +55,7 @@ test("evaluation rejects missing or legacy metadata even when rows have no enume
     { ...contextSummary, numeric_punctuation: "none" }]) {
     const fixture = evaluationFixture(t, records, summary);
     await assert.rejects(loadEvaluationSamples(fixture.input),
-      summary === undefined ? /Missing evaluation metadata/u : /Data requires unicode-context-v7/u);
+      summary === undefined ? /Missing evaluation metadata/u : /Data requires unicode-context-v8/u);
   }
 });
 
@@ -110,7 +111,7 @@ test("default evaluation selects the corrected holdout even when a legacy generi
     cwd: directory, stdio: "pipe", timeout: 30000,
   });
   const report = JSON.parse(readFileSync(join(directory, "training/artifacts/model-baseline.json"), "utf8"));
-  assert.equal(report.evaluation.standard, "unicode-context-v7");
+  assert.equal(report.evaluation.standard, "unicode-context-v8");
   assert.deepEqual(report.evaluation.proxyPunctuation, ["，", "。", "；", "！", "？", "…"]);
   assert.equal(report.evaluation.input, "training/data/processed/chinese-line-web-100m-16conv-v7-20260917-eval/validation.jsonl");
   assert.equal(report.overall.count, 1);
