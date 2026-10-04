@@ -145,6 +145,81 @@ Target: 坐标为(a,b) | 继续计算
 The labels are punctuation-derived weak supervision. Accuracy measures recovery
 of the hidden proxy; it does not establish human-rated reading chunk quality.
 
+## Training metrics, position weights, and source tracing
+
+The sharded trainer reports training loss as `sum(weight * example_loss) / sum(weight)`.
+This reporting reduction is separate from the fixed-global-normalization loss used
+for optimization. MRR breaks equal scores by ascending gap index, matching the
+first maximum selected by `argmax`. Historical reports retain their old values.
+New checkpoints record the loss-reporting version and position-weight settings;
+old checkpoints with incompatible reporting state must use their original frozen
+trainer to resume, or initialize a new run from their weights.
+
+`--position-weighting none` disables only position weights; the default remains
+`inverse-cell`. `--weighting-manifest` freezes the source population's position
+and domain frequencies for subset experiments. The combined weight mean is
+measured on the actual selected training rows. Length-based batching is unchanged.
+
+```sh
+npm run model:compare-position
+```
+
+This paired smoke uses the actual sharded trainer, the same 1,000,000 training
+rows and a seeded 100,000-row validation sample, starting from the current
+padding-corrected epoch-1 weights. Both arms use fresh AdamW, learning rate
+0.00003, one epoch, identical batch order, and the same domain weights. Only
+position weighting changes. Samples are capped at 256 characters for the smoke;
+training allocation follows the five existing source blocks, with random whole
+shards and reservoir sampling within each block. This is a short continuation on
+clustered samples and reused validation, not a from-scratch or untouched-test result.
+The comparison reports both actual epoch endpoints even if validation selects
+the initial model. Paired document-bootstrap intervals and length/position/domain
+breakdowns accompany the aggregate scores. Training loss across the two weighting
+schemes is not a like-for-like comparison; use their unweighted validation metrics.
+
+The run is isolated under `artifacts/position-ablation-1m-20261004/`, including
+`plan.json`, frozen sources, sampled rows with source-shard/line references,
+checkpoints, logs, and `comparison.json`. Rerun the same command to resume; use a
+fresh `--run-dir` to create a new experiment. No test scoring or model promotion
+is performed. The source and data hashes are checked before resuming.
+
+The [2026-10-04 result](position-weight-comparison-20261004.json) starts at
+89.512% validation accuracy. After one identical 1M-row pass, inverse-cell weights
+give 89.468% and no position weights give 90.084% (+0.616 percentage points;
+paired document-bootstrap 95% interval +0.524 to +0.708). These are actual epoch
+endpoints: the weighted arm's selected best remains its initial checkpoint.
+Unweighted validation NLL is 0.315516 versus 0.297311. The improvement has a
+tradeoff: gold boundaries in the first 10% of the input fall from 89.280% to
+80.189% (1,166 samples), while the 50%-60% bin improves from 89.972% to 91.690%
+(23,225 samples). This supports further weighting experiments, not a claim that
+all positions benefit or that full test has passed 90%. Small-domain results
+have low sample counts. The default weighting and shipped model remain unchanged.
+
+New web-data preparations retain a `web-train-*.provenance.jsonl` sidecar for
+each compact training shard. Its rows contain the document byte offset, eligible
+pair ordinal before deduplication, and original punctuation. A shared
+`web-documents.provenance.jsonl` records the raw Parquet filename, physical row
+group and zero-based row, source, and raw-content hash. Byte offsets allow direct
+document lookup without scanning the full document index. Checkpoints commit all
+data and provenance byte offsets together; recovery truncates all uncommitted
+tails. Manifest entries publish sidecar hashes and coverage, and inherited shards
+keep any provenance they already have. Existing corpora are not backfilled.
+
+```sh
+python3 training/inspect_training_sample.py \
+  --manifest /path/to/new-web-data/manifest.json \
+  --shard-index 0 --row-index 0
+```
+
+Both indices are zero-based; choose a shard with provenance. The command reads
+the original document, checks its content hash, regenerates the recorded pair,
+and verifies its text, target and punctuation. `--raw-dir` can relocate the raw
+files. This supplies document-level traceability, not a pre-cleaning character
+offset map. The current web dataset has no original-URL column. An inherited
+shard without provenance produces an explicit error rather than an inferred
+attribution. New preparation code requires a fresh output directory when the
+existing preparation configuration predates this format.
+
 The [2026-09-16 corpus quality audit](CORPUS_QUALITY_AUDIT.md) records a stratified
 1,000-row AI semantic review, 20,000-row automatic checks, proxy-label failure
 examples, and limits of the resulting quality estimates.

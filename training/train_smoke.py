@@ -333,6 +333,18 @@ def batch_to_device(batch: dict[str, Any], device: torch.device) -> dict[str, An
     }
 
 
+def weighted_loss_totals(losses: torch.Tensor, weights: torch.Tensor) -> tuple[float, float]:
+    """Additive totals for reporting, independent of optimizer batch reduction."""
+    return float((losses.detach() * weights).sum().item()), float(weights.sum().item())
+
+
+def target_ranks(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    """Descending score, then ascending gap index, consistent with argmax ties."""
+    target_logits = logits.gather(1, targets.unsqueeze(1))
+    earlier = torch.arange(logits.shape[1], device=logits.device).unsqueeze(0) < targets.unsqueeze(1)
+    return 1 + ((logits > target_logits) | ((logits == target_logits) & earlier)).sum(dim=1)
+
+
 def evaluate(
     model: BoundaryChooser,
     records: list[dict[str, Any]],
@@ -365,8 +377,7 @@ def evaluate(
             logits = model(batch["token_ids"], batch["token_mask"], batch["gap_mask"])
             loss = F.cross_entropy(logits, batch["targets"])
             predictions_tensor = logits.argmax(dim=1)
-            target_logits = logits.gather(1, batch["targets"].unsqueeze(1))
-            ranks = 1 + (logits > target_logits).sum(dim=1)
+            ranks = target_ranks(logits, batch["targets"])
             predictions = predictions_tensor.cpu().numpy()
             targets = batch["targets"].cpu().numpy()
 
@@ -395,6 +406,7 @@ def evaluate(
         "loss": total_loss / total_count,
         "accuracy": total_correct / total_count,
         "mean_reciprocal_rank": reciprocal_rank / total_count,
+        "ranking_tie_break": "descending score, ascending gap index (same first maximum as argmax)",
         "mean_absolute_character_error": absolute_character_error / total_count,
         "within_one_character_accuracy": within_one_character / total_count,
         "within_two_characters_accuracy": within_two_characters / total_count,

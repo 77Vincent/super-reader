@@ -55,7 +55,7 @@ class WebPreparationTests(unittest.TestCase):
             for i in range(12):
                 docs += [by_split[split][number * 12 + i] for split in ("validation", "test", "train")]
             path = raw / f"{number}.parquet"
-            pq.write_table(pa.table({"content": docs, "source": [f"source-{number}"] * len(docs)}), path)
+            pq.write_table(pa.table({"content": docs, "source": [f"source-{number}"] * len(docs)}), path, row_group_size=9)
             files.append({"filename": path.name, "bytes": path.stat().st_size, "sha256": sha(path)})
         write(raw / "download-manifest.json", {"repository": "fixture", "revision": "fixture-revision", "files": files})
         write(raw / "verified-files.json", {"revision": "fixture-revision", "files": {x["filename"]: {"bytes": x["bytes"], "sha256": x["sha256"]} for x in files}})
@@ -94,6 +94,24 @@ class WebPreparationTests(unittest.TestCase):
             manifest = read(args.output_dir / "manifest.json")
             self.assertEqual(manifest["statistics"]["samples"], 101)
             self.assertEqual(len(manifest["web_source"]["files"]), 2)
+            self.assertEqual(manifest['provenance']['covered_new_training_rows'], 100)
+            from inspect_training_sample import inspect_sample
+            # Every saved pair resolves to the exact raw document and original
+            # punctuation, including after row-group shuffling and deduplication.
+            traced = 0
+            for index, item in enumerate(manifest['shards'][1:], 1):
+                data_rows = Path(item['path']).read_text().splitlines()
+                provenance = item['provenance']
+                self.assertEqual(len(data_rows), provenance['rows'])
+                self.assertEqual(len(Path(provenance['path']).read_text().splitlines()), len(data_rows))
+                self.assertEqual(sha(Path(provenance['path'])), provenance['sha256'])
+                for row in range(len(data_rows)):
+                    result = inspect_sample(args.output_dir / 'manifest.json', index, row)
+                    self.assertTrue(result['verified'])
+                    traced += 1
+            self.assertEqual(traced, 100)
+            with self.assertRaisesRegex(ValueError, 'inherited shard'):
+                inspect_sample(args.output_dir / 'manifest.json', 0, 0)
             seen = {forbidden}
             for item in manifest["shards"][1:]:
                 for line in Path(item["path"]).read_text().splitlines():
@@ -123,10 +141,24 @@ class WebPreparationTests(unittest.TestCase):
             # Bytes beyond the checkpoint must be discarded before restoring dedup state.
             with (resumed.output_dir / "web-train-000.jsonl.part").open("a") as handle:
                 handle.write('["不能恢复的半条记录"')
+            with (resumed.output_dir / 'web-train-000.provenance.jsonl.part').open('a') as handle:
+                handle.write('[999999,0,"，"]\n')
+            with (resumed.output_dir / 'web-documents.provenance.jsonl.part').open('a') as handle:
+                handle.write('{"id":999999}\n')
             self.run_quietly(resumed)
             for name, content in expected.items():
                 self.assertEqual((resumed.output_dir / name).read_bytes(), content)
             self.run_quietly(resumed)  # Completed run is idempotent.
+            # Misaligned sidecar data must be detected, not silently attributed.
+            first = next((i, s) for i, s in enumerate(manifest['shards']) if s.get('provenance', {}).get('rows', 0))
+            index, item = first
+            path = Path(item['provenance']['path'])
+            rows = path.read_text().splitlines()
+            value = json.loads(rows[0]); value[2] = '！' if value[2] != '！' else '？'
+            rows[0] = json.dumps(value, ensure_ascii=False)
+            path.write_text('\n'.join(rows) + '\n')
+            with self.assertRaisesRegex(ValueError, 'cannot be reproduced'):
+                inspect_sample(args.output_dir / 'manifest.json', index, 0)
 
     def test_expansion_preserves_all_data_and_holds_evaluation_fixed(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -146,6 +178,10 @@ class WebPreparationTests(unittest.TestCase):
             self.assertEqual(manifest["domains"], ["news", "web"])
             self.assertEqual(manifest["shards"][:len(previous["shards"])], previous["shards"])
             self.assertEqual(manifest["web_source"]["added_training_samples"], 40)
+            from inspect_training_sample import inspect_sample
+            for i, item in enumerate(manifest['shards']):
+                if item.get('provenance', {}).get('rows', 0):
+                    self.assertTrue(inspect_sample(extension.output_dir / 'manifest.json', i, 0)['verified'])
             self.assertGreater(manifest["web_statistics"]["reserved_holdout_documents"], 0)
             for split in ("validation", "test"):
                 self.assertEqual((extension.output_dir / f"{split}.jsonl").read_bytes(), (args.output_dir / f"{split}.jsonl").read_bytes())

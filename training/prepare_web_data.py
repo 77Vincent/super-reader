@@ -28,6 +28,7 @@ from text_policy import DATA_POLICY, PROXY_PUNCTUATION, require_data_policy, val
 BASE = ROOT / "training/data/processed/unicode-context-192ch-12conv-20260913-combined/manifest.json"
 EVAL = ROOT / "training/data/processed/unicode-context-192ch-12conv-20260913-eval"
 RAW = ROOT / "training/data/raw/ultra-fineweb-zh"
+PROVENANCE_FORMAT = "web-document-pairs-v1"
 NON_HAN = re.compile("[^\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\U00020000-\U0002fa1f\U00030000-\U000323af]+")
 
 
@@ -201,7 +202,8 @@ def source_configuration(args):
     registries = holdout_registries(args.evaluation)
     if not registries:
         raise ValueError("Missing inherited holdout document registry")
-    config = {"version": 2, "target_samples": args.target_samples, "seed": args.seed, "shards": args.shards,
+    config = {"version": 3, "provenance_format": PROVENANCE_FORMAT,
+              "target_samples": args.target_samples, "seed": args.seed, "shards": args.shards,
               "freeze_evaluation": args.freeze_evaluation,
               "bloom_bytes": args.bloom_bytes, "base_manifest": str(args.base_manifest),
               "manifests": {str(p): sha(p) for p in manifests}, "evaluation": str(args.evaluation),
@@ -274,24 +276,33 @@ def generate(args, base, evaluation, downloaded, old, stop, status):
     out = args.output_dir
     state_path = out / "preparation-state.json"
     paths = [out / f"web-train-{i:03d}.jsonl.part" for i in range(args.shards)] + [out / "web-validation.jsonl.part", out / "web-test.jsonl.part"]
+    data_path_count = len(paths)
+    provenance_start = data_path_count
+    paths += [out / f"web-train-{i:03d}.provenance.jsonl.part" for i in range(args.shards)]
+    documents_index = len(paths)
+    paths.append(out / "web-documents.provenance.jsonl.part")
     state = read(state_path) if state_path.exists() else {"cursor": {"file": 0, "group": 0, "row": 0},
         "file_training_samples": 0, "sizes": [0] * len(paths), "statistics": fresh_statistics(),
         "evaluation_counts": {"validation": 0, "test": 0}, "documents": 0, "quality_filtered": 0,
         "holdout_documents_filtered": 0, "reserved_holdout_documents": 0,
-        "duplicate_or_bloom_filtered": 0, "per_source": {}, "completed_files": []}
+        "duplicate_or_bloom_filtered": 0, "per_source": {}, "completed_files": [],
+        "provenance_documents": 0, "provenance_rows": [0] * args.shards}
+    if len(state["sizes"]) != len(paths) or "provenance_rows" not in state:
+        raise ValueError("Preparation state predates provenance; resume with its frozen code or use a fresh directory")
     domain_index = base["domains"].index("web") if "web" in base["domains"] else len(base["domains"])
     handles = []
     # Rebuild only from committed bytes: an interrupted write cannot poison later sampling.
     seen = Bloom(max(1024, args.bloom_bytes // 2))
-    for path, size in zip(paths, state["sizes"]):
+    for index, (path, size) in enumerate(zip(paths, state["sizes"])):
         path.touch(exist_ok=True)
         if path.stat().st_size < size:
             raise ValueError(f"Committed output was truncated: {path}")
         with path.open("r+b") as handle:
             handle.truncate(size)
-        with path.open() as handle:
-            for line in handle:
-                seen.add(projected_key(json.loads(line)[0]))
+        if index < data_path_count:
+            with path.open() as handle:
+                for line in handle:
+                    seen.add(projected_key(json.loads(line)[0]))
         handles.append(path.open("ab", buffering=1024 * 1024))
     blocked_documents = {key for path in holdout_registries(args.evaluation) for key in read(path)}
     def checkpoint():
@@ -331,7 +342,8 @@ def generate(args, base, evaluation, downloaded, old, stop, status):
                         elif not quality_document(clean_document(content)):
                             state["quality_filtered"] += 1
                         else:
-                            for text, target, punctuation in labeled_samples(content, state.setdefault("surface_rejected", {})):
+                            document_ref = None
+                            for pair_index, (text, target, punctuation) in enumerate(labeled_samples(content, state.setdefault("surface_rejected", {}))):
                                 key = projected_key(text)
                                 if old.contains(key) or seen.contains(key):
                                     state["duplicate_or_bloom_filtered"] += 1
@@ -339,8 +351,17 @@ def generate(args, base, evaluation, downloaded, old, stop, status):
                                 seen.add(key)
                                 state["per_source"].setdefault(source, {"train": 0, "validation": 0, "test": 0})[split] += 1
                                 if split == "train":
+                                    if document_ref is None:
+                                        document_ref = handles[documents_index].tell()
+                                        emit(documents_index, {"id": state["provenance_documents"], "byte_offset": document_ref, "document_id": doc_key,
+                                            "raw_file": info["filename"], "row_group": group, "row_index": row - 1,
+                                            "source": source, "content_sha256": hashlib.sha256(content.encode()).hexdigest()})
+                                        state["provenance_documents"] += 1
                                     bucket, position = add_statistics(state["statistics"], text, target)
-                                    emit(int.from_bytes(key[:4], "little") % args.shards, [text, target, domain_index, bucket, position])
+                                    shard_index = int.from_bytes(key[:4], "little") % args.shards
+                                    emit(shard_index, [text, target, domain_index, bucket, position])
+                                    emit(provenance_start + shard_index, [document_ref, pair_index, punctuation])
+                                    state["provenance_rows"][shard_index] += 1
                                     state["file_training_samples"] += 1
                                     if state["file_training_samples"] >= per_file_target:
                                         break
@@ -425,13 +446,23 @@ def finalize(args, base, evaluation, downloaded, state, paths):
     shards = []
     # Hard links publish committed shards atomically without duplicating their bytes.
     # Keeping .part names permits idempotent finalization after a restart.
-    for part in paths[:args.shards]:
+    def publish(part):
         final = part.with_suffix("")
         if not final.exists():
             os.link(part, final)
         if not os.path.samefile(part, final):
             raise ValueError(f"Published shard is not its committed output: {final}")
-        shards.append({"path": str(final), "bytes": final.stat().st_size, "sha256": sha(final)})
+        return {"path": str(final), "bytes": final.stat().st_size, "sha256": sha(final)}
+    assert sum(state["provenance_rows"]) == new["samples"]
+    for index, part in enumerate(paths[:args.shards]):
+        item = publish(part)
+        item["provenance"] = {**publish(paths[args.shards + 2 + index]),
+                              "rows": state["provenance_rows"][index]}
+        shards.append(item)
+    documents = {**publish(paths[-1]), "rows": state["provenance_documents"]}
+    for item in shards:
+        item["provenance"].update({"format": PROVENANCE_FORMAT,
+            "documents_path": documents["path"], "raw_directory": str(args.raw_dir)})
     protection = {"identity": "NFKC Han-projected input text, independent of target gap", "method": "Bloom filters; false positives discard extra samples; no false negatives",
                   "historical_files": len(read(out / "seeded-files.json")), "document_split": "96% train / 2% validation / 2% test by stable document hash",
                   "original_holdouts": "unchanged whole split" if args.freeze_evaluation else "unchanged byte-for-byte prefix in each combined split",
@@ -449,6 +480,12 @@ def finalize(args, base, evaluation, downloaded, state, paths):
           "web_source": {"repository": downloaded["repository"], "revision": downloaded["revision"],
                          "total_training_samples": stats["domain_samples"]["web"],
                          "added_training_samples": new["samples"], "files": state["completed_files"]},
+          "provenance": {"format": PROVENANCE_FORMAT, "documents": documents,
+              "raw_directory": str(args.raw_dir), "repository": downloaded["repository"], "revision": downloaded["revision"],
+              "covered_new_training_rows": new["samples"],
+              "pair_fields": ["document_byte_offset", "eligible_pair_index", "punctuation"],
+              "indexing": "Byte offset into the shared document index; zero-based raw row-group row and eligible pair ordinal before deduplication; sidecar rows align with training rows",
+              "limitations": "Document-level origin; no raw character-offset map or original URL. Inherited shards retain only their existing provenance."},
           "protection": protection, "configuration_sha256": sha(out / "configuration.json")})
 
 

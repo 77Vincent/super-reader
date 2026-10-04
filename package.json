@@ -11,6 +11,7 @@
     "release:site:preview": "node scripts/build-site.mjs --preview",
     "deploy:site": "node scripts/deploy-site.mjs",
     "model:baseline": "node training/evaluate_model.mjs",
+    "model:compare-position": "python3 training/run_position_ablation.py",
     "smoke:data": "node --max-old-space-size=20480 training/prepare_smoke_data.mjs --tokenization character",
     "smoke:model": "npm run smoke:data && python3 training/run_smoke.py --epochs 2",
     "full:data": "node --max-old-space-size=4096 training/prepare_full_wikipedia_data.mjs",

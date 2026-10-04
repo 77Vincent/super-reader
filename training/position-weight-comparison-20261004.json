@@ -1,0 +1,217 @@
+{
+  "date": "2026-10-04",
+  "experiment": "Position weighting on/off, paired continuation smoke",
+  "run_directory": "training/artifacts/position-ablation-1m-20261004",
+  "plan_sha256": "9b2dbf14f18310c6f3eb03730da67863bb698c9114f7b44b86c4979a3ebce2f4",
+  "initialization_sha256": "874f451a904a3358c3c45d570fa52af0fb22be604a3f4724df8d8549e68d89aa",
+  "training_rows": 1000000,
+  "validation_rows": 100000,
+  "maximum_characters": 256,
+  "seed": 2026100409,
+  "training": {
+    "epochs": 1,
+    "learning_rate": 0.00003,
+    "domain_weight_power": 0.65,
+    "batch_size": 512,
+    "max_tokens_per_batch": 8192
+  },
+  "initial_validation": {
+    "loss": 0.3193162416669354,
+    "accuracy": 0.89512,
+    "mean_reciprocal_rank": 0.9400485392189026,
+    "ranking_tie_break": "descending score, ascending gap index (same first maximum as argmax)",
+    "mean_absolute_character_error": 0.74205,
+    "within_one_character_accuracy": 0.90491,
+    "within_two_characters_accuracy": 0.92757,
+    "per_domain_accuracy": {
+      "academic": 0.8235294117647058,
+      "dialogue": 0.9383886255924171,
+      "encyclopedia": 0.8973214285714286,
+      "news": 0.9523809523809523,
+      "web": 0.8949734893607082,
+      "wikipedia": 0.8954191875540191
+    }
+  },
+  "arms": {
+    "inverse-cell": {
+      "endpoint_validation": {
+        "loss": 0.31551596650645136,
+        "accuracy": 0.89468,
+        "mean_reciprocal_rank": 0.9397583498001099,
+        "ranking_tie_break": "descending score, ascending gap index (same first maximum as argmax)",
+        "mean_absolute_character_error": 0.74329,
+        "within_one_character_accuracy": 0.90424,
+        "within_two_characters_accuracy": 0.92726,
+        "per_domain_accuracy": {
+          "academic": 0.8235294117647058,
+          "dialogue": 0.9478672985781991,
+          "encyclopedia": 0.8928571428571429,
+          "news": 0.9523809523809523,
+          "web": 0.8947165580547964,
+          "wikipedia": 0.8937626044367617
+        }
+      },
+      "selected_epoch": 0,
+      "training_seconds": 252.66039500000002,
+      "weight_mean": 0.9747230237539514,
+      "checkpoint_sha256": "519bdaa43a87505380f46e49912f13409b806b3753408ee949440c2f322ef41f"
+    },
+    "none": {
+      "endpoint_validation": {
+        "loss": 0.297311267157197,
+        "accuracy": 0.90084,
+        "mean_reciprocal_rank": 0.9434687545585633,
+        "ranking_tie_break": "descending score, ascending gap index (same first maximum as argmax)",
+        "mean_absolute_character_error": 0.67016,
+        "within_one_character_accuracy": 0.91056,
+        "within_two_characters_accuracy": 0.93322,
+        "per_domain_accuracy": {
+          "academic": 0.7941176470588235,
+          "dialogue": 0.933649289099526,
+          "encyclopedia": 0.8973214285714286,
+          "news": 0.9523809523809523,
+          "web": 0.9007310863522762,
+          "wikipedia": 0.9012532411408816
+        }
+      },
+      "selected_epoch": 1,
+      "training_seconds": 261.66133004100004,
+      "weight_mean": 0.9954105256698106,
+      "checkpoint_sha256": "1d5e4bc9c87f7a10be92b596b808c685bc921d373041a70d175c0155b077ed64"
+    }
+  },
+  "difference_none_minus_weighted_pp": 0.616,
+  "paired_document_bootstrap_95_percent_interval_pp": [
+    0.5236694021474795,
+    0.7079136329966805
+  ],
+  "none_only_correct": 1446,
+  "weighted_only_correct": 830,
+  "strata": {
+    "length": {
+      "8": {
+        "count": 3081,
+        "inverse-cell": 0.8935410580980201,
+        "none": 0.9107432651736449
+      },
+      "16": {
+        "count": 18956,
+        "inverse-cell": 0.8926461278750791,
+        "none": 0.8999788985017936
+      },
+      "32": {
+        "count": 47758,
+        "inverse-cell": 0.9013987185393023,
+        "none": 0.9072406717199213
+      },
+      "64": {
+        "count": 25392,
+        "inverse-cell": 0.8857514177693762,
+        "none": 0.8906742281033396
+      },
+      "128": {
+        "count": 4354,
+        "inverse-cell": 0.8849333945796969,
+        "none": 0.88929719797887
+      },
+      "256": {
+        "count": 459,
+        "inverse-cell": 0.8736383442265795,
+        "none": 0.8758169934640523
+      }
+    },
+    "position": {
+      "0": {
+        "count": 1166,
+        "inverse-cell": 0.8927958833619211,
+        "none": 0.8018867924528302
+      },
+      "1": {
+        "count": 4279,
+        "inverse-cell": 0.8871231596167329,
+        "none": 0.8553400327179248
+      },
+      "2": {
+        "count": 8842,
+        "inverse-cell": 0.8907486993892785,
+        "none": 0.8882605745306492
+      },
+      "3": {
+        "count": 14231,
+        "inverse-cell": 0.8943854964514089,
+        "none": 0.9035204834516197
+      },
+      "4": {
+        "count": 18067,
+        "inverse-cell": 0.8963303260087452,
+        "none": 0.9122709913101235
+      },
+      "5": {
+        "count": 23225,
+        "inverse-cell": 0.8997201291711517,
+        "none": 0.9168998923573736
+      },
+      "6": {
+        "count": 15940,
+        "inverse-cell": 0.8924717691342534,
+        "none": 0.9044542032622334
+      },
+      "7": {
+        "count": 8691,
+        "inverse-cell": 0.886894488551375,
+        "none": 0.8844781958347716
+      },
+      "8": {
+        "count": 4449,
+        "inverse-cell": 0.8914362778152394,
+        "none": 0.8736794785345021
+      },
+      "9": {
+        "count": 1110,
+        "inverse-cell": 0.9342342342342342,
+        "none": 0.909009009009009
+      }
+    },
+    "domain": {
+      "academic": {
+        "count": 34,
+        "inverse-cell": 0.8235294117647058,
+        "none": 0.7941176470588235
+      },
+      "dialogue": {
+        "count": 211,
+        "inverse-cell": 0.9478672985781991,
+        "none": 0.933649289099526
+      },
+      "encyclopedia": {
+        "count": 224,
+        "inverse-cell": 0.8928571428571429,
+        "none": 0.8973214285714286
+      },
+      "news": {
+        "count": 21,
+        "inverse-cell": 0.9523809523809523,
+        "none": 0.9523809523809523
+      },
+      "web": {
+        "count": 85626,
+        "inverse-cell": 0.8947165580547964,
+        "none": 0.9007310863522762
+      },
+      "wikipedia": {
+        "count": 13884,
+        "inverse-cell": 0.8937626044367617,
+        "none": 0.9012532411408816
+      }
+    }
+  },
+  "test_evaluated": false,
+  "promoted": false,
+  "limitations": "One seeded continuation, <=256 characters, proportional source-block quotas and random whole-shard clusters; validation is reused. No test or promotion.",
+  "stratum_definitions": {
+    "length": "Upper bound in Unicode code points: <=8, 9-16, 17-32, 33-64, 65-128, 129-256",
+    "position": "Bin floor(10 * left_length / total_length), so 0 means 0%-10% and 9 means 90%-100%",
+    "domain": "Original manifest domain; small domains have low validation counts"
+  },
+  "interpretation": "Removing position weighting improved aggregate proxy-label recovery in this paired continuation, while degrading rare edge-boundary bins. This is a measured tradeoff, not a recommendation to remove all balancing or a full-test result."
+}

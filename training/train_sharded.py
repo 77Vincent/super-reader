@@ -41,6 +41,7 @@ from train_smoke import (
     save_training_state,
     seed_everything,
     training_execution,
+    weighted_loss_totals,
 )
 
 
@@ -82,6 +83,9 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--residual-blocks", type=int, default=4)
     parser.add_argument("--learning-rate", type=float, default=2e-3)
     parser.add_argument("--domain-weight-power", type=float, default=0.0)
+    parser.add_argument("--position-weighting", choices=("inverse-cell", "none"), default="inverse-cell")
+    parser.add_argument("--weighting-manifest", type=Path,
+                        help="Freeze position/domain frequencies from this manifest for a subset experiment")
     parser.add_argument("--selection-macro-weight", type=float, default=0.0)
     parser.add_argument("--gradient-clip", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=2026090405)
@@ -101,14 +105,18 @@ def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def weight_table(manifest: dict[str, Any]) -> list[list[float]]:
+def weight_table(manifest: dict[str, Any], mode: str = "inverse-cell") -> list[list[float]]:
     cells = manifest["statistics"]["cells"]
+    if mode == "none":
+        return [[1.0] * len(row) for row in cells]
+    if mode != "inverse-cell":
+        raise ValueError(f"Unknown position weighting: {mode}")
     result = []
     for row in cells:
         total = sum(row)
         occupied = sum(count > 0 for count in row)
         result.append([
-            total / occupied / count if count else 0.0
+            total / occupied / count if count and occupied else 0.0
             for count in row
         ])
     return result
@@ -151,7 +159,9 @@ def combined_weight_mean(
     domain_weights: list[float],
 ) -> float:
     """Scan compact metadata to normalize the product of both weight tables."""
-    if all(weight == 1.0 for weight in domain_weights):
+    if all(weight == 1.0 for weight in domain_weights) and all(
+        weight == 1.0 for row in position_weights for weight in row
+    ):
         return 1.0
     total = 0.0
     samples = 0
@@ -335,10 +345,17 @@ def main() -> None:
     vocabulary = load_json(vocabulary_path)
     if any(c not in vocabulary for c in '0123456789:、ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz '):
         raise ValueError("Vocabulary lacks context characters; run build_context_vocabulary.py first")
-    weights = weight_table(manifest)
     domains = manifest.get("domains", DOMAINS[:len(manifest["statistics"]["domain_samples"])])
+    weighting_manifest = load_json(args.weighting_manifest) if args.weighting_manifest else manifest
+    require_data_policy(weighting_manifest)
+    if weighting_manifest.get("domains", domains) != domains:
+        raise ValueError("Weighting manifest domains/order differ from training data")
+    if any(weighting_manifest.get(key) != manifest.get(key)
+           for key in ("length_bucket_maximums", "position_bins")):
+        raise ValueError("Weighting manifest position/length bins differ from training data")
+    weights = weight_table(weighting_manifest, args.position_weighting)
     domain_weights = domain_weight_table(
-        manifest,
+        weighting_manifest,
         domains,
         args.domain_weight_power,
     )
@@ -373,6 +390,9 @@ def main() -> None:
         "residual_blocks": args.residual_blocks,
         "learning_rate": args.learning_rate,
         "domain_weight_power": args.domain_weight_power,
+        "position_weighting": args.position_weighting,
+        "weighting_manifest_sha256": hashlib.sha256(args.weighting_manifest.read_bytes()).hexdigest() if args.weighting_manifest else None,
+        "loss_reporting": "sum(weight * example_loss) / sum(weight), v1",
         "selection_macro_weight": args.selection_macro_weight,
         "gradient_clip": args.gradient_clip,
         "seed": args.seed,
@@ -577,8 +597,9 @@ def main() -> None:
                 if args.gradient_clip > 0:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), args.gradient_clip)
                 optimizer.step()
-                running_loss += loss.item() * batch["sample_weight_sum"]
-                seen_weight += batch["sample_weight_sum"]
+                loss_total, weight_total = weighted_loss_totals(losses, batch["sample_weights"])
+                running_loss += loss_total
+                seen_weight += weight_total
                 seen_examples += len(batch["records"])
                 # Free the completed batch's graph before checking driver usage.
                 del logits, losses, weighted, loss
@@ -664,6 +685,7 @@ def main() -> None:
         row = {
             "epoch": epoch,
             "train_loss": running_loss / seen_weight,
+            "train_loss_definition": configuration["loss_reporting"],
             "validation_loss": validation["loss"],
             "validation_accuracy": validation["accuracy"],
             "validation_macro_accuracy": macro_accuracy,
@@ -720,6 +742,9 @@ def main() -> None:
             "best_selection_score": best_validation,
             "checkpoint": str(state_path),
             "test_evaluated": False,
+            "training_weighting": {"position_weighting": args.position_weighting,
+                "position_weights": weights, "domain_weights": dict(zip(domains, domain_weights)),
+                "combined_weight_sample_mean_before_normalization": training_weight_mean},
         }
         destination = artifact_dir / "validation-only.json"
         temporary = destination.with_suffix(".tmp")
@@ -811,7 +836,9 @@ def main() -> None:
             "test": len(test_records),
         },
         "training_weighting": {
-            "strategy": "length-position inverse-cell weights multiplied by smoothed inverse-domain-frequency weights",
+            "strategy": "position weights multiplied by smoothed inverse-domain-frequency weights",
+            "position_weighting": args.position_weighting,
+            "position_weights": weights,
             "domain_weight_power": args.domain_weight_power,
             "domain_weights": dict(zip(domains, domain_weights)),
             "minimum_weight": min(nonzero_weights),
