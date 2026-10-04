@@ -24,9 +24,9 @@ FILES=['training/'+name for name in (
     'run_surface_retraining.py','prepare_retraining_base.mjs','prepare_smoke_data.mjs',
     'prepare_full_wikipedia_data.mjs','prepare_synthetic_data.py','run_prepare_synthetic.py',
     'prepare_web_data.py','filter_retraining_holdouts.py','text_policy.py','text_policy.mjs',
-    'text-policy.json','unicode-symbols.json','run_sharded.py','run_smoke.py','train_sharded.py','train_smoke.py','export_browser_model.py')]
+    'text-policy.json','unicode-symbols.json','run_sharded.py','run_smoke.py','train_sharded.py','sample_subset.py','train_smoke.py','export_browser_model.py')]
 TRAINING_FILES={'training/'+name for name in (
-    'run_sharded.py','run_smoke.py','train_sharded.py','train_smoke.py','export_browser_model.py')}
+    'run_sharded.py','run_smoke.py','train_sharded.py','sample_subset.py','train_smoke.py','export_browser_model.py')}
 
 def read(path): return json.loads(Path(path).read_text())
 def write(path,value):

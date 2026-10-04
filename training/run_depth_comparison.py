@@ -20,7 +20,7 @@ BASE = ROOT / 'training/artifacts/learning-rate-192ch-10m-v7-20260922'
 RUN = ROOT / 'training/artifacts/depth-16-vs-20-10m-lr3e-5-v7-20260922'
 SOURCES = ['training/' + name for name in (
     'run_depth_comparison.py', 'analyze_depth_comparison.py', 'run_learning_rate_comparison.py',
-    'run_web_continuation.py', 'run_sharded.py', 'run_smoke.py', 'train_sharded.py',
+    'run_web_continuation.py', 'run_sharded.py', 'run_smoke.py', 'train_sharded.py','sample_subset.py',
     'train_smoke.py', 'text_policy.py', 'text-policy.json', 'unicode-symbols.json',
     'widen_boundary.py', 'export_browser_model.py', 'benchmark_width.mjs')]
 SOURCES += ['src/backend/inference.js', 'test/model-backend-reference.json']

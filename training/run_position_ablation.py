@@ -26,7 +26,7 @@ from text_policy import DATA_POLICY, require_data_policy
 
 BASE = ROOT / 'training/artifacts/padding-fixed-web-350m-v7-20260925/epoch-1-backend'
 DATA = ROOT / 'training/data/processed/padding-fixed-web-350m-v7-20260925'
-SOURCES = ('run_position_ablation.py', 'train_sharded.py', 'train_smoke.py',
+SOURCES = ('run_position_ablation.py', 'train_sharded.py','sample_subset.py', 'train_smoke.py',
            'text_policy.py', 'text-policy.json', 'unicode-symbols.json')
 
 

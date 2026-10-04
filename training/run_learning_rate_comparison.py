@@ -22,7 +22,7 @@ RUN = ROOT / 'training/artifacts/learning-rate-192ch-10m-v7-20260922'
 RATES = {'lr-1e-4': 0.0001, 'lr-3e-5': 0.00003}
 SOURCES = ['training/' + name for name in (
     'run_learning_rate_comparison.py', 'run_web_continuation.py', 'run_sharded.py',
-    'run_smoke.py', 'train_sharded.py', 'train_smoke.py', 'text_policy.py',
+    'run_smoke.py', 'train_sharded.py','sample_subset.py', 'train_smoke.py', 'text_policy.py',
     'text-policy.json', 'unicode-symbols.json')]
 
 

@@ -19,6 +19,7 @@ from typing import Any
 import torch
 from torch.nn import functional as F
 from text_policy import DATA_POLICY, require_data_policy, valid_proxy_label
+from sample_subset import keep_target, mean_weight, subset_statistics
 
 from train_smoke import (
     BoundaryChooser,
@@ -84,6 +85,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--learning-rate", type=float, default=2e-3)
     parser.add_argument("--domain-weight-power", type=float, default=0.0)
     parser.add_argument("--position-weighting", choices=("inverse-cell", "none"), default="inverse-cell")
+    parser.add_argument("--min-side-characters", type=int, default=1,
+                        help="Keep targets with at least this many Unicode characters on each side, in all splits")
     parser.add_argument("--weighting-manifest", type=Path,
                         help="Freeze position/domain frequencies from this manifest for a subset experiment")
     parser.add_argument("--selection-macro-weight", type=float, default=0.0)
@@ -131,11 +134,12 @@ def domain_weight_table(
     if power == 0:
         return [1.0] * len(domains)
     counts = manifest["statistics"]["domain_samples"]
-    missing = [domain for domain in domains if counts.get(domain, 0) <= 0]
-    if missing:
-        raise ValueError(f"Cannot weight empty or missing domains: {missing}")
-    raw = [counts[domain] ** -power for domain in domains]
+    if any(domain not in counts or counts[domain] < 0 for domain in domains):
+        raise ValueError("Missing or invalid domain counts")
+    raw = [counts[domain] ** -power if counts[domain] else 0.0 for domain in domains]
     samples = sum(counts[domain] for domain in domains)
+    if not samples:
+        raise ValueError("Cannot weight an empty training set")
     mean = sum(
         counts[domain] * weight
         for domain, weight in zip(domains, raw)
@@ -184,6 +188,7 @@ def read_training_shard(
     weights: list[list[float]],
     domains: list[str],
     domain_weights: list[float],
+    minimum_side_characters: int = 1,
 ) -> list[dict[str, Any]]:
     unknown = vocabulary[UNKNOWN_TOKEN]
     records = []
@@ -192,6 +197,8 @@ def read_training_shard(
             if not line.strip():
                 continue
             text, target, domain, bucket, position = json.loads(line)
+            if not keep_target(len(text), target, minimum_side_characters):
+                continue
             token_ids = [vocabulary.get(token, unknown) for token in text]
             records.append({
                 "token_ids": token_ids,
@@ -205,6 +212,8 @@ def read_training_shard(
 def read_evaluation_records(
     path: Path,
     vocabulary: dict[str, int],
+    minimum_side_characters: int = 1,
+    counts: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     unknown = vocabulary[UNKNOWN_TOKEN]
     records = []
@@ -215,6 +224,12 @@ def read_evaluation_records(
             record = json.loads(line)
             if not valid_proxy_label(record.get("punctuation")):
                 raise ValueError(f"Invalid proxy label remains in {path}: {record.get('id')}")
+            if counts is not None:
+                counts["source_samples"] = counts.get("source_samples", 0) + 1
+            if not keep_target(len(record["tokens"]), record["target_index"], minimum_side_characters):
+                if counts is not None:
+                    counts["excluded_samples"] = counts.get("excluded_samples", 0) + 1
+                continue
             record["training_weight"] = 1.0
             record["token_ids"] = [
                 vocabulary.get(token, unknown)
@@ -314,6 +329,10 @@ def main() -> None:
     args = parse_arguments()
     if min(args.epochs, args.channels, args.residual_blocks, args.checkpoint_shards) < 1:
         raise ValueError("Epoch, channel, block, and checkpoint counts must be positive")
+    if args.min_side_characters < 1:
+        raise ValueError("--min-side-characters must be positive")
+    if args.resume and args.initialize_from:
+        raise ValueError("Choose either --resume or --initialize-from")
     if min(args.max_shards, args.validation_limit, args.test_limit) < 0:
         raise ValueError("Shard and evaluation limits cannot be negative")
     if not 0.0 <= args.domain_weight_power <= 1.0:
@@ -346,6 +365,18 @@ def main() -> None:
     if any(c not in vocabulary for c in '0123456789:、ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz '):
         raise ValueError("Vocabulary lacks context characters; run build_context_vocabulary.py first")
     domains = manifest.get("domains", DOMAINS[:len(manifest["statistics"]["domain_samples"])])
+    shards = [resolve_project_path(item["path"]) for item in manifest["shards"]]
+    if args.max_shards > 0:
+        shards = shards[: args.max_shards]
+    if not shards or any(not path.exists() for path in shards):
+        raise FileNotFoundError("One or more training shards are missing")
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    if (artifact_dir / "training-state.pt").exists() and not args.resume:
+        raise FileExistsError("Training state already exists; pass --resume or use a new artifact directory")
+    stats = manifest["statistics"]
+    if args.min_side_characters > 1 or args.max_shards > 0:
+        stats = subset_statistics(shards, {**manifest, "domains": domains}, args.min_side_characters,
+                                  artifact_dir / "subset-cache")
     weighting_manifest = load_json(args.weighting_manifest) if args.weighting_manifest else manifest
     require_data_policy(weighting_manifest)
     if weighting_manifest.get("domains", domains) != domains:
@@ -353,6 +384,8 @@ def main() -> None:
     if any(weighting_manifest.get(key) != manifest.get(key)
            for key in ("length_bucket_maximums", "position_bins")):
         raise ValueError("Weighting manifest position/length bins differ from training data")
+    if not args.weighting_manifest:
+        weighting_manifest = {**manifest, "statistics": stats}
     weights = weight_table(weighting_manifest, args.position_weighting)
     domain_weights = domain_weight_table(
         weighting_manifest,
@@ -367,12 +400,6 @@ def main() -> None:
         ),
         flush=True,
     )
-    shards = [resolve_project_path(item["path"]) for item in manifest["shards"]]
-    if args.max_shards > 0:
-        shards = shards[: args.max_shards]
-    if not shards or any(not path.exists() for path in shards):
-        raise FileNotFoundError("One or more training shards are missing")
-    artifact_dir.mkdir(parents=True, exist_ok=True)
     state_path = artifact_dir / "training-state.pt"
     browser_checkpoint_path = artifact_dir / "boundary-smoke.safetensors"
     output_vocabulary_path = artifact_dir / "boundary-smoke-vocabulary.json"
@@ -391,6 +418,7 @@ def main() -> None:
         "learning_rate": args.learning_rate,
         "domain_weight_power": args.domain_weight_power,
         "position_weighting": args.position_weighting,
+        "minimum_side_characters": args.min_side_characters,
         "weighting_manifest_sha256": hashlib.sha256(args.weighting_manifest.read_bytes()).hexdigest() if args.weighting_manifest else None,
         "loss_reporting": "sum(weight * example_loss) / sum(weight), v1",
         "selection_macro_weight": args.selection_macro_weight,
@@ -406,7 +434,8 @@ def main() -> None:
         resume_state = torch.load(state_path, map_location="cpu", weights_only=True)
         if resume_state.get("format_version") != 2:
             raise ValueError(f"Unsupported sharded checkpoint: {state_path}")
-        if resume_state["configuration"] != configuration:
+        resumed_configuration = {"minimum_side_characters": 1, **resume_state["configuration"]}
+        if resumed_configuration != configuration:
             raise ValueError("Resume checkpoint configuration differs from current arguments")
         if resume_state["data_identity"] != data_identity:
             raise ValueError("Resume checkpoint was created from different data")
@@ -417,15 +446,22 @@ def main() -> None:
     training_weight_mean = (
         resume_state["training_weight_mean"]
         if resume_state is not None and "training_weight_mean" in resume_state
-        else combined_weight_mean(shards, weights, domain_weights)
+        else (mean_weight(stats, weights, domain_weights) if "domain_cells" in stats
+              else combined_weight_mean(shards, weights, domain_weights))
     )
     if not math.isfinite(training_weight_mean) or training_weight_mean <= 0:
         raise ValueError("Invalid saved training weight mean")
     print(f"combined training weight mean: {training_weight_mean:.6f}", flush=True)
 
-    validation_records = read_evaluation_records(data_dir / "validation.jsonl", vocabulary)
+    validation_counts = {"source_samples": 0, "excluded_samples": 0}
+    validation_records = read_evaluation_records(data_dir / "validation.jsonl", vocabulary,
+                                                args.min_side_characters, validation_counts)
     if args.validation_limit > 0:
         validation_records = validation_records[: args.validation_limit]
+    if not validation_records:
+        raise ValueError("The selected validation subset is empty")
+    print(json.dumps({"stage": "validation-loaded", **validation_counts,
+                      "evaluated_samples": len(validation_records)}), flush=True)
     model = BoundaryChooser(len(vocabulary), args.channels, args.residual_blocks)
     initialization = None
     if resume_state is None and args.initialize_from:
@@ -529,6 +565,9 @@ def main() -> None:
         initialization["selection_score_before_training"] = best_validation
         print(f"initialized validation accuracy={initial_validation['accuracy']:.6f} macro={macro:.6f}", flush=True)
         persist(1, 0, 0, 0.0, 0.0, 0, 0.0)
+    elif resume_state is None:
+        persist(1, 0, 0, 0.0, 0.0, 0, 0.0)
+        print("random initialization saved; no pretrained weights or optimizer loaded", flush=True)
 
     for epoch in range(start_epoch, args.epochs + 1):
         order = list(range(len(shards)))
@@ -558,6 +597,7 @@ def main() -> None:
                 weights,
                 domains,
                 domain_weights,
+                args.min_side_characters,
             )
             batches = make_batch_indices(
                 records,
@@ -731,7 +771,10 @@ def main() -> None:
             "stage": "validation-complete-test-deferred",
             "configuration": configuration,
             "data_identity": data_identity,
-            "data_sizes": {"train": manifest["statistics"]["samples"], "validation": len(validation_records)},
+            "data_sizes": {"train": stats["samples"], "validation": len(validation_records)},
+            "sample_subset": {"minimum_side_characters": args.min_side_characters,
+                              "train_excluded": stats.get("excluded_samples", 0),
+                              "validation": validation_counts},
             "parameter_count": sum(parameter.numel() for parameter in model.parameters()),
             "initialization": initialization,
             "history": history,
@@ -780,9 +823,13 @@ def main() -> None:
     del validation_records
     gc.collect()
 
-    test_records = read_evaluation_records(data_dir / "test.jsonl", vocabulary)
+    test_counts = {"source_samples": 0, "excluded_samples": 0}
+    test_records = read_evaluation_records(data_dir / "test.jsonl", vocabulary,
+                                          args.min_side_characters, test_counts)
     if args.test_limit > 0:
         test_records = test_records[: args.test_limit]
+    if not test_records:
+        raise ValueError("The selected test subset is empty")
     test = evaluate(model, test_records, args.batch_size, args.max_tokens_per_batch)
     test_baselines = {
         "random_accuracy": random_baseline(test_records),
@@ -794,7 +841,6 @@ def main() -> None:
         predict_record(model, record, args.max_tokens_per_batch)
         for record in test_records[:4]
     ]
-    stats = manifest["statistics"]
     parameter_count = sum(parameter.numel() for parameter in model.parameters())
     nonzero_weights = [
         value * domain_weight
@@ -830,6 +876,9 @@ def main() -> None:
         },
         "initialization": initialization,
         "data_manifest": str(manifest_path),
+        "sample_subset": {"minimum_side_characters": args.min_side_characters,
+                          "train_excluded": stats.get("excluded_samples", 0),
+                          "validation": validation_counts, "test": test_counts},
         "data_sizes": {
             "train": stats["samples"],
             "validation": validation_size,

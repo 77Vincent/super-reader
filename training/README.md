@@ -180,6 +180,38 @@ of the hidden proxy; it does not establish human-rated reading chunk quality.
 
 ## Training metrics, position weights, and source tracing
 
+For a fresh 192-channel, 16-convolution run on the existing large corpus:
+
+```sh
+python3 training/run_fresh_training.py \
+  --run-dir training/artifacts/fresh-no-single-no-position-20261004
+```
+
+This starts from random weights and a new AdamW optimizer, with three epochs,
+learning rate 0.002, position weighting disabled, domain-weight power 0.65,
+and gradient clipping at 1. No old checkpoint is used and no model is automatically
+promoted. `--resume` reuses the frozen plan and the new run's own checkpoint.
+The coordinator keeps macOS awake on AC power and resumes workers after a saved
+MPS memory-pressure checkpoint. SIGTERM to the coordinator requests a safe stop.
+
+`train_sharded.py --min-side-characters 2` filters targets with a one-character
+side from **training, validation and test** at read time. The default is 1 (no
+exclusion). Lengths count Unicode code points, matching model tokenization.
+It does not mask prediction candidates or modify original data. The trainer
+recounts retained samples, baselines and joint domain/position frequencies before
+training, caching each shard under `candidate/subset-cache/`. See
+`candidate/subset-progress.json` and `candidate/training-subset.json` for progress
+and exact exclusions. Without `--weighting-manifest`, weights use these retained
+frequencies; with it, reference frequencies stay fixed but loss normalization
+still uses the actual subset. Checkpoints record the filter and reject a resume
+with a different filter; use a separate initialized run to change it.
+
+The fresh-run coordinator freezes current trainer code alongside the prepared
+corpus's **recorded** text policy. It only permits surface-policy differences;
+input representation and label semantics must match. Existing v7 shards remain
+v7: newer raw-document cleaning rules are not retroactively claimed or applied.
+Changing that preparation policy requires a separate corpus rebuild.
+
 The sharded trainer reports training loss as `sum(weight * example_loss) / sum(weight)`.
 This reporting reduction is separate from the fixed-global-normalization loss used
 for optimization. MRR breaks equal scores by ascending gap index, matching the

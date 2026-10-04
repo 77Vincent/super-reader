@@ -25,7 +25,7 @@ RUN = ROOT / 'training/artifacts/width-192-vs-256-10m-v7-20260922'
 SEED = 2026092201
 SOURCES = ['training/' + name for name in (
     'run_width_comparison.py', 'widen_boundary.py', 'finalize_width_arm.py', 'benchmark_width.mjs',
-    'run_web_continuation.py', 'run_sharded.py', 'run_smoke.py', 'train_sharded.py',
+    'run_web_continuation.py', 'run_sharded.py', 'run_smoke.py', 'train_sharded.py','sample_subset.py',
     'train_smoke.py', 'text_policy.py', 'text-policy.json', 'unicode-symbols.json', 'export_browser_model.py')]
 SOURCES += ['src/backend/inference.js', 'test/model-backend-reference.json']
 

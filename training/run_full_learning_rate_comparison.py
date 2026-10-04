@@ -18,7 +18,7 @@ BASE = ROOT / 'training/artifacts/chinese-line-web-200m-16conv-v7-20260920'
 RUN = ROOT / 'training/artifacts/learning-rate-192ch-full-246m-v7-20260923'
 SOURCES = ['training/' + name for name in (
     'run_full_learning_rate_comparison.py', 'run_learning_rate_comparison.py', 'run_web_continuation.py',
-    'run_sharded.py', 'run_smoke.py', 'train_sharded.py', 'train_smoke.py', 'text_policy.py',
+    'run_sharded.py', 'run_smoke.py', 'train_sharded.py','sample_subset.py', 'train_smoke.py', 'text_policy.py',
     'text-policy.json', 'unicode-symbols.json', 'export_browser_model.py')]
 OPTIMIZATION_KEYS = ('learning_rate', 'batch_size', 'max_tokens_per_batch',
                      'domain_weight_power', 'selection_macro_weight', 'gradient_clip')
