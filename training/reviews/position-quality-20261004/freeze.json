@@ -1,0 +1,8 @@
+{
+  "frozen_at": "2026-10-04T07:05:34.119910+00:00",
+  "sample_sha256": "6fb950e582481a2467594d29f9feb4c6baeee9a3ee6288a94a7b9d9e8e4146fd",
+  "annotations_sha256": "2956883d4ad0e0baeb9c3a3ed176784a9670600b04920efe85e708b78bd91212",
+  "protocol_sha256": "99639c74640212657845b380e78e3603faa41eb3b51f86625f844d4d40f9ff0b",
+  "reason-codes_sha256": "610bd0de2522efd7d2a10ae5e8e987433fa1a0c51e9c0fa51b62dfc09be4d238",
+  "qa": "Before freeze: reread all E and U decisions, all R codes, plus 80 randomly selected A rows (seed 2026100432). No predictions loaded; same reviewer, not independent adjudication. One missing transcription code corrected in batch 1121–1200; see review-log.json."
+}
