@@ -48,6 +48,7 @@ def prepare(run, args):
                "--epochs", str(args.epochs), "--learning-rate", str(args.learning_rate),
                "--position-weighting", "none",
                "--min-side-characters", "2", "--gradient-clip", "1",
+               "--max-sequence-length", str(getattr(args, "max_sequence_length", 0)),
                "--batch-size", "512", "--max-tokens-per-batch", "8192",
                "--checkpoint-shards", "2", "--threads", "1", "--seed", str(args.seed)]
     plan = {"created_at": datetime.now(timezone.utc).isoformat(),
@@ -56,7 +57,9 @@ def prepare(run, args):
             "prepared_data_standard": policy["standard"],
             "prepared_policy_preserved": True,
             "new_preparation_filters_applied": False,
-            "subset": {"minimum_side_characters": 2, "splits": ["train", "validation", "test"]},
+            "subset": {"minimum_side_characters": 2,
+                       "maximum_sequence_length": getattr(args, "max_sequence_length", 0),
+                       "splits": ["train", "validation", "test"]},
             "position_weighting": "none", "source_weighting": "none",
             "selection_metric": "overall_validation_accuracy",
             "epochs": args.epochs, "learning_rate": args.learning_rate, "seed": args.seed,
@@ -73,6 +76,8 @@ def main():
                         default=ROOT / "training/data/processed/padding-fixed-web-350m-v7-20260925/manifest.json")
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--learning-rate", type=float, default=.002)
+    parser.add_argument("--max-sequence-length", type=int, default=0,
+                        help="Whole-sample character limit for all splits; 0 disables")
     parser.add_argument("--seed", type=int, default=2026100405)
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--resume", action="store_true",
@@ -80,6 +85,8 @@ def main():
     args = parser.parse_args()
     if args.epochs < 1 or not 0 < args.learning_rate < float("inf"):
         parser.error("Epochs and learning rate must be positive and finite")
+    if args.max_sequence_length < 0:
+        parser.error("Maximum sequence length cannot be negative")
     run = args.run_dir.resolve()
     run.mkdir(parents=True, exist_ok=True)
     with (run / ".lock").open("a") as lock:

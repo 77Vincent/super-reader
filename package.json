@@ -11,6 +11,8 @@
     "release:site:preview": "node scripts/build-site.mjs --preview",
     "deploy:site": "node scripts/deploy-site.mjs",
     "model:baseline": "node training/evaluate_model.mjs",
+    "model:compare-initial-learning-rate": "python3 training/run_initial_learning_rate_comparison.py --run-dir training/artifacts/initial-learning-rate-1m-20261004",
+    "model:compare-length": "python3 training/run_length_ablation.py --run-dir training/artifacts/length-cap-256-1m-20261004",
     "model:compare-position": "python3 training/run_position_ablation.py",
     "model:position-baselines": "python3 training/evaluate_position_baselines.py",
     "model:compare-single-character": "python3 training/run_single_character_ablation.py",

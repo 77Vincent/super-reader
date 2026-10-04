@@ -184,7 +184,51 @@ of the hidden proxy; it does not establish human-rated reading chunk quality.
 
 ## Training metrics, position weights, and source tracing
 
-For a fresh 192-channel, 16-convolution run on the existing large corpus:
+The 2026-10-04 full fresh run remains paused with a saved checkpoint after the
+initial-learning-rate comparison. The comparison does not automatically resume it.
+
+```sh
+npm run model:compare-initial-learning-rate
+```
+
+This compares fixed rates 0.0001, 0.0003, 0.001 and 0.002 from a common random
+initialization, with fresh AdamW in each arm. It samples 1,000,000 training rows
+uniformly across the full existing corpus and 100,000 validation rows, preserving
+the v7 preparation policy. Both samples exclude single-character sides and have
+no additional length cap. No source quotas or position/source weights are used.
+All arms share data, batch order, initialization and the update budget. After one
+subset epoch, the two highest endpoint validation accuracies continue to three
+subset epochs with their own optimizer states; ties favor the smaller rate.
+The test set is neither read nor scored. The result describes one initialization
+seed and repeated exposure to the sampled subset, not a guarantee of ranking on
+the full corpus or under learning-rate decay. The command reuses its frozen plan
+and resumes incomplete arms. Results and row provenance are retained under
+`artifacts/initial-learning-rate-1m-20261004/`.
+
+The completed comparison favored **0.0003** under this short-run budget:
+
+| Learning rate | Validation accuracy, epoch 1 | Validation accuracy, epoch 3 |
+| --- | ---: | ---: |
+| 0.0001 | 73.127% | Not extended |
+| 0.0003 | 74.874% | 78.191% |
+| 0.001 | 73.799% | 77.359% |
+| 0.002 | 72.005% | Not extended |
+
+Independent prediction replay matched both extended endpoints exactly. Their
+0.832 percentage-point difference had a paired document-bootstrap 95% interval
+of [0.618, 1.053] percentage points (34,625 validation documents; 2,000 draws).
+This interval describes validation-document uncertainty for these fixed models,
+not variability across training seeds. The slower first-round candidates were
+not extended, so a later reversal is not ruled out. See the local
+[experiment report](artifacts/initial-learning-rate-1m-20261004/report.md).
+
+```sh
+PYTHONPATH=training/.deps:training DEBUG=0 \
+  python3 training/verify_initial_learning_rate_results.py \
+  --run-dir training/artifacts/initial-learning-rate-1m-20261004
+```
+
+The paused full 192-channel, 16-convolution run was originally started with:
 
 ```sh
 python3 training/run_fresh_training.py \
@@ -212,6 +256,43 @@ not how many batches have been optimized. Until every shard has been read, the
 counts are partial. Validation/test counts describe retained rows before any
 evaluation limit; `evaluated_samples` and the metric breakdowns describe what was
 actually evaluated. Checkpoints record the filter and reject an incompatible resume.
+
+`train_sharded.py --max-sequence-length 256` discards entire samples whose
+normalized A+B input exceeds 256 Unicode code points, in training, validation
+and test. It never truncates text or moves targets. The default is 0 (no cap),
+and `run_fresh_training.py` exposes the same option. To preserve reproducible
+sample order, training plans the original batches first, then drops overlength
+records and empty batches before allocating batch tensors or updating weights.
+Excluded records may remain in host memory for batch planning only. Filtering
+reduces optimizer updates; it does not duplicate retained rows to replace them.
+The cap is recorded in metrics and checkpoints; changing it on resume is rejected.
+Old checkpoints without a recorded cap are interpreted as uncapped.
+
+```sh
+npm run model:compare-length
+```
+
+The length ablation reuses the verified three-epoch 0.0003 control above and
+trains a capped arm from the identical random initialization, with the same
+retained batches in the same order. Its main comparison evaluates both models
+on the same validation rows within the cap. Full validation and overlength rows
+are reported separately, so removing difficult validation rows is not counted
+as a training gain. It never reads or scores the test set. Frozen inputs, code,
+counts, batch schedule and paired predictions are retained under
+`artifacts/length-cap-256-1m-20261004/`. It leaves the full run paused and does not
+change the default cap or promote a model.
+
+The completed 256-character smoke removed 441 of 1,000,000 training rows
+(0.0441%). On the same 99,964 validation rows within the limit, accuracy rose
+from 78.2032% to 78.5013%: 298 additional correct predictions, or +0.2981
+percentage points. The paired document-bootstrap 95% interval was
+[+0.1295, +0.4659] percentage points. On all original 100,000 validation rows,
+accuracy rose from 78.191% to 78.488%; the 36 overlength rows changed from 16
+to 15 correct, too few to establish a reliable long-input trend. Both models
+saw three passes, with 16,113 versus 15,909 optimizer updates because the long
+batches were omitted. This supports trying the cap but does not establish its
+optimality or full-corpus benefit. See the local
+[length ablation report](artifacts/length-cap-256-1m-20261004/report.md).
 
 Legacy `domain` / `domains` fields in prepared data are read only as corpus IDs.
 New trainer reports use `corpus_source`, `per_source` and `per_source_accuracy`:

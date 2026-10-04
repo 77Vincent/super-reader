@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import torch
 
-from sample_subset import keep_target, empty_statistics, summarize_inventory, source_name
+from sample_subset import keep_target, empty_statistics, summarize_inventory, source_name, limit_batch_lengths
 from train_sharded import combined_weight_mean, read_evaluation_records, read_training_shard
 from text_policy import DATA_POLICY
 from run_fresh_training import prepare
@@ -51,6 +51,51 @@ class SampleSubsetTests(unittest.TestCase):
         for length, target, minimum in [(4, -1, 2), (4, 3, 2), (4, 1, 0)]:
             with self.assertRaises(ValueError):
                 keep_target(length, target, minimum)
+
+    def test_length_cap_counts_code_points_and_includes_exact_limit(self):
+        text = '𠀀' + '甲' * 252 + '1。 '
+        self.assertEqual(len(text), 256)
+        self.assertTrue(keep_target(len(text), 1, 2, 256))
+        self.assertFalse(keep_target(len(text + '乙'), 1, 2, 256))
+        self.assertTrue(keep_target(20000, 1, 2, 0))
+        with self.assertRaises(ValueError):
+            keep_target(4, 1, 2, -1)
+
+    def test_all_splits_apply_whole_sample_cap_and_batch_order_is_preserved(self):
+        from train_smoke import make_batch_indices, iterate_batches
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            rows, shard, manifest, vocab = self.fixture(root)
+            before = {p: p.read_bytes() for p in root.iterdir()}
+            counts = empty_statistics()
+            train = read_training_shard(shard, vocab, [[1., 1.]], manifest['domains'], 2, counts, 4)
+            self.assertEqual([r['token_ids'] for r in train], [[vocab[c] for c in rows[3][0]]])
+            self.assertEqual((counts['samples'], counts['excluded_samples'], counts['tokens']), (1, 4, 4))
+            for split in ('validation', 'test'):
+                other = empty_statistics()
+                records = read_evaluation_records(root / f'{split}.jsonl', vocab, 2, other, 4)
+                self.assertEqual(other, counts)
+                self.assertEqual(records[0]['target_index'], rows[3][1])
+            plan_counts = empty_statistics()
+            planned = read_training_shard(shard, vocab, [[1., 1.]], manifest['domains'],
+                                          2, plan_counts, 4, include_overlength_for_batching=True)
+            self.assertEqual(plan_counts, counts)
+            self.assertEqual(len(planned), 2)  # Overlength record used only for order planning.
+            for seed in range(5):
+                batches = make_batch_indices(planned, 8, 128, shuffle=True, seed=seed)
+                kept = limit_batch_lengths(planned, batches, 4)
+                self.assertEqual(kept, [[0]])
+                batch = next(iterate_batches(planned, 8, 128, shuffle=False, seed=0, batch_indices=kept))
+                self.assertEqual(tuple(batch['token_ids'].shape), (1, 4))
+                self.assertEqual(int(batch['gap_mask'].sum()), 3)
+                self.assertIs(limit_batch_lengths(planned, batches, 0), batches)
+            self.assertEqual(before, {p: p.read_bytes() for p in root.iterdir()})
+
+    def test_length_filter_keeps_batch_and_record_order_without_empty_updates(self):
+        records = [{'token_ids': [0] * n} for n in (3, 9, 4, 8, 5)]
+        batches = [[3], [4, 2], [1], [0]]
+        self.assertEqual(limit_batch_lengths(records, batches, 4), [[2], [0]])
+        self.assertEqual(limit_batch_lengths(records, batches, 2), [])
 
     def test_all_splits_filter_same_targets_without_modifying_files_or_gaps(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -129,6 +174,36 @@ class SampleSubsetTests(unittest.TestCase):
             other = root / 'other'; other.mkdir()
             with self.assertRaisesRegex(ValueError, 'semantics'):
                 prepare(other, args)
+
+    @unittest.skipUnless(torch.backends.mps.is_available(), 'MPS required')
+    def test_length_cap_training_counts_resume_and_rejects_changed_cap(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            artifact = root / 'candidate'
+            command = [sys.executable, str(ROOT / 'training/run_sharded.py'),
+                       '--manifest', str(root / 'manifest.json'), '--data-dir', str(root),
+                       '--artifact-dir', str(artifact), '--epochs', '1', '--channels', '8',
+                       '--residual-blocks', '1', '--position-weighting', 'none',
+                       '--min-side-characters', '2', '--max-sequence-length', '4']
+            def run(cmd):
+                return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=90,
+                                      env=dict(os.environ, DEBUG='0'))
+            first = run(command)
+            self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+            metrics = json.loads((artifact / 'smoke-metrics.json').read_text())
+            self.assertEqual(metrics['data_sizes'], {'train': 1, 'validation': 1, 'test': 1})
+            self.assertEqual(metrics['sample_subset']['maximum_sequence_length'], 4)
+            self.assertEqual(metrics['sample_subset']['train_excluded'], 4)
+            command[command.index('--epochs') + 1] = '2'
+            second = run([*command, '--resume'])
+            self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+            state = torch.load(artifact / 'training-state.pt', map_location='cpu', weights_only=True)
+            self.assertEqual({int(v['step']) for v in state['optimizer_state']['state'].values()}, {2})
+            command[command.index('--max-sequence-length') + 1] = '0'
+            rejected = run([*command, '--resume'])
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn('configuration differs', rejected.stderr)
 
     @unittest.skipUnless(torch.backends.mps.is_available(), 'MPS required')
     def test_fresh_training_evaluation_and_resume_enforce_subset_configuration(self):

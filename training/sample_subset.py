@@ -28,13 +28,29 @@ def record_source(record) -> str:
     return source_name(record.get('corpus_source', record.get('domain')))
 
 
-def keep_target(length: int, target: int, minimum: int = 1) -> bool:
+def keep_target(length: int, target: int, minimum: int = 1, maximum: int = 0) -> bool:
     if minimum < 1:
         raise ValueError('Minimum side characters must be positive')
+    if maximum < 0:
+        raise ValueError('Maximum sequence length cannot be negative')
     if not isinstance(target, int) or not 0 <= target < length - 1:
         raise ValueError(f'Invalid target {target} for {length} characters')
     cut = target + 1
-    return min(cut, length - cut) >= minimum
+    return min(cut, length - cut) >= minimum and (maximum == 0 or length <= maximum)
+
+
+def limit_batch_lengths(records, batches, maximum=0):
+    """Drop whole overlength records without reshuffling the surviving batches."""
+    if maximum < 0:
+        raise ValueError('Maximum sequence length cannot be negative')
+    if maximum == 0:
+        return batches
+    result = []
+    for indices in batches:
+        retained = [index for index in indices if len(records[index]['token_ids']) <= maximum]
+        if retained:
+            result.append(retained)
+    return result
 
 
 def write_json(path: Path, value) -> None:

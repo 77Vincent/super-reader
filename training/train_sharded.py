@@ -20,7 +20,7 @@ import torch
 from torch.nn import functional as F
 from text_policy import DATA_POLICY, require_data_policy, valid_proxy_label
 from sample_subset import (keep_target, source_name, record_source, empty_statistics,
-                           count_sample, summarize_inventory, write_json)
+                           count_sample, summarize_inventory, write_json, limit_batch_lengths)
 
 from train_smoke import (
     BoundaryChooser,
@@ -79,6 +79,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--position-weighting", choices=("inverse-cell", "none"), default="none")
     parser.add_argument("--min-side-characters", type=int, default=1,
                         help="Keep targets with at least this many Unicode characters on each side, in all splits")
+    parser.add_argument("--max-sequence-length", type=int, default=0,
+                        help="Discard whole samples exceeding this many Unicode characters in all splits; 0 disables")
     parser.add_argument("--weighting-manifest", type=Path,
                         help="Use position frequencies from this reference manifest (only for explicit position weighting)")
     parser.add_argument("--gradient-clip", type=float, default=0.0)
@@ -125,6 +127,7 @@ def combined_weight_mean(
     shards: list[Path],
     position_weights: list[list[float]],
     minimum_side_characters: int = 1,
+    maximum_sequence_length: int = 0,
 ) -> float:
     """Only explicit nonuniform position weights need a metadata scan."""
     if all(weight == 1.0 for row in position_weights for weight in row):
@@ -137,7 +140,7 @@ def combined_weight_mean(
                 if not line.strip():
                     continue
                 text, target, _, bucket, position = json.loads(line)
-                if not keep_target(len(text), target, minimum_side_characters):
+                if not keep_target(len(text), target, minimum_side_characters, maximum_sequence_length):
                     continue
                 total += position_weights[bucket][position]
                 samples += 1
@@ -153,6 +156,8 @@ def read_training_shard(
     sources: list[str],
     minimum_side_characters: int = 1,
     counts: dict[str, Any] | None = None,
+    maximum_sequence_length: int = 0,
+    include_overlength_for_batching: bool = False,
 ) -> list[dict[str, Any]]:
     unknown = vocabulary[UNKNOWN_TOKEN]
     records = []
@@ -162,10 +167,14 @@ def read_training_shard(
                 continue
             text, target, source_index, bucket, position = json.loads(line)
             source = source_name(sources[source_index]) if 0 <= source_index < len(sources) else source_name(None)
-            kept = keep_target(len(text), target, minimum_side_characters)
+            valid_side = keep_target(len(text), target, minimum_side_characters)
+            kept = keep_target(len(text), target, minimum_side_characters, maximum_sequence_length)
             if counts is not None:
                 count_sample(counts, len(text), target, source, kept)
-            if not kept:
+            # The trainer can retain these host-side records only to construct
+            # the original batch plan. limit_batch_lengths removes them before
+            # tensor allocation, forward passes, loss and optimizer updates.
+            if not kept and not (include_overlength_for_batching and valid_side):
                 continue
             token_ids = [vocabulary.get(token, unknown) for token in text]
             records.append({
@@ -182,6 +191,7 @@ def read_evaluation_records(
     vocabulary: dict[str, int],
     minimum_side_characters: int = 1,
     counts: dict[str, Any] | None = None,
+    maximum_sequence_length: int = 0,
 ) -> list[dict[str, Any]]:
     unknown = vocabulary[UNKNOWN_TOKEN]
     records = []
@@ -193,7 +203,8 @@ def read_evaluation_records(
             if not valid_proxy_label(record.get("punctuation")):
                 raise ValueError(f"Invalid proxy label remains in {path}: {record.get('id')}")
             source = record_source(record)
-            kept = keep_target(len(record["tokens"]), record["target_index"], minimum_side_characters)
+            kept = keep_target(len(record["tokens"]), record["target_index"], minimum_side_characters,
+                               maximum_sequence_length)
             if counts is not None:
                 count_sample(counts, len(record["tokens"]), record["target_index"], source, kept)
             if not kept:
@@ -301,6 +312,8 @@ def main() -> None:
         raise ValueError("Epoch, channel, block, and checkpoint counts must be positive")
     if args.min_side_characters < 1:
         raise ValueError("--min-side-characters must be positive")
+    if args.max_sequence_length < 0:
+        raise ValueError("--max-sequence-length cannot be negative")
     if args.resume and args.initialize_from:
         raise ValueError("Choose either --resume or --initialize-from")
     if min(args.max_shards, args.validation_limit, args.test_limit) < 0:
@@ -364,6 +377,7 @@ def main() -> None:
         "source_weighting": "none",
         "position_weighting": args.position_weighting,
         "minimum_side_characters": args.min_side_characters,
+        "maximum_sequence_length": args.max_sequence_length,
         "weighting_manifest_sha256": hashlib.sha256(args.weighting_manifest.read_bytes()).hexdigest() if args.weighting_manifest else None,
         "loss_reporting": "sum(weight * example_loss) / sum(weight), v1",
         "selection_metric": "overall_validation_accuracy",
@@ -379,7 +393,8 @@ def main() -> None:
         resume_state = torch.load(state_path, map_location="cpu", weights_only=True)
         if resume_state.get("format_version") != 2:
             raise ValueError(f"Unsupported sharded checkpoint: {state_path}")
-        resumed_configuration = {"minimum_side_characters": 1, **resume_state["configuration"]}
+        resumed_configuration = {"minimum_side_characters": 1, "maximum_sequence_length": 0,
+                                 **resume_state["configuration"]}
         if resumed_configuration != configuration:
             raise ValueError("Resume checkpoint configuration differs from current arguments")
         if resume_state["data_identity"] != data_identity:
@@ -391,7 +406,7 @@ def main() -> None:
     training_weight_mean = (
         resume_state["training_weight_mean"]
         if resume_state is not None and "training_weight_mean" in resume_state
-        else combined_weight_mean(shards, weights, args.min_side_characters)
+        else combined_weight_mean(shards, weights, args.min_side_characters, args.max_sequence_length)
     )
     if not math.isfinite(training_weight_mean) or training_weight_mean <= 0:
         raise ValueError("Invalid saved training weight mean")
@@ -400,7 +415,8 @@ def main() -> None:
     source_inventory = resume_state.get("source_inventory", {}) if resume_state else {}
     validation_counts = empty_statistics()
     validation_records = read_evaluation_records(data_dir / "validation.jsonl", vocabulary,
-                                                args.min_side_characters, validation_counts)
+                                                args.min_side_characters, validation_counts,
+                                                args.max_sequence_length)
     if args.validation_limit > 0:
         validation_records = validation_records[: args.validation_limit]
     if not validation_records:
@@ -553,6 +569,8 @@ def main() -> None:
                 sources,
                 args.min_side_characters,
                 shard_counts,
+                args.max_sequence_length,
+                include_overlength_for_batching=True,
             )
             source_inventory[str(shards[shard_number])] = shard_counts
             batches = make_batch_indices(
@@ -562,6 +580,7 @@ def main() -> None:
                 shuffle=True,
                 seed=args.seed + epoch * 1000 + shard_number,
             )
+            batches = limit_batch_lengths(records, batches, args.max_sequence_length)
             first_batch = batch_start if shard_position == shard_start else 0
             if first_batch > len(batches):
                 raise ValueError("Resume batch exceeds the selected shard's batch count")
@@ -727,6 +746,7 @@ def main() -> None:
             "data_sizes": {"train": stats["samples"], "validation": len(validation_records)},
             "corpus_source_statistics": {"train": stats, "validation": validation_counts},
             "sample_subset": {"minimum_side_characters": args.min_side_characters,
+                              "maximum_sequence_length": args.max_sequence_length,
                               "train_excluded": stats.get("excluded_samples", 0),
                               "validation": validation_counts},
             "parameter_count": sum(parameter.numel() for parameter in model.parameters()),
@@ -778,7 +798,7 @@ def main() -> None:
 
     test_counts = empty_statistics()
     test_records = read_evaluation_records(data_dir / "test.jsonl", vocabulary,
-                                          args.min_side_characters, test_counts)
+                                          args.min_side_characters, test_counts, args.max_sequence_length)
     if args.test_limit > 0:
         test_records = test_records[: args.test_limit]
     if not test_records:
@@ -827,6 +847,7 @@ def main() -> None:
         "data_manifest": str(manifest_path),
         "corpus_source_statistics": {"train": stats, "validation": validation_counts, "test": test_counts},
         "sample_subset": {"minimum_side_characters": args.min_side_characters,
+                          "maximum_sequence_length": args.max_sequence_length,
                           "train_excluded": stats.get("excluded_samples", 0),
                           "validation": validation_counts, "test": test_counts},
         "data_sizes": {
