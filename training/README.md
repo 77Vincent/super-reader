@@ -195,6 +195,47 @@ tradeoff: gold boundaries in the first 10% of the input fall from 89.280% to
 all positions benefit or that full test has passed 90%. Small-domain results
 have low sample counts. The default weighting and shipped model remain unchanged.
 
+```sh
+npm run model:position-baselines
+```
+
+This evaluation reuses the same 100,000 validation rows and saved endpoint
+predictions. It fits a text-blind exact-length/gap frequency prior on the same
+1,000,000 training rows, using raw counts without domain or position weights.
+Validation labels never fit the prior. The center baseline uses the existing
+`(length - 1) // 2` zero-based gap convention (right of the midpoint for odd
+character counts); the learned prior falls back to it for unseen lengths.
+Frozen data/shard hashes, prediction target order, endpoint accuracy and position
+breakdowns are checked. The vectorized baseline counts also match the existing
+scalar evaluators. No retraining, test scoring, or model promotion is performed.
+
+The [2026-10-04 baseline result](position-baselines-20261004.json) is:
+
+| Predictor | Exact-gap validation accuracy |
+| --- | ---: |
+| Fixed center | 11.476% |
+| Training-fitted length prior | 11.514% |
+| Model with inverse-cell weights | 89.468% |
+| Model without position weights | 90.084% |
+
+Both models substantially outperform these text-blind rules. Of the unweighted
+model's 616 net additional correct predictions, 239 occur where fixed-center is
+correct and 377 where fixed-center is wrong. This partition is descriptive; it
+does not identify a causal percentage attributable to position versus text.
+Of the prediction changes, 2,597 move closer to the geometric midpoint (1,374
+newly correct, 756 newly wrong), 104 move farther away (42 newly correct, 46
+newly wrong), and the remaining rows have equal distance (30 newly correct,
+28 newly wrong). The gain is associated with moving inward, including predictions
+that still differ from the fixed-center guess.
+
+Giving each of the ten occupied **gold** position bins equal weight reverses the
+comparison: 89.661% with position weights versus 88.498% without them. This is a
+diagnostic macro average, not the original validation distribution or a human
+reading-quality measure. The default still remains unchanged: these results show
+an aggregate/edge tradeoff, not universal superiority of either training objective.
+The prior uses only the smoke training subset while the models also inherit
+earlier training; this is not an upper bound on all possible text-blind predictors.
+
 New web-data preparations retain a `web-train-*.provenance.jsonl` sidecar for
 each compact training shard. Its rows contain the document byte offset, eligible
 pair ordinal before deduplication, and original punctuation. A shared
