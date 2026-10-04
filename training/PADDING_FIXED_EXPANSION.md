@@ -1,5 +1,9 @@
 # Padding correction and larger continuation — 2026-09-25
 
+Historical experiment, completed on **2026-09-29**. Epoch 1 remains selected and
+bundled. The settings and commands below describe this run; the current
+unweighted training procedure is documented in [README.md](README.md).
+
 The confirmed padding defect is fixed. The detached pipeline prepared
 **150,000,000 additional web pairs** and completed one epoch on
 **396,266,210 pairs** (350 million web plus 46,266,210 inherited local pairs).
@@ -17,28 +21,31 @@ Validation improves by **0.2569 percentage points**; every reported validation
 domain improves. Test remains below 90%. The selected epoch-1 model was promoted
 at the user's request on 2026-09-27; see [BUNDLED_MODEL.md](BUNDLED_MODEL.md).
 
-## Epoch 2 continuation — 2026-09-27
+## Epoch 2 continuation — completed 2026-09-29
 
-At the user's request, epoch 2 was launched at **21:36 China time** on the
-same 396,266,210 pairs. It resumes the completed epoch-1 checkpoint and AdamW
+At the user's request, epoch 2 was launched at **21:36 China time on 2026-09-27**
+on the same 396,266,210 pairs. It resumed the completed epoch-1 checkpoint and AdamW
 state, including optimizer step **2,102,401**, rather than initializing a new
-optimizer. The checkpoint's next position is epoch 2, shard 0, batch 0; its
-current weights exactly match its epoch-1 best weights.
+optimizer. At launch, the checkpoint's next position was epoch 2, shard 0,
+batch 0, and its weights exactly matched its epoch-1 best weights.
 
 Resume checkpoint SHA-256:
 `874f451a904a3358c3c45d570fa52af0fb22be604a3f4724df8d8549e68d89aa`.
-The coordinator archives epoch-1 artifacts and results under
+The coordinator archived epoch-1 artifacts and results under
 `completed-epochs/epoch-1/` before extending the target. The original frozen
 trainer, architecture, learning rate 0.00003, cleaning, complete validation/test
-files and checkpoint selection remain unchanged. The extension is recorded in
+files and checkpoint selection remained unchanged. The extension is recorded in
 `run.json` and does not modify the production `epoch-1-backend/` release.
 
-Based on epoch 1's measured 34.34 training hours, allow approximately **35 hours**
-for this epoch and its evaluation, depending on sustained power and throughput.
-No additional data preparation is needed. Compare epoch 2 with epoch 1 on the
-same full validation set; selection can retain epoch 1 if epoch 2 is worse.
-The selected model is then evaluated on full test and exported to the candidate
-directory. Backend promotion remains a separate action.
+The run completed at **13:19 China time on 2026-09-29**. Epoch 2 took **37.68
+training hours** and reached **89.4241%** full validation top-1, compared with
+epoch 1's **89.4642%**. Selection therefore retained epoch 1; the selected model's
+full test accuracy was **89.5785%**. No further data preparation or model
+promotion occurred for epoch 2. These are the original frozen trainer's metrics;
+later reporting and weighting changes do not rewrite this experiment.
+
+Final evidence: `artifacts/padding-fixed-web-350m-v7-20260925/result.json` and
+`status.json` (`stage: complete`, selected epoch 1).
 
 ## Correctness change
 
@@ -67,7 +74,7 @@ of reaching 90%.
 
 ## Training and evaluation
 
-- Start from the current production best state, full-data low-rate epoch 1:
+- Start from the then-production best state, full-data low-rate epoch 1:
   `learning-rate-192ch-full-246m-v7-20260923/epoch-1-backend/training-state.pt`.
   SHA-256: `5169707d95d51fe2515496f372f8ad52197f531f37d84f4b6775d32a5b9e7fca`.
 - Keep 192 channels, eight residual blocks / 16 convolutions, 8,192 characters,
@@ -95,11 +102,14 @@ padding: it adds training exposure and changes checkpoint selection as described
 The job itself did not replace the extension's weights. The later authorized
 promotion installs its best state without changing runtime rules.
 
-## Operation and completion
+## Historical operation and completion
+
+These commands document the completed continuation and are not the entry point
+for the next training run. Resume uses this experiment's frozen trainer.
 
 ```sh
 npm run model:expand-padding-fixed
-# Current epoch-2 continuation, including after a stop, process failure or reboot:
+# Historical epoch-2 resume command:
 npm run model:expand-padding-fixed -- --resume --epochs 2
 ```
 

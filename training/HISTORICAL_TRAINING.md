@@ -287,8 +287,13 @@ Wikipedia manifest without copying its data. Preparation state is saved every
 
 ```bash
 npm run synthetic:data
-npm run synthetic:model
+npm run synthetic:model # Historical entry; removed on 2026-10-04.
 ```
+
+The training command above is retained as an experiment record. Its weighting
+options are no longer accepted by the current trainer. Reproduction requires
+the original frozen trainer and data; see [README.md](README.md) for the current
+unweighted training procedure.
 
 The model run initializes from the retained full-Wikipedia checkpoint, uses a
 smoothed inverse-domain-frequency exponent of `0.65`, clips gradient norm at

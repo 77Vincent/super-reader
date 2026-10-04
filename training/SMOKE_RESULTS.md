@@ -70,11 +70,16 @@ Validation accuracy and macro-domain accuracy by epoch:
 | 2 | 81.99% | 78.12% | 80.06% |
 
 The generated artifacts live in the ignored directory
-`training/artifacts/wiki-ultra-domain-weighted-128ch-2ep/`. Reproduce data
-preparation, training, and browser export with:
+`training/artifacts/wiki-ultra-domain-weighted-128ch-2ep/`. The following were
+the original commands, retained only as historical context:
 
 ```bash
 npm run synthetic:data
-npm run synthetic:model
+npm run synthetic:model # Historical entry; removed on 2026-10-04.
 npm run model:export
 ```
+
+Reproduction requires the original frozen trainer, data and export target.
+The current trainer no longer accepts this run's weighting options, and
+`model:export` now targets the selected padding-corrected epoch-1 release.
+See [README.md](README.md) for current training and export instructions.

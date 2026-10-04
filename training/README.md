@@ -10,10 +10,12 @@ selects by overall validation top-1. Epoch-1 results are archived in
 the frozen release is the run's `epoch-1-backend/` directory, used by
 `npm run model:export`.
 
-Epoch 2 started on 2026-09-27 with the same corpus, frozen trainer and full
-holdouts, preserving epoch 1's weights and optimizer state. Resume with
-`npm run model:expand-padding-fixed -- --resume --epochs 2`. Expected duration is
-about 35 hours based on the preceding epoch; the backend stays on epoch 1.
+Epoch 2 completed on 2026-09-29 with full validation **89.4241%**, below epoch 1's
+89.4642%. The completed run retained epoch 1; its final results are in
+`artifacts/padding-fixed-web-350m-v7-20260925/result.json`. The bundled model
+remains epoch 1. For a new unweighted run from random initialization, use the
+`run_fresh_training.py` command documented below; the old continuation commands
+belong to the completed historical experiment.
 
 The completed [source-mixture pilot](SOURCE_MIX_COMPARISON.md) compared 10 million
 matched training pairs per arm at learning rate 0.00003. Complete validation
@@ -32,9 +34,11 @@ fragment, and an unterminated last fragment. Bounded symbol windows, explicit
 source-deletion barriers, signed-number protection and neighbor rules remain. It does not change the CNN architecture
 or token IDs. Training, validation and test preparation share
 this contract. Historical corpora cannot be silently mixed into a new run.
-The [2026-09-30 disk cleanup](DISK_CLEANUP.md) removed obsolete prepared data
-and experiment intermediates while preserving the current corpus, historical
-deduplication dependencies, model checkpoints and experiment reports.
+The existing large prepared corpus is still **v7**; reusing it does not apply
+v8's new raw-document filters retroactively. The [cleanup record](DISK_CLEANUP.md)
+covers the 2026-09-30 data cleanup and the 2026-10-04 removal of stale process
+records and a rebuildable audit environment. Current data, historical
+deduplication dependencies, model checkpoints and experiment reports are retained.
 
 ## Input and labels
 
@@ -257,6 +261,9 @@ original weighted experiment contracts. Use their original frozen sources to
 reproduce those runs; use `run_fresh_training.py` for the current unweighted
 large-corpus run. Do not resume an old weighted checkpoint with the new trainer
 or compare old macro selection scores with new overall accuracy scores.
+The obsolete `synthetic:model` npm entry was removed on 2026-10-04 because it
+passed the deleted weighting options directly to the current trainer. Its
+historical experiment settings and results remain archived.
 
 ```sh
 npm run model:compare-position
