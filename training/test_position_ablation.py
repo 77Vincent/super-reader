@@ -1,5 +1,6 @@
 """The paired smoke must hold all options except position weighting fixed."""
 from pathlib import Path
+import json
 import tempfile
 import unittest
 from run_position_ablation import allocate, command
@@ -21,11 +22,19 @@ class PositionAblationTests(unittest.TestCase):
             self.assertIn('--defer-test', a)
             self.assertIn('--weighting-manifest', a)
             self.assertIn('--initialize-from', a)
+            self.assertNotIn('--domain-weight-power', a)
             (run / 'none').mkdir()
             (run / 'none/training-state.pt').touch()
             resumed = command(run, 'none', 99)
             self.assertIn('--resume', resumed)
             self.assertNotIn('--initialize-from', resumed)
+
+    def test_old_frozen_experiment_keeps_its_recorded_weighting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            (run / 'plan.json').write_text(json.dumps({'training': {'domain_weight_power': .65}}))
+            old = command(run, 'none', 99)
+            self.assertEqual(old[old.index('--domain-weight-power') + 1], '0.65')
 
 
 if __name__ == '__main__':

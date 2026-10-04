@@ -8,7 +8,7 @@ import torch
 from torch import nn
 
 from train_smoke import evaluate, target_ranks, weighted_loss_totals
-from train_sharded import combined_weight_mean, read_training_shard, weight_table
+from train_sharded import combined_weight_mean, read_training_shard, weight_table, selection_score
 
 
 class TrainingMetricsTests(unittest.TestCase):
@@ -46,7 +46,7 @@ class TrainingMetricsTests(unittest.TestCase):
         self.assertEqual(result['accuracy'], 0.)
         self.assertEqual(result['mean_reciprocal_rank'], .25)
 
-    def test_position_ablation_retains_domains_and_normalizes_actual_subset(self):
+    def test_position_weights_are_independent_of_corpus_source(self):
         manifest = {'statistics': {'cells': [[1, 3], [0, 0]]}}
         on = weight_table(manifest)
         off = weight_table(manifest, 'none')
@@ -56,11 +56,42 @@ class TrainingMetricsTests(unittest.TestCase):
             path = Path(directory) / 'train.jsonl'
             path.write_text(json.dumps(['甲乙', 0, 0, 0, 0]) + '\n')
             # A reference table can have population mean one but subset mean two.
-            self.assertEqual(combined_weight_mean([path], on, [1.]), 2.)
-            self.assertEqual(combined_weight_mean([path], off, [1.]), 1.)
-            for table, expected in [(on, 6.), (off, 3.)]:
-                rows = read_training_shard(path, {'<unk>': 0, '甲': 1, '乙': 2}, table, ['news'], [3.])
-                self.assertEqual(rows[0]['training_weight'], expected)
+            self.assertEqual(combined_weight_mean([path], on), 2.)
+            self.assertEqual(combined_weight_mean([path], off), 1.)
+            for table, expected in [(on, 2.), (off, 1.)]:
+                for source in ('news', 'web', 'not-a-known-source'):
+                    rows = read_training_shard(path, {'<unk>': 0, '甲': 1, '乙': 2}, table, [source])
+                    self.assertEqual(rows[0]['training_weight'], expected)
+
+    def test_selection_uses_only_overall_accuracy(self):
+        higher_overall = {'accuracy': .9, 'per_source_accuracy': {'CLUE TNEWS': 0., 'Chinese Wikipedia': .91}}
+        higher_macro = {'accuracy': .8, 'per_source_accuracy': {'CLUE TNEWS': 1., 'Chinese Wikipedia': .79}}
+        self.assertGreater(selection_score(higher_overall), selection_score(higher_macro))
+        self.assertEqual(selection_score({'accuracy': .9}), .9)
+
+    def test_source_breakdowns_are_descriptive_and_include_counts(self):
+        class LeftModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.anchor = nn.Parameter(torch.zeros(()))
+            def forward(self, ids, token_mask, gap_mask):
+                return torch.zeros_like(gap_mask, dtype=torch.float32).masked_fill(~gap_mask, -1e9)
+        base = {'tokens': list('甲乙丙丁'), 'token_ids': [1, 2, 3, 4], 'training_weight': 1.}
+        rows = [{**base, 'domain': 'news', 'target_index': 0},
+                {**base, 'corpus_source': 'CLUE TNEWS', 'target_index': 1},
+                {**base, 'domain': 'wikipedia', 'target_index': 0}]
+        result = evaluate(LeftModel(), rows, 512, 8192)
+        self.assertEqual(result['per_source']['CLUE TNEWS'], {'samples': 2, 'correct': 1, 'accuracy': .5})
+        self.assertEqual(result['per_source_accuracy']['Chinese Wikipedia'], 1.)
+        self.assertEqual(result['accuracy'], 2/3)
+        self.assertNotIn('per_domain_accuracy', result)
+        for row in rows:
+            row.pop('domain', None)
+            row.pop('corpus_source', None)
+        unknown = evaluate(LeftModel(), rows, 512, 8192)
+        for key in ('accuracy', 'loss', 'mean_reciprocal_rank'):
+            self.assertEqual(unknown[key], result[key])
+        self.assertEqual(unknown['per_source']['Unknown corpus source']['samples'], 3)
 
 
 if __name__ == '__main__':

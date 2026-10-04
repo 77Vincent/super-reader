@@ -227,7 +227,7 @@ class TrainingDeviceTests(unittest.TestCase):
             command=[sys.executable,str(ROOT/'training/run_sharded.py'),'--manifest',str(directory/'manifest.json'),
                 '--data-dir',str(directory),'--artifact-dir',str(artifact),'--epochs','1','--channels','192',
                 '--residual-blocks','8','--batch-size','32','--max-tokens-per-batch','512','--threads','1',
-                '--learning-rate','0.0003','--gradient-clip','1','--domain-weight-power','0.65','--selection-macro-weight','0.5']
+                '--learning-rate','0.0003','--gradient-clip','1']
             env=dict(os.environ,DEBUG='0',PYTHONUNBUFFERED='1',PYTORCH_ENABLE_MPS_FALLBACK='0',
                 PYTORCH_MPS_FAST_MATH='0',PYTORCH_MPS_PREFER_METAL='0')
             process=subprocess.Popen(command,cwd=ROOT,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
@@ -247,6 +247,9 @@ class TrainingDeviceTests(unittest.TestCase):
             self.assertEqual(before['execution']['device'],'mps')
             self.assertGreater(before['progress']['next_batch'],0)
             self.assertLess(before['progress']['seen_examples'],len(rows))
+            source_stats = json.loads((artifact/'source-statistics.json').read_text())['train']
+            self.assertEqual(source_stats['samples'], len(rows))
+            self.assertTrue(source_stats['complete'])  # file loaded, even if not all batches optimized
             # Simulate the memory guard at the next safe step, then resume from
             # its exit-75 checkpoint exactly as the coordinator does.
             probe="from run_smoke import ensure_dependencies; ensure_dependencies(); import train_sharded as t; t.mps_memory_restart_needed=lambda _: True; t.main()"
@@ -271,6 +274,9 @@ class TrainingDeviceTests(unittest.TestCase):
                 next(iter(before['optimizer_state']['state'].values()))['step'].item())
             metrics=json.loads((artifact/'smoke-metrics.json').read_text())
             self.assertEqual(metrics['data_sizes'],{'train':len(rows),'validation':len(pairs),'test':len(pairs)})
+            self.assertEqual(metrics['corpus_source_statistics']['train'], source_stats)
+            self.assertEqual(metrics['checkpoint_selection']['metric'], 'overall_validation_accuracy')
+            self.assertEqual(after['configuration']['source_weighting'], 'none')
             self.assertEqual(metrics['training_backend']['convolution'],'native_conv1d')
             exported=artifact/'model.js'
             subprocess.run([sys.executable,str(ROOT/'training/export_browser_model.py'),'--artifact-dir',str(artifact),

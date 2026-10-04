@@ -188,8 +188,9 @@ python3 training/run_fresh_training.py \
 ```
 
 This starts from random weights and a new AdamW optimizer, with three epochs,
-learning rate 0.002, position weighting disabled, domain-weight power 0.65,
-and gradient clipping at 1. No old checkpoint is used and no model is automatically
+learning rate 0.002, no position or corpus-source weighting, and gradient clipping
+at 1. Checkpoints are selected solely by overall validation accuracy. No old
+checkpoint is used and no model is automatically
 promoted. `--resume` reuses the frozen plan and the new run's own checkpoint.
 The coordinator keeps macOS awake on AC power and resumes workers after a saved
 MPS memory-pressure checkpoint. SIGTERM to the coordinator requests a safe stop.
@@ -197,14 +198,36 @@ MPS memory-pressure checkpoint. SIGTERM to the coordinator requests a safe stop.
 `train_sharded.py --min-side-characters 2` filters targets with a one-character
 side from **training, validation and test** at read time. The default is 1 (no
 exclusion). Lengths count Unicode code points, matching model tokenization.
-It does not mask prediction candidates or modify original data. The trainer
-recounts retained samples, baselines and joint domain/position frequencies before
-training, caching each shard under `candidate/subset-cache/`. See
-`candidate/subset-progress.json` and `candidate/training-subset.json` for progress
-and exact exclusions. Without `--weighting-manifest`, weights use these retained
-frequencies; with it, reference frequencies stay fixed but loss normalization
-still uses the actual subset. Checkpoints record the filter and reject a resume
-with a different filter; use a separate initialized run to change it.
+It does not mask prediction candidates or modify original data. The default
+unweighted path does not prescan training shards. Counts, exclusions and baselines
+are accumulated when each shard is loaded and saved in the checkpoint and
+`candidate/source-statistics.json`. Each file has one inventory entry: resuming
+mid-shard or starting another epoch replaces that entry rather than counting it
+again. `loaded_shards` and `complete` describe coverage of loaded file contents,
+not how many batches have been optimized. Until every shard has been read, the
+counts are partial. Validation/test counts describe retained rows before any
+evaluation limit; `evaluated_samples` and the metric breakdowns describe what was
+actually evaluated. Checkpoints record the filter and reject an incompatible resume.
+
+Legacy `domain` / `domains` fields in prepared data are read only as corpus IDs.
+New trainer reports use `corpus_source`, `per_source` and `per_source_accuracy`:
+
+| Legacy ID | Corpus source |
+| --- | --- |
+| `news` | CLUE TNEWS |
+| `academic` | CLUE CSL |
+| `encyclopedia` | CLUE CMRC2018 |
+| `dialogue` | CLUE C3 |
+| `wikipedia` | Chinese Wikipedia |
+| `synthetic_multistyle` | openbmb/Ultra-FineWeb-L3, zh Multi-Style-Synthetic |
+| `web` | openbmb/Ultra-FineWeb, zh |
+
+These names describe dataset provenance, not topics inferred from the text.
+Unknown legacy IDs are explicitly reported as `Unknown corpus source`.
+Source counts and accuracies are diagnostic only: they never change loss,
+sampling or checkpoint selection. Source-specific metrics include sample counts.
+No raw data or historical metrics are rewritten. Existing preparation manifests
+retain their legacy field names for serialization compatibility.
 
 The fresh-run coordinator freezes current trainer code alongside the prepared
 corpus's **recorded** text policy. It only permits surface-policy differences;
@@ -216,39 +239,52 @@ The sharded trainer reports training loss as `sum(weight * example_loss) / sum(w
 This reporting reduction is separate from the fixed-global-normalization loss used
 for optimization. MRR breaks equal scores by ascending gap index, matching the
 first maximum selected by `argmax`. Historical reports retain their old values.
-New checkpoints record the loss-reporting version and position-weight settings;
+New checkpoints record the loss-reporting version, position-weight settings,
+`source_weighting: none`, and `selection_metric: overall_validation_accuracy`;
 old checkpoints with incompatible reporting state must use their original frozen
 trainer to resume, or initialize a new run from their weights.
 
-`--position-weighting none` disables only position weights; the default remains
-`inverse-cell`. `--weighting-manifest` freezes the source population's position
-and domain frequencies for subset experiments. The combined weight mean is
-measured on the actual selected training rows. Length-based batching is unchanged.
+`--position-weighting none` is now the sharded trainer default. Explicit
+`--position-weighting inverse-cell` remains available for controlled experiments;
+`--weighting-manifest` can provide reference position frequencies. Only that
+nonuniform position-weight path needs a scan to normalize its mean on retained
+training rows. Length-based batching is unchanged. The old
+`--domain-weight-power` and `--selection-macro-weight` options are removed from
+the current trainer, rather than silently ignored.
+
+Historical source/width/depth/learning-rate/rebuild coordinators encode their
+original weighted experiment contracts. Use their original frozen sources to
+reproduce those runs; use `run_fresh_training.py` for the current unweighted
+large-corpus run. Do not resume an old weighted checkpoint with the new trainer
+or compare old macro selection scores with new overall accuracy scores.
 
 ```sh
 npm run model:compare-position
 ```
 
-This paired smoke uses the actual sharded trainer, the same 1,000,000 training
+New paired position smokes use the current sharded trainer, the same 1,000,000 training
 rows and a seeded 100,000-row validation sample, starting from the current
 padding-corrected epoch-1 weights. Both arms use fresh AdamW, learning rate
-0.00003, one epoch, identical batch order, and the same domain weights. Only
+0.00003, one epoch, identical batch order, and no source weights. Only
 position weighting changes. Samples are capped at 256 characters for the smoke;
 training allocation follows the five existing source blocks, with random whole
 shards and reservoir sampling within each block. This is a short continuation on
 clustered samples and reused validation, not a from-scratch or untouched-test result.
 The comparison reports both actual epoch endpoints even if validation selects
-the initial model. Paired document-bootstrap intervals and length/position/domain
+the initial model. Paired document-bootstrap intervals and length/position/source
 breakdowns accompany the aggregate scores. Training loss across the two weighting
 schemes is not a like-for-like comparison; use their unweighted validation metrics.
 
 The run is isolated under `artifacts/position-ablation-1m-20261004/`, including
 `plan.json`, frozen sources, sampled rows with source-shard/line references,
 checkpoints, logs, and `comparison.json`. Rerun the same command to resume; use a
-fresh `--run-dir` to create a new experiment. No test scoring or model promotion
+fresh `--run-dir` to create a new experiment with the current unweighted-source
+settings. Existing runs keep their recorded source weights and frozen trainer.
+No test scoring or model promotion
 is performed. The source and data hashes are checked before resuming.
 
-The [2026-10-04 result](position-weight-comparison-20261004.json) starts at
+The historical [2026-10-04 result](position-weight-comparison-20261004.json),
+which kept source weights fixed in both arms, starts at
 89.512% validation accuracy. After one identical 1M-row pass, inverse-cell weights
 give 89.468% and no position weights give 90.084% (+0.616 percentage points;
 paired document-bootstrap 95% interval +0.524 to +0.708). These are actual epoch
@@ -257,8 +293,9 @@ Unweighted validation NLL is 0.315516 versus 0.297311. The improvement has a
 tradeoff: gold boundaries in the first 10% of the input fall from 89.280% to
 80.189% (1,166 samples), while the 50%-60% bin improves from 89.972% to 91.690%
 (23,225 samples). This supports further weighting experiments, not a claim that
-all positions benefit or that full test has passed 90%. Small-domain results
-have low sample counts. The default weighting and shipped model remain unchanged.
+all positions benefit or that full test has passed 90%. Small-source results
+have low sample counts. The shipped model remains unchanged; this result predates
+the current trainer's removal of source weighting.
 
 ```sh
 npm run model:position-baselines

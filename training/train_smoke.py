@@ -20,6 +20,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from text_policy import DATA_POLICY, require_data_policy, valid_proxy_label
+from sample_subset import record_source
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -155,7 +156,7 @@ def encode_records(
     return [
         {
             "id": record["id"],
-            "domain": record["domain"],
+            "corpus_source": record_source(record),
             "document_id": record["document_id"],
             "tokens": record["tokens"],
             "target_index": record["target_index"],
@@ -360,8 +361,8 @@ def evaluate(
     absolute_character_error = 0
     within_one_character = 0
     within_two_characters = 0
-    domain_counts: dict[str, int] = defaultdict(int)
-    domain_correct: dict[str, int] = defaultdict(int)
+    source_counts: dict[str, int] = defaultdict(int)
+    source_correct: dict[str, int] = defaultdict(int)
 
     with torch.inference_mode():
         for batch in iterate_batches(
@@ -398,9 +399,9 @@ def evaluate(
                 within_two_characters += character_error <= 2
 
             for record, prediction, target in zip(batch["records"], predictions, targets):
-                domain = record["domain"]
-                domain_counts[domain] += 1
-                domain_correct[domain] += int(prediction == target)
+                source = record_source(record)
+                source_counts[source] += 1
+                source_correct[source] += int(prediction == target)
 
     return {
         "loss": total_loss / total_count,
@@ -410,9 +411,14 @@ def evaluate(
         "mean_absolute_character_error": absolute_character_error / total_count,
         "within_one_character_accuracy": within_one_character / total_count,
         "within_two_characters_accuracy": within_two_characters / total_count,
-        "per_domain_accuracy": {
-            domain: domain_correct[domain] / count
-            for domain, count in sorted(domain_counts.items())
+        "per_source_accuracy": {
+            source: source_correct[source] / count
+            for source, count in sorted(source_counts.items())
+        },
+        "per_source": {
+            source: {"samples": count, "correct": source_correct[source],
+                     "accuracy": source_correct[source] / count}
+            for source, count in sorted(source_counts.items())
         },
     }
 
@@ -531,7 +537,7 @@ def predict_record(
     gold_index = record["target_index"]
     return {
         "id": record["id"],
-        "domain": record["domain"],
+        "corpus_source": record_source(record),
         "tokens": tokens,
         "gold_index": gold_index,
         "predicted_index": prediction,
@@ -1028,7 +1034,7 @@ def main() -> None:
         "validation_accuracy": validation["accuracy"],
         "test_accuracy": test["accuracy"],
         "test_baselines": baselines["test"],
-        "test_per_domain": test["per_domain_accuracy"],
+        "test_per_source": test["per_source_accuracy"],
     }, ensure_ascii=False, indent=2))
 
 

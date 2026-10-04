@@ -31,7 +31,7 @@ DATA = ROOT / 'training/data/processed/padding-fixed-web-350m-v7-20260925'
 RUN = ROOT / 'training/artifacts/symbol-ablation-1m-20260929'
 ARMS = ('context', 'text-only')
 SEED = 2026092907
-SOURCES = ('run_symbol_ablation.py', 'train_smoke.py', 'text_policy.py', 'text-policy.json', 'unicode-symbols.json')
+SOURCES = ('run_symbol_ablation.py', 'train_smoke.py', 'sample_subset.py', 'text_policy.py', 'text-policy.json', 'unicode-symbols.json')
 
 
 def read(path):

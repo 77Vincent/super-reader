@@ -23,6 +23,7 @@ import time
 ROOT = Path(os.environ.get('SUPER_READER_PROJECT_ROOT', Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(ROOT / 'training/.deps'))
 from text_policy import DATA_POLICY, require_data_policy
+from sample_subset import record_source
 
 BASE = ROOT / 'training/artifacts/padding-fixed-web-350m-v7-20260925/epoch-1-backend'
 DATA = ROOT / 'training/data/processed/padding-fixed-web-350m-v7-20260925'
@@ -117,7 +118,7 @@ def prepare(run, samples, validation_count, seed):
         (data / 'test.jsonl').symlink_to(DATA / 'test.jsonl')
     summary = read(DATA / 'summary.json')
     summary['splits']['validation'] = {'count': len(pool), 'sha256': sha(data / 'validation.jsonl'),
-        'per_domain': dict(Counter(r['domain'] for r in pool)), 'eligible_population': eligible}
+        'per_source': dict(Counter(record_source(r) for r in pool)), 'eligible_population': eligible}
     write(data / 'summary.json', summary)
     del pool
     training, sources = [], []
@@ -178,7 +179,8 @@ def prepare(run, samples, validation_count, seed):
             'initialization_sha256': sha(run / 'initialization.pt'), 'sources': sources,
             'source_hashes': {name: sha(source / name) for name in SOURCES},
             'data_hashes': {name: sha(data / name) for name in ('manifest.json', 'validation.jsonl', 'summary.json', 'vocabulary.json')},
-            'training': {'epochs': 1, 'learning_rate': .00003, 'domain_weight_power': .65, 'batch_size': 512, 'max_tokens_per_batch': 8192},
+            'source_weighting': 'none', 'selection_metric': 'overall_validation_accuracy',
+            'training': {'epochs': 1, 'learning_rate': .00003, 'batch_size': 512, 'max_tokens_per_batch': 8192},
             'comparison': 'Only position weighting changes; normalize each arm by its actual training-subset mean weight; same shuffled shards/batches and fresh AdamW.',
             'limitations': 'One seeded continuation, <=256 characters, proportional source-block quotas and random whole-shard clusters; validation is reused. No test or promotion.'}
     write(run / 'plan.json', plan)
@@ -190,9 +192,15 @@ def command(run, arm, seed):
         '--manifest', str(run / 'data/manifest.json'), '--data-dir', str(run / 'data'),
         '--artifact-dir', str(run / arm), '--weighting-manifest', str(run / 'weighting-manifest.json'),
         '--position-weighting', arm, '--epochs', '1', '--channels', '192', '--residual-blocks', '8',
-        '--learning-rate', '.00003', '--domain-weight-power', '.65', '--gradient-clip', '1',
+        '--learning-rate', '.00003', '--gradient-clip', '1',
         '--batch-size', '512', '--max-tokens-per-batch', '8192', '--checkpoint-shards', '1',
         '--seed', str(seed), '--defer-test']
+    # Existing experiments run their frozen trainer with the recorded settings.
+    # New experiments use the current trainer, which has no source weighting.
+    if (run / 'plan.json').exists():
+        legacy_power = read(run / 'plan.json')['training'].get('domain_weight_power')
+        if legacy_power is not None:
+            result += ['--domain-weight-power', str(legacy_power)]
     if (run / arm / 'training-state.pt').exists():
         result += ['--resume']
     else:
@@ -245,11 +253,11 @@ def compare(run, plan):
         chosen = rng.integers(0, len(cluster_sum), len(cluster_sum))
         draws.append(float(cluster_sum[chosen].sum() / cluster_count[chosen].sum()))
     strata = {}
-    for dimension in ('length', 'position', 'domain'):
+    for dimension in ('length', 'position', 'corpus_source'):
         labels = []
         for r in records:
             n = len(r['tokens'])
-            labels.append(r['domain'] if dimension == 'domain' else
+            labels.append(record_source(r) if dimension == 'corpus_source' else
                           str(min(9, int((r['target_index'] + 1) / n * 10))) if dimension == 'position' else
                           str(next((end for end in (8, 16, 32, 64, 128, 256) if n <= end))))
         strata[dimension] = {}

@@ -46,7 +46,7 @@ def prepare(run, args):
                "--artifact-dir", str(run / "candidate"),
                "--channels", "192", "--residual-blocks", "8",
                "--epochs", str(args.epochs), "--learning-rate", str(args.learning_rate),
-               "--domain-weight-power", "0.65", "--position-weighting", "none",
+               "--position-weighting", "none",
                "--min-side-characters", "2", "--gradient-clip", "1",
                "--batch-size", "512", "--max-tokens-per-batch", "8192",
                "--checkpoint-shards", "2", "--threads", "1", "--seed", str(args.seed)]
@@ -57,7 +57,8 @@ def prepare(run, args):
             "prepared_policy_preserved": True,
             "new_preparation_filters_applied": False,
             "subset": {"minimum_side_characters": 2, "splits": ["train", "validation", "test"]},
-            "position_weighting": "none", "domain_weight_power": .65,
+            "position_weighting": "none", "source_weighting": "none",
+            "selection_metric": "overall_validation_accuracy",
             "epochs": args.epochs, "learning_rate": args.learning_rate, "seed": args.seed,
             "source_hashes": {p.name: sha(p) for p in sorted(snapshot.iterdir())},
             "command": command, "automatic_promotion": False}

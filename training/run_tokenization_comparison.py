@@ -67,7 +67,7 @@ def metric_summary(metrics: dict[str, Any]) -> dict[str, Any]:
         "test_mean_absolute_character_error": test["mean_absolute_character_error"],
         "test_within_one_character_accuracy": test["within_one_character_accuracy"],
         "test_within_two_characters_accuracy": test["within_two_characters_accuracy"],
-        "test_per_domain_accuracy": test["per_domain_accuracy"],
+        "test_per_source_accuracy": test["per_source_accuracy"],
         "random_accuracy": metrics["baselines"]["test"]["random_accuracy"],
         "center_accuracy": metrics["baselines"]["test"]["center_accuracy"],
     }
