@@ -169,11 +169,48 @@ class SampleSubsetTests(unittest.TestCase):
             self.assertEqual(plan['selection_metric'], 'overall_validation_accuracy')
             self.assertEqual(json.loads((run / 'source/text-policy.json').read_text())['standard'], 'unicode-context-v7')
             self.assertFalse(plan['new_preparation_filters_applied'])
+            self.assertFalse(plan['defer_test'])
+            self.assertNotIn('--defer-test', plan['command'])
             manifest['normalization'] = 'different'
             (root / 'manifest.json').write_text(json.dumps(manifest))
             other = root / 'other'; other.mkdir()
             with self.assertRaisesRegex(ValueError, 'semantics'):
                 prepare(other, args)
+
+    @unittest.skipUnless(torch.backends.mps.is_available(), 'MPS required')
+    def test_fresh_coordinator_completes_validation_without_reading_test_set(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            # A successful run proves that even the test records were not read.
+            (root / 'test.jsonl').write_text('not valid JSON; test set must stay unread\n')
+            run = root / 'run'
+            command = [sys.executable, str(ROOT / 'training/run_fresh_training.py'),
+                       '--manifest', str(root / 'manifest.json'), '--run-dir', str(run),
+                       '--epochs', '1', '--learning-rate', '0.0003',
+                       '--max-sequence-length', '4', '--defer-test', '--prepare-only']
+            environment = dict(os.environ, DEBUG='0')
+            prepared = subprocess.run(command, cwd=ROOT, env=environment,
+                                      capture_output=True, text=True, timeout=90)
+            self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+            plan = json.loads((run / 'plan.json').read_text())
+            self.assertTrue(plan['defer_test'])
+            self.assertIn('--defer-test', plan['command'])
+            self.assertEqual(plan['subset']['maximum_sequence_length'], 4)
+            result = subprocess.run([sys.executable, str(ROOT / 'training/run_fresh_training.py'),
+                                     '--run-dir', str(run), '--resume'], cwd=ROOT, env=environment,
+                                    capture_output=True, text=True, timeout=90)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            status = json.loads((run / 'status.json').read_text())
+            self.assertEqual(status['stage'], 'complete')
+            self.assertFalse(status['test_evaluated'])
+            self.assertFalse(status['promoted'])
+            metrics = json.loads(Path(status['metrics']).read_text())
+            self.assertEqual(metrics['data_sizes'], {'train': 1, 'validation': 1})
+            self.assertEqual(len(metrics['history']), 1)
+            self.assertFalse(metrics['test_evaluated'])
+            self.assertIsNone(metrics['initialization'])
+            self.assertFalse((run / 'candidate/smoke-metrics.json').exists())
 
     @unittest.skipUnless(torch.backends.mps.is_available(), 'MPS required')
     def test_length_cap_training_counts_resume_and_rejects_changed_cap(self):

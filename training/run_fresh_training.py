@@ -51,6 +51,9 @@ def prepare(run, args):
                "--max-sequence-length", str(getattr(args, "max_sequence_length", 0)),
                "--batch-size", "512", "--max-tokens-per-batch", "8192",
                "--checkpoint-shards", "2", "--threads", "1", "--seed", str(args.seed)]
+    defer_test = getattr(args, "defer_test", False)
+    if defer_test:
+        command.append("--defer-test")
     plan = {"created_at": datetime.now(timezone.utc).isoformat(),
             "initialization": "random; no pretrained weights or optimizer",
             "manifest": str(manifest_path), "manifest_sha256": sha(manifest_path),
@@ -62,6 +65,7 @@ def prepare(run, args):
                        "splits": ["train", "validation", "test"]},
             "position_weighting": "none", "source_weighting": "none",
             "selection_metric": "overall_validation_accuracy",
+            "defer_test": defer_test,
             "epochs": args.epochs, "learning_rate": args.learning_rate, "seed": args.seed,
             "source_hashes": {p.name: sha(p) for p in sorted(snapshot.iterdir())},
             "command": command, "automatic_promotion": False}
@@ -78,6 +82,8 @@ def main():
     parser.add_argument("--learning-rate", type=float, default=.002)
     parser.add_argument("--max-sequence-length", type=int, default=0,
                         help="Whole-sample character limit for all splits; 0 disables")
+    parser.add_argument("--defer-test", action="store_true",
+                        help="Stop after validation; do not evaluate the test set or export a model")
     parser.add_argument("--seed", type=int, default=2026100405)
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--resume", action="store_true",
@@ -145,10 +151,12 @@ def main():
                     continue
                 if code:
                     raise RuntimeError(f"Training worker exited {code}; see training.log")
-                if not (run / "candidate/smoke-metrics.json").exists():
+                defer_test = "--defer-test" in plan["command"]
+                metrics = run / "candidate" / ("validation-only.json" if defer_test else "smoke-metrics.json")
+                if not metrics.exists():
                     status("stopped", reason="Worker stopped before final evaluation")
                     return
-                status("complete", metrics=str(run / "candidate/smoke-metrics.json"), promoted=False)
+                status("complete", metrics=str(metrics), test_evaluated=not defer_test, promoted=False)
                 return
         except BaseException as error:
             status("failed", error=str(error))

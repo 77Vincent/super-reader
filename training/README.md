@@ -228,7 +228,26 @@ PYTHONPATH=training/.deps:training DEBUG=0 \
   --run-dir training/artifacts/initial-learning-rate-1m-20261004
 ```
 
-The paused full 192-channel, 16-convolution run was originally started with:
+The new full-corpus run, started on 2026-10-05, uses the learning-rate and
+length-cap smoke results above and below:
+
+```sh
+python3 training/run_fresh_training.py \
+  --run-dir training/artifacts/fresh-lr3e-4-max256-20261005 \
+  --epochs 1 --learning-rate 0.0003 --max-sequence-length 256 \
+  --seed 2026100405 --defer-test
+```
+
+It starts from random weights and a new optimizer, excludes targets with a
+one-character side, and applies no position or corpus-source weighting. The
+existing v7 corpus stays unchanged; filters apply at read time. After one full
+epoch it evaluates validation and stops for review, without reading test records
+or exporting a model. The report is `candidate/validation-only.json`.
+`plan.json` pins the configuration and trainer source snapshot; `training.log`
+records progress. To continue this run after interruption, use the same
+`--run-dir` with `--resume`; all settings come from its frozen plan.
+
+The separate, paused full 192-channel, 16-convolution run was originally started with:
 
 ```sh
 python3 training/run_fresh_training.py \
