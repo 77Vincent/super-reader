@@ -1,11 +1,11 @@
 # Bundled boundary model
 
 `src/boundary-model-data.js` contains the completed **epoch 1 best_state** from
-`padding-fixed-web-350m-v7-20260925/candidate`, promoted on 2026-09-27.
-The continuation starts from the previously bundled low-learning-rate best
-weights, fixes intermediate padding leakage and adds 150 million web pairs.
-It trains one epoch at learning rate **0.00003** with fresh AdamW. Training
-and both complete holdouts use the existing v7 cleaning policy.
+`fresh-lr3e-4-max256-20261005/candidate`, promoted on 2026-10-07.
+This run starts from random weights and a fresh AdamW optimizer at learning rate
+**0.0003**, with no position or corpus-source weighting. It completed one epoch
+on 2026-10-06 and stopped for validation review. The selected model's full test
+evaluation and browser export followed on 2026-10-07, without further optimizer steps.
 
 | Property | Value |
 | --- | ---: |
@@ -16,74 +16,91 @@ and both complete holdouts use the existing v7 cleaning policy.
 | Parameters | 3,496,329 |
 | Structural gap receptive field | Up to 34 tokens, 17 on each side |
 | Vocabulary entries | 8,192 |
-| Training examples per epoch | 396,266,210 |
-| Web / other training examples | 350,000,000 / 46,266,210 |
-| Full validation examples | 2,522,347 |
-| Validation accuracy | 89.4642% |
-| Mean domain validation accuracy | 89.3941% |
-| Validation selection score (overall top-1) | 89.4642% |
-| Full test examples | 2,569,996 |
-| Test accuracy | 89.5785% |
+| Training examples | 395,216,214 |
+| Full retained validation examples | 2,515,459 |
+| Validation accuracy | 90.6079% |
+| Validation MRR | 0.946725 |
+| Full retained test examples | 2,563,530 |
+| Test accuracy | 90.6847% |
+| Test MRR | 0.947210 |
 
-The previous weights were re-evaluated on the same full validation split with
-corrected padding: **89.2074%**. The new epoch gains **0.2569 percentage points**
-on this comparable baseline. The previous historical test result (89.3738%)
-used the old padding implementation; it was not remeasured with the correction,
-so it is not an isolated before/after test comparison. This continuation also
-adds training exposure; it does not isolate the effect of data size or padding.
+The prepared corpus remains **unicode-context-v7**. All three splits retain only
+samples with at least two characters on each side of the target and at most
+256 characters in total. This excludes 1,049,996 training, 6,888 validation and
+6,466 test examples. The later v8 cleaning rules were not retroactively applied.
+Corpus-source labels describe provenance and do not affect loss or selection.
+Loss reporting sums weighted per-example losses over total example weight;
+MRR breaks score ties by ascending gap index, consistent with top-1 argmax.
 
-Accuracy measures recovery of the single hidden punctuation boundary, not
-precision at the backend's 50% threshold or accuracy of recursive child cuts.
-Selection uses overall full-validation top-1, with starting weights eligible;
-the selected model is then evaluated on the full test split. These holdouts have
-been reused across experiments and are not a fresh untouched test set.
-See [PADDING_FIXED_EXPANSION.md](PADDING_FIXED_EXPANSION.md).
+Accuracy measures recovery of the single hidden punctuation boundary. It does
+not measure precision at the backend's 50% threshold or correctness of recursive
+child cuts. The previous bundled model's 89.4642% validation and 89.5785% test
+scores used unfiltered holdouts, so they are not a matched before/after comparison.
+The holdouts have also been reused across experiments; they are not newly
+collected unseen evaluation data.
+
+## Reproduction and verification
 
 The frozen release is
-`training/artifacts/padding-fixed-web-350m-v7-20260925/epoch-1-backend/`.
-Its `verify_release.py` checks every exported tensor against `best_state`,
-accounting for convolution export layout, and generates independent PyTorch
-Metal float32 references using the run's frozen, corrected training source.
-`release-verification.json` records hashes and data identity;
-`smoke-metrics.json` contains full validation/test results despite its filename.
+`training/artifacts/fresh-lr3e-4-max256-20261005/epoch-1-backend/`.
+`evaluation-launch.json` records the frozen trainer command: resume the completed
+checkpoint with `--epochs 1`, remove `--defer-test`, and use the separate release
+directory. The checkpoint is already positioned at epoch 2, so the training loop
+is skipped. `smoke-metrics.json` contains the complete validation/test results
+despite its filename. Re-evaluated validation exactly matches the reviewed result.
 
-- Training checkpoint SHA-256: `874f451a904a3358c3c45d570fa52af0fb22be604a3f4724df8d8549e68d89aa`.
-- Exported safetensors SHA-256: `20ddd336b174cc467d3ff0f3c0b15b0310256e1f212d2e5b4202958870b00144`.
-- Browser bundle SHA-256: `ecffb9e81f7001c752b357cc87f41da6bea61d98744c0de0c74912399d72b9d3`.
+`verify_release.py` checks all 61 exported tensors against `best_state`, including
+convolution layout conversion, and confirms that the original training checkpoint
+is unchanged. It generates independent PyTorch CPU float64 and Metal float32
+references from identical stored float32 weights. `verify_browser.mjs` checks the
+JavaScript forward pass against both and records example output changes.
+
+- Training checkpoint SHA-256: `3948c2bc87140806082e3be1a2b2eee57ac8dc7eb76492e5ef56eac2be106ebf`.
+- Exported safetensors SHA-256: `dffbde883daf16759b52d4834cd73625eedde291fb114ad17c21c747223c26b3`.
+- Browser bundle SHA-256: `d441ad21fcb8a869aac2b43121303149bd073fead4b5b85c9d927939a730cae6`.
 - Browser bundle size: 18,740,854 bytes.
 
-`npm run model:export` reproduces this bundle from the local frozen release.
-A clean checkout includes the exported model and independent test references;
-runtime and ordinary model tests require no training artifacts or PyTorch.
+`npm run model:export` reproduces the bundle from this local release.
+A clean checkout includes the exported weights and independent reference fixture;
+ordinary backend tests need no training artifacts or PyTorch installation.
 
-The 11 independent Metal reference cases cover times, numbers, Latin text,
-quotes, supplementary Han, emoji and a two-character input. JavaScript chooses
-the same best gap in every case. Maximum absolute logit difference is
-0.000274658, maximum relative difference 0.000001109, and maximum softmax
-probability difference 0.000001778, all within the existing tolerances.
-All 245 `npm test` cases pass, including the actual worker integration;
-`promotion.json` and `promotion-tests.log` in the frozen release record this check.
-The corrected trainer masks intermediate padded activations; browser inference
-already processes individual unpadded sequences, so no inference-rule changes
-are needed. The historical padding diagnosis is in
-[GOOD_TEACHER_DIAGNOSIS.md](GOOD_TEACHER_DIAGNOSIS.md).
+All **264** `npm test` cases pass, including the real Worker script loaded by
+the integration harness and the 513-token window/whole-sequence parity check.
+The extension release build succeeds at version **0.1.0**; its ZIP includes the
+same verified bundle. `promotion.json` and `promotion-tests-final.log` in the
+frozen release record these checks.
 
-The checkpoint-specific output snapshots are observations, not human quality
-labels. With default 50% confidence, the long unpunctuated demo now has two
-cuts (`语法的｜通顺的｜但没有…`) instead of four; the rest stays intact.
-`短语块` remains whole in the default divider example. With abstention explicitly
-disabled, it can split as `短语｜块`; that is a remaining model error, not a quality
-expectation. The forced Euler example changes `来近似｜积分` to `来｜近似积分`,
-and the driving example moves a cut from `进行｜向左打方向盘` to `进行向左打｜方向盘`.
-The confidence for `在没有人｜被人特别留意的情况下` is now about 53.25%, so the
-explicit 75% threshold abstains. Aggregate gains do not establish improvement
-on every sentence. That promotion left the runtime threshold, preprocessing and
-recursion unchanged. The later preprocessing corrections are described below.
+The 12 reference cases preserve all previous inputs and add a 256-character
+sequence. They cover Chinese, supplementary Han, emoji, numbers, times, Latin
+text and a two-character input. Every best gap matches both PyTorch references.
+Maximum absolute JavaScript/CPU float64 logit difference is
+0.000077092; maximum probability difference is
+0.000000560. The original logit tolerance
+`2e-5 + 4e-6 * abs(reference)` is unchanged. Metal float32 reduction order produces
+larger logit differences on mixed-number inputs (up to
+0.000610352), while its maximum probability difference remains
+0.000002706, below the unchanged `1e-5` probability tolerance.
+
+## Runtime behavior
+
+The architecture, input processing, 50% confidence threshold and recursive
+cutting rules are unchanged. Training excluded one-character target sides;
+this promotion adds no inference-time prohibition on one-character cuts.
+Longer inputs still use the existing 256-token windows with convolution halos.
+
+Checkpoint-specific snapshots describe observed output, not human quality labels.
+For example, forced splitting now keeps `短语块` whole in the divider example;
+at the default confidence threshold that sentence stays intact. The driving
+example also stays intact at the default threshold. The long unpunctuated demo
+retains its two default cuts. The confidence for
+`在没有人｜被人特别留意的情况下` is now about 82.52%, so a 75% threshold accepts
+it while a 90% threshold abstains. Aggregate accuracy does not establish that
+every sentence or confidence-based decision improved.
 
 ## Backend preprocessing
 
-Updated 2026-09-29 to align with the existing training input contract; weights
-and training/evaluation data are unchanged. See [INPUT_ALIGNMENT.md](INPUT_ALIGNMENT.md).
+Established on 2026-09-29 to align with the training input contract and preserved
+by this model promotion. See [INPUT_ALIGNMENT.md](INPUT_ALIGNMENT.md).
 
 1. Classify the original Chinese proxy glyphs `，。；！？…` before NFKC,
    preserving original text and UTF-16 offsets. ASCII punctuation, enumeration

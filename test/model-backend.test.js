@@ -11,7 +11,7 @@ test("browser backend loads the exported best checkpoint", () => {
   const info = backend.getModelInfo();
 
   assert.equal(info.bestEpoch, 1);
-  assert.equal(info.testAccuracy, 0.8957850518055281);
+  assert.equal(info.testAccuracy, 0.9068468088924256);
   assert.equal(info.tokenization, "character");
   assert.equal(info.inputRepresentation, "unicode-context-v1");
   assert.equal(info.candidatePositions, "between every adjacent Unicode code point");
@@ -22,18 +22,20 @@ test("browser backend loads the exported best checkpoint", () => {
   assert.equal(info.checkpointSha256, reference.checkpointSha256);
 });
 
-test("browser inference matches PyTorch reference logits", () => {
+test("browser inference matches independent PyTorch CPU and Metal references", () => {
   for (const example of reference.cases) {
     const scores = backend.scoreTokens(Array.from(example.text));
     assert.equal(scores.length, example.scores.length);
     scores.forEach((score, index) => {
-      // Metal and JS accumulate float32 operations differently; relative error
-      // Relative error stays below 4e-6 for this checkpoint, including large
-      // mixed-number logits; probability and best-gap checks remain separate.
+      // Compare to CPU float64 using the same stored float32 weights. This
+      // avoids Metal's reduction-order cancellation near zero; tolerances
+      // remain unchanged. Check actual Metal probabilities and top-1 below.
       const tolerance = 2e-5 + 4e-6 * Math.abs(example.scores[index]);
       assert.ok(Math.abs(score - example.scores[index]) < tolerance, `${example.text}, gap ${index}`);
     });
     assert.equal(scores.indexOf(Math.max(...scores)), example.bestGap);
+    assert.equal(example.bestGap, example.mpsBestGap);
+    assert.equal(example.mpsScores.length, scores.length);
     const softmax = (values) => {
       const exponentials = values.map((value) => Math.exp(value - Math.max(...values)));
       const sum = exponentials.reduce((a, b) => a + b, 0);
@@ -42,6 +44,9 @@ test("browser inference matches PyTorch reference logits", () => {
     const probabilities = softmax(scores);
     softmax(example.scores).forEach((probability, index) => {
       assert.ok(Math.abs(probabilities[index] - probability) < 1e-5, `${example.text}, probability ${index}`);
+    });
+    softmax(example.mpsScores).forEach((probability, index) => {
+      assert.ok(Math.abs(probabilities[index] - probability) < 1e-5, `${example.text}, Metal probability ${index}`);
     });
   }
 });

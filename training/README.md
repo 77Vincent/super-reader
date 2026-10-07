@@ -1,21 +1,20 @@
 # Boundary model training
 
-The [padding-corrected larger continuation](PADDING_FIXED_EXPANSION.md) completed
-one epoch on 396,266,210 pairs on 2026-09-27. The selected epoch-1 weights are now
-bundled: full validation **89.4642%**, full test **89.5785%**. The comparable
-initial validation with corrected padding was 89.2074%. The run adds 150 million
-web pairs, keeps learning rate 0.00003, full holdouts and data cleaning, and
-selects by overall validation top-1. Epoch-1 results are archived in
-`artifacts/padding-fixed-web-350m-v7-20260925/completed-epochs/epoch-1/result.json`;
-the frozen release is the run's `epoch-1-backend/` directory, used by
-`npm run model:export`.
+The backend now bundles **epoch 1** of the fresh run
+`fresh-lr3e-4-max256-20261005`, promoted on 2026-10-07. It trained from random
+weights on **395,216,214** examples at learning rate **0.0003**, with no position
+or corpus-source weighting. Validation accuracy is **90.6079%** and test accuracy
+is **90.6847%**, over the complete retained splits of 2,515,459 and 2,563,530 examples.
+All splits exclude one-character target sides and inputs over 256 characters.
+The prepared v7 corpus is unchanged. See [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for
+export hashes, numerical parity checks and the exact evaluation scope.
+`npm run model:export` uses this run's frozen `epoch-1-backend/` directory.
 
-Epoch 2 completed on 2026-09-29 with full validation **89.4241%**, below epoch 1's
-89.4642%. The completed run retained epoch 1; its final results are in
-`artifacts/padding-fixed-web-350m-v7-20260925/result.json`. The bundled model
-remains epoch 1. For a new unweighted run from random initialization, use the
-`run_fresh_training.py` command documented below; the old continuation commands
-belong to the completed historical experiment.
+The previous [padding-corrected continuation](PADDING_FIXED_EXPANSION.md) is a
+completed historical experiment. Its selected epoch 1 scored 89.4642% validation
+and 89.5785% test; epoch 2 scored 89.4241% validation. Those results used unfiltered
+holdouts and are not directly comparable to the new retained-split scores.
+The old continuation commands below describe that historical run.
 
 The completed [source-mixture pilot](SOURCE_MIX_COMPARISON.md) compared 10 million
 matched training pairs per arm at learning rate 0.00003. Complete validation
@@ -243,6 +242,9 @@ one-character side, and applies no position or corpus-source weighting. The
 existing v7 corpus stays unchanged; filters apply at read time. After one full
 epoch it evaluates validation and stops for review, without reading test records
 or exporting a model. The report is `candidate/validation-only.json`.
+That review completed on 2026-10-06. After epoch 1 was selected for backend use,
+a separate `epoch-1-backend/` directory was finalized on 2026-10-07 for full
+validation/test evaluation and export; no additional training steps were taken.
 `plan.json` pins the configuration and trainer source snapshot; `training.log`
 records progress. To continue this run after interruption, use the same
 `--run-dir` with `--resume`; all settings come from its frozen plan.
@@ -908,14 +910,13 @@ This browser smoke check uses a deterministic sample of 500 examples per domain
 (seed 20260911); formal training always evaluates the complete validation/test splits.
 Keep input and sample hashes fixed for within-version comparisons.
 
-The bundled model is the completed epoch-1 best checkpoint from the corrected
-continuation (`padding-fixed-web-350m-v7-20260925/candidate`), promoted on
-2026-09-27. It retains 192 channels and 16 convolution layers and uses
-396,266,210 pairs, including 350 million web pairs, at learning rate 0.00003.
-Full validation accuracy is 89.4642% and test accuracy is 89.5785%.
-See [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for its provenance and validation results.
-The backend first splits clauses using normalized proxy punctuation and enumeration
-commas. All resulting clauses, including enumeration items, follow the same rule:
+The bundled model is the completed epoch-1 best checkpoint from the fresh run
+(`fresh-lr3e-4-max256-20261005/candidate`), promoted on 2026-10-07. It retains 192
+channels and 16 convolution layers. See [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for
+its training configuration, retained-split metrics and export provenance.
+The backend first splits clauses on original Chinese proxy punctuation and
+physical line boundaries; enumeration commas remain context. All clauses
+follow the same rule:
 leave at most 12 visual units intact and send longer clauses with their
 remaining Unicode context to the model. Numeric separators remain within numbers;
 original text and UTF-16 offsets are preserved. Model cuts require immediately adjacent

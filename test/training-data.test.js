@@ -342,7 +342,7 @@ test("full Wikipedia preparation and training stay memory bounded", () => {
   assert.match(training, /Training state already exists/u);
 });
 
-test("synthetic expansion is bounded, deduplicated, domain weighted, and resumable", () => {
+test("synthetic expansion is bounded, deduplicated, resumable, and uses no source weights", () => {
   const { readFileSync } = require("node:fs");
   const preparation = readFileSync("training/prepare_synthetic_data.py", "utf8");
   const training = readFileSync("training/train_sharded.py", "utf8");
@@ -352,12 +352,13 @@ test("synthetic expansion is bounded, deduplicated, domain weighted, and resumab
   assert.match(preparation, /BLOOM_BYTES = 256 \* 1024 \* 1024/u);
   assert.match(preparation, /preparation-state\.json/u);
   assert.match(preparation, /iter_batches/u);
-  assert.match(training, /--domain-weight-power/u);
-  assert.match(training, /counts\[domain\] \*\* -power/u);
+  assert.doesNotMatch(training, /--domain-weight-power|domain_weights|validation_macro_accuracy/u);
+  assert.match(training, /"source_weighting": "none"/u);
+  assert.match(training, /"corpus_source_statistics"/u);
   assert.match(training, /loss = weighted\.mean\(\) \/ training_weight_mean/u);
   assert.doesNotMatch(training, /loss = weighted\.sum\(\) \/ batch\["sample_weight_sum"\]/u);
   assert.match(training, /clip_grad_norm_/u);
-  assert.match(training, /validation_macro_accuracy/u);
+  assert.match(training, /"selection_metric": "overall_validation_accuracy"/u);
 });
 
 test("comparison modes keep the same text and gold boundary but change candidates", async () => {
