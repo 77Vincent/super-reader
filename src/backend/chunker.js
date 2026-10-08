@@ -324,8 +324,9 @@
         continue;
       }
 
-      // Default: retain the original window logits and normalize only the
-      // current fragment's gaps. Tokens and protection ranges stay fixed.
+      // Default: run the CNN again on each over-threshold child, so scores
+      // reflect its new context and edges. Token offsets and protection ranges
+      // stay fixed; cached-score strategies are only for offline comparisons.
       const scoped = scoringStrategy !== "fixed" && (start !== 0 || end !== tokens.length);
       const fresh = scoped && scoringStrategy === "recursive-model";
       const indexOffset = scoped ? start : 0;
@@ -366,7 +367,7 @@
 
   function chunkTextByClause(text, options = {}) {
     const minConfidence = options.minConfidence ?? MIN_SPLIT_CONFIDENCE;
-    const scoringStrategy = options.scoringStrategy ?? "recursive-softmax";
+    const scoringStrategy = options.scoringStrategy ?? "recursive-model";
     if (!Number.isFinite(minConfidence) || minConfidence < 0 || minConfidence > 1) {
       throw new RangeError("Super Reader minConfidence must be between 0 and 1");
     }
@@ -402,7 +403,8 @@
    * positions inside each corresponding input; no DOM or task scheduling here.
    * @param {string[]} texts
    * @param {{minConfidence?: number, scoringStrategy?: "recursive-softmax" | "fixed" | "recursive-model"}} options
-   * Defaults to 50% and recursive softmax over cached logits. 0 disables abstention.
+   * Defaults to 50% and fresh inference on each over-threshold fragment.
+   * 0 disables abstention. Cached-score strategies are offline comparison options.
    * @returns {number[][]}
    */
   function process(texts, options = {}) {

@@ -727,7 +727,7 @@ test("the inference service sends a whole viewport once and validates the data i
   assert.deepEqual(urls, ["./inference-worker.js"]);
 });
 
-test("the actual worker defaults to recursive softmax at 50% on the demo text nodes", () => {
+test("the actual worker defaults to fresh recursive inference at 50% on the demo text nodes", () => {
   let response;
   const inputs = [];
   const context = vm.createContext({ atob, btoa, console, Intl });
@@ -755,8 +755,18 @@ test("the actual worker defaults to recursive softmax at 50% on the demo text no
   assert.equal(response.id, 50);
   assert.deepEqual(Array.from(response.offsetsByText, (cuts) => Array.from(cuts)),
     [[25, 31, 50], [], [11, 35], [10, 13]]);
-  assert.equal(inputs.length, 6, "seven cuts use only the six original clause model calls");
-  assert.equal(inputs.reduce((n, tokens) => n + tokens.length, 0), 122);
+  assert.deepEqual(inputs.map((tokens) => tokens.join("")), [
+    "中文天然不使用空格切分语意块",
+    "因此过长的的句子会破坏阅读体验",
+    "过长的的句子会破坏阅读体验",
+    "请感受本文里断句的出现是否让你的阅读更轻松",
+    "在长句中找到符合人类习惯的断句点",
+    "把长句切成更短的语意块提升阅读效率",
+    "即便是完全符合语法的通顺的但没有任何标点断句的句子模型依然能够找到恰当的切分点",
+    "即便是完全符合语法的通顺的",
+    "但没有任何标点断句的句子模型依然能够找到恰当的切分点",
+  ], "the worker passes long child fragments back into the CNN");
+  assert.equal(inputs.reduce((n, tokens) => n + tokens.length, 0), 174);
 });
 
 test("the actual worker returns ordered model results for a whole viewport including long strings", () => {

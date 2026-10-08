@@ -1,4 +1,8 @@
-# 默认递归 softmax
+# 缓存 logits 的递归 softmax（历史方案）
+
+2026-10-08：默认已改为 `recursive-model`，仍超过 12 个视觉单位的子片段重新输入 CNN，
+再使用新评分判断切点，门槛保持严格大于 50%。参见[当前后端](BUNDLED_MODEL.md#backend-preprocessing)。
+下文描述旧方案及当时的结果；旧算法须显式指定 `scoringStrategy: "recursive-softmax"`。
 
 2026-09-21：正式后端默认采用 **50% 门槛、原始 logits 缓存、递归 softmax**。
 当时使用 16 层、192 通道 v7 epoch 2 模型，位置加权已移除。
@@ -28,14 +32,14 @@
 标点预分句及其数字分隔符例外继续独立处理。
 
 ```js
-chunker.process(texts); // Worker 和 demo 的正式默认入口
+chunker.process(texts, { scoringStrategy: "recursive-softmax" }); // 复现旧方案
 
 // 离线对比入口：
 chunker.process(texts, { minConfidence: 0.5, scoringStrategy: "fixed" });
 chunker.process(texts, { minConfidence: 0.5, scoringStrategy: "recursive-model" });
 ```
 
-`scoringStrategy` 默认是 `recursive-softmax`；`fixed` 保留整句概率，
+当时 `scoringStrategy` 默认是 `recursive-softmax`；`fixed` 保留整句概率，
 `recursive-model` 对子句重新运行 CNN。`minConfidence: 0` 可关闭置信度门槛。
 
 ## Demo 结果
@@ -49,7 +53,7 @@ chunker.process(texts, { minConfidence: 0.5, scoringStrategy: "recursive-model" 
 > 即便是完全符合语法的｜通顺的｜但没有任何标点｜断句的句子模型｜依然能够找到恰当的切分点。
 
 三段、四个文本节点，共 **9 个新增切点、6 次 CNN 调用、122 个累计输入 token**。
-实际 Worker 的无选项请求包含此回归检查；长句测试检查原始窗口只运行一次、右侧索引
+当时实际 Worker 的无选项请求包含此回归检查；长句测试检查原始窗口只运行一次、右侧索引
 和补充 Unicode 字符的 UTF-16 偏移。
 
 以下为 2026-09-15 旧模型、75% 门槛的历史浏览器验证，不代表当前 50% 输出：

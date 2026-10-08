@@ -77,7 +77,8 @@ test("context pre-splitting preserves non-proxies, whitespace, and normalized nu
   const clauses = Array.from(chunker.splitClauses(text));
   assert.deepEqual(clauses, [text.slice(0, text.indexOf("\n") + 1), text.slice(text.indexOf("\n") + 1)]);
   assert.equal(chunker.chunkText(text, { segmenter: null, minConfidence: 0 }).join(""), text);
-  assert.deepEqual(inputs, ['女:课程(A)和《阅读》在明天上午8:30开始']);
+  assert.deepEqual(inputs, ['女:课程(A)和《阅读》在明天上午8:30开始',
+    '程(A)和《阅读》在明天上午8:30开始']);
   assert.equal(chunker.visualLength("甲乙丙丁戊己庚辛壬癸子丑 English"), 13);
 });
 
@@ -308,23 +309,21 @@ test("fragment length limits still count numbers and preserve supplementary Han"
   }
 });
 
-test("one model evaluation supplies every split in a clause, with scores local to that call", () => {
+test("recursive scores are recomputed for every request and never reused across requests", () => {
   const text = "甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥天地";
   const inputs = [];
   const chunker = withModel((tokens) => {
     inputs.push(Array.from(tokens));
-    assert.equal(tokens.join(""), text, "the model must never receive a recursive fragment");
     const scores = Array(tokens.length - 1).fill(-100);
-    scores[7] = 5;
-    scores[15] = 10;
+    scores[tokens.length === text.length ? 15 : 3] = 10;
     return scores;
   });
   const chunks = chunker.chunkText(text, { segmenter: null, minConfidence: 0 });
-  assert.deepEqual(Array.from(chunks), [text.slice(0, 8), text.slice(8, 16), text.slice(16)]);
-  assert.equal(inputs.length, 1);
+  assert.deepEqual(Array.from(chunks), [text.slice(0, 4), text.slice(4, 16), text.slice(16)]);
+  assert.deepEqual(inputs.map((tokens) => tokens.join("")), [text, text.slice(0, 16)]);
   // A new operation gets fresh scores; they are not retained across requests.
   chunker.chunkText(text, { segmenter: null, minConfidence: 0 });
-  assert.equal(inputs.length, 2);
+  assert.deepEqual(inputs.map((tokens) => tokens.join("")), [text, text.slice(0, 16), text, text.slice(0, 16)]);
 });
 
 test("short clauses skip inference and separate long clauses receive separate score arrays", () => {
@@ -355,11 +354,13 @@ test("fixed model windows score every gap once, without forcing cuts at window e
         return (index + 1) % 12 === 0 ? 10 : -1;
       });
     });
-    const chunks = chunker.chunkText(tokens.join(""), { segmenter: null, minConfidence: 0 });
+    const scores = chunker.scoreTokenWindows(tokens);
+    assert.equal(scores.length, length - 1);
     assert.equal(inputs.length, Math.ceil((length - 1) / 255));
     assert.ok(inputs.every((window) => window.length >= 2 && window.length <= 256));
     assert.deepEqual(inputs[0].concat(...inputs.slice(1).map((window) => window.slice(1))), tokens);
     assert.deepEqual(gaps, Array.from({ length: length - 1 }, (_, index) => index));
+    const chunks = chunker.chunkText(tokens.join(""), { segmenter: null, minConfidence: 0 });
     assert.equal(chunks.join(""), tokens.join(""));
     assert.equal(chunks.length, Math.ceil(length / 12));
     assert.ok(chunks.slice(0, -1).every((chunk) => Array.from(chunk).length === 12));
@@ -377,7 +378,7 @@ test("long clauses with strongly favored edge scores split without overflowing t
   assert.equal(chunks.join(""), text);
   assert.equal(chunks.length, text.length - 11);
   assert.equal(chunks.at(-1), "甲".repeat(12));
-  assert.equal(calls, Math.ceil((text.length - 1) / 255));
+  assert.ok(calls > text.length - 12, "long recursive fragments are rescored in bounded windows");
 });
 
 test("rejects candidate boundaries inside a segmented word", () => {

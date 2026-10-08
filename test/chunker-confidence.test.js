@@ -40,8 +40,10 @@ test("default 50% gate leaves uncertain long clauses intact and zero disables ab
   assert.ok(baseline.length > 1);
   assert.ok(baseline.every((part) => chunker.visualLength(part) <= 12));
   assert.equal(baseline.join(""), text);
+  assert.equal(calls, baseline.length, "each split runs inference after the initial abstention check");
+  const beforeShort = calls;
   chunker.chunkText(text.slice(0, 12));
-  assert.equal(calls, 2, "short clauses skip inference regardless of confidence");
+  assert.equal(calls, beforeShort, "short clauses skip inference regardless of confidence");
 });
 
 test("threshold is strict and configurable and does not use a per-gap sigmoid", () => {
@@ -53,14 +55,14 @@ test("threshold is strict and configurable and does not use a per-gap sigmoid", 
   }
 });
 
-test("default recursion renormalizes cached logits without running the model again", () => {
+test("explicit cached-score comparison renormalizes without running the model again", () => {
   let calls = 0;
   const chunker = withScores((tokens) => {
     calls++;
     assert.equal(tokens.join(""), text);
     return tokens.slice(1).map((_, i) => i === 15 ? 10 : i === 7 ? 5 : -1000);
   });
-  const chunks = Array.from(chunker.chunkText(text, { segmenter: null }));
+  const chunks = Array.from(chunker.chunkText(text, { segmenter: null, scoringStrategy: "recursive-softmax" }));
   assert.deepEqual(chunks, [text.slice(0, 8), text.slice(8, 16), text.slice(16)]);
   assert.equal(calls, 1);
   assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter: null, scoringStrategy: "fixed" })),
@@ -74,7 +76,7 @@ test("protected high-confidence gaps do not promote an uncertain alternative", (
   assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter })), [text]);
 });
 
-test("cached recursion keeps the original word protection inside a child", () => {
+test("explicit cached-score comparison keeps the original word protection inside a child", () => {
   let calls = 0, segmentations = 0;
   const chunker = withScores((tokens) => {
     calls++;
@@ -84,7 +86,7 @@ test("cached recursion keeps the original word protection inside a child", () =>
     segmentations++;
     return [{ segment: text.slice(10, 14), index: 10, isWordLike: true }];
   } };
-  assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter })), [text.slice(0, 6), text.slice(6)]);
+  assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter, scoringStrategy: "recursive-softmax" })), [text.slice(0, 6), text.slice(6)]);
   assert.equal(calls, 1);
   assert.equal(segmentations, 1);
 });
@@ -93,7 +95,7 @@ test("a confident edge gap remains eligible regardless of its position", () => {
   const chunker = withScores((tokens) => tokens.slice(1).map((_, i) => i === 0 ? Math.log(10) : i === 11 ? 0 : -1000));
   // Raw confidence is 10/11 at the edge and is used directly for acceptance.
   assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter: null })),
-    [text.slice(0, 1), text.slice(1, 12), text.slice(12)]);
+    [...text.slice(0, 12), text.slice(12)]);
 });
 
 test("confidence cannot create a fragment with no visual content", () => {
@@ -136,7 +138,9 @@ test("model cuts require adjacent Han in the source, before normalization or whi
 test("supplementary Han on both sides remains a valid model cut", () => {
   const left = text.slice(0, 8) + "𠮷";
   const right = "𠀀" + text.slice(8);
-  const chunker = withScores((tokens) => tokens.slice(1).map((_, i) => i === 8 ? 100 : 0));
+  const chunker = withScores((tokens) => tokens.slice(1).map((_, i) => (
+    tokens[0] === left[0] && i === 8 ? 100 : 0
+  )));
   assert.deepEqual(Array.from(chunker.chunkText(left + right, { segmenter: null })), [left, right]);
 });
 
@@ -149,7 +153,9 @@ test("quantity boundaries follow model scores while Han adjacency and word prote
     const input = marked.replace("｜", "");
     const offset = marked.indexOf("｜");
     const target = realChunker.tokenizeContext(input).findIndex((token) => token.index === offset) - 1;
-    const chunker = withScores((tokens) => tokens.slice(1).map((_, i) => i === target ? 100 : 0));
+    const chunker = withScores((tokens) => tokens.slice(1).map((_, i) => (
+      tokens[0] === input[0] && i === target ? 100 : 0
+    )));
     const expected = allowed ? [input.slice(0, offset), input.slice(offset)] : [input];
     assert.deepEqual(Array.from(chunker.chunkText(input)), expected, quantity);
   }
@@ -178,11 +184,14 @@ test("long inputs normalize across all windows and never force the one-gap tail"
 test("punctuation separates independent confidence distributions and preserves Unicode offsets", () => {
   const item = "𠮷🌈" + text;
   let calls = 0;
-  const chunker = withScores((tokens) => { calls++; return tokens.slice(1).map((_, i) => i === 9 ? 100 : 0); });
+  const chunker = withScores((tokens) => {
+    calls++;
+    return tokens.slice(1).map((_, i) => tokens[0] === "𠮷" && i === 9 ? 100 : 0);
+  });
   const input = `${item}；${item}，短句。`;
   const chunks = Array.from(chunker.chunkText(input, { segmenter: null }));
   assert.equal(chunks.join(""), input);
-  assert.equal(calls, 2);
+  assert.equal(calls, 4, "each long clause and its long child are scored independently");
   const cuts = Array.from(chunker.process([input])[0]);
   assert.equal(cuts.length, 2);
   for (const offset of cuts) assert.doesNotMatch(input[offset], /[\uDC00-\uDFFF]/u);
@@ -201,13 +210,13 @@ test("bundled model uses the 50% default and honors a stricter explicit threshol
   assert.ok(probabilities[5] > .5 && probabilities[5] < .75);
 });
 
-test("recursive option runs fresh inference and can accept a different second boundary", () => {
+test("default recursion runs fresh inference and can accept a different second boundary", () => {
   const inputs = [];
   const chunker = withScores((tokens) => {
     inputs.push(tokens.join(""));
     return tokens.slice(1).map((_, i) => i === (tokens.length === 24 ? 15 : 3) ? 100 : 0);
   });
-  assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter: null, scoringStrategy: "recursive-model" })),
+  assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter: null })),
     [text.slice(0, 4), text.slice(4, 16), text.slice(16)]);
   assert.deepEqual(inputs, [text, text.slice(0, 16)]);
   for (const scoringStrategy of ["unknown", true, 1]) {
@@ -215,15 +224,29 @@ test("recursive option runs fresh inference and can accept a different second bo
   }
 });
 
-test("recursive scoring abstains on an uncertain child even when it exceeds the length threshold", () => {
+test("default recursion abstains on an uncertain child despite a strong cached runner-up", () => {
   const inputs = [];
   const chunker = withScores((tokens) => {
     inputs.push(tokens.join(""));
-    return tokens.slice(1).map((_, i) => tokens.length === 24 && i === 15 ? 100 : 0);
+    return tokens.slice(1).map((_, i) => tokens.length === 24 ? (i === 15 ? 100 : i === 7 ? 80 : 0) : 0);
   });
-  assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter: null, scoringStrategy: "recursive-model" })),
+  assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter: null })),
     [text.slice(0, 16), text.slice(16)]);
   assert.deepEqual(inputs, [text, text.slice(0, 16)]);
+});
+
+test("default recursion rescans both children and grandchildren, skipping threshold-sized leaves", () => {
+  const input = Array.from({ length: 52 }, (_, i) => String.fromCodePoint(0x4e00 + i)).join("");
+  const inputs = [];
+  const chunker = withScores((tokens) => {
+    inputs.push(tokens.join(""));
+    return tokens.slice(1).map((_, i) => i === Math.floor(tokens.length / 2) - 1 ? 100 : 0);
+  });
+  const chunks = Array.from(chunker.chunkText(input, { segmenter: null }));
+  assert.deepEqual(inputs, [input, input.slice(0, 26), input.slice(0, 13), input.slice(13, 26),
+    input.slice(26), input.slice(26, 39), input.slice(39)]);
+  assert.deepEqual(chunks.map((part) => part.length), [6, 7, 6, 7, 6, 7, 6, 7]);
+  assert.equal(chunks.join(""), input);
 });
 
 test("recursive scoring preserves original word protections and shifts right-child indices", () => {
@@ -237,10 +260,10 @@ test("recursive scoring preserves original word protections and shifts right-chi
     inputs.push(tokens.join(""));
     return tokens.slice(1).map((_, i) => i === 5 ? 100 : 0);
   });
-  assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter, scoringStrategy: "recursive-model" })),
+  assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter })),
     [text.slice(0, 6), text.slice(6)]);
   assert.deepEqual(inputs, [text, text.slice(6)]);
-  assert.equal(segmentations, 1, "model context is the only experimental variable");
+  assert.equal(segmentations, 1, "word protection keeps original source offsets");
 });
 
 test("recursive scoring maintains window limits and original supplementary Unicode offsets", () => {
@@ -256,7 +279,7 @@ test("recursive scoring maintains window limits and original supplementary Unico
   const chunks = Array.from(chunker.chunkText(input, { segmenter: null }));
   assert.deepEqual(chunks.map((part) => Array.from(part).length), [100, 200, 200, 100]);
   assert.equal(chunks.join(""), input);
-  assert.equal(windows.length, 3, "only the three original windows run CNN inference");
+  assert.equal(windows.length, 11, "root, children and still-long leaves each receive fresh windowed inference");
   assert.ok(windows.every((tokens) => tokens.length >= 2 && tokens.length <= 256));
   assert.deepEqual(Array.from(chunker.process([input])[0]), [200, 600, 1000]);
 });

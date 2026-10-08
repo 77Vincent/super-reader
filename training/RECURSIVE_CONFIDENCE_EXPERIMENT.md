@@ -6,8 +6,8 @@ Chrome Worker 整组处理耗时中位数从 **701.0 ms 增至 895.5 ms（+27.7%
 重新运行 CNN 的递归方式作为可选实验入口保留。
 
 后续改动：后端已移除位置加权，合格切点直接按原始 logit 排序。以下保留实验当时的
-设置与测量；重新运行脚本会使用当前后端规则。正式默认已改为
-[75% 递归 softmax](RECURSIVE_SOFTMAX.md)，复用原始 logits。
+设置与测量；重新运行脚本会使用当前后端规则。2026-10-08 正式默认改为
+50% 门槛、子片段重新推理，见[当前后端](BUNDLED_MODEL.md#backend-preprocessing)。
 
 ## 控制变量
 
@@ -81,8 +81,8 @@ chunker.process(texts, { minConfidence: 0.9, scoringStrategy: "recursive-model" 
 ```
 
 `chunkText`、`chunkTextByClause`、`buildVisualChunks` 同样接受该选项。
-历史固定概率对照使用 `scoringStrategy: "fixed"`；扩展默认 Worker 使用
-`scoringStrategy: "recursive-softmax"`，门槛为 75%。
+历史固定概率对照使用 `scoringStrategy: "fixed"`；当前扩展默认 Worker 使用
+`scoringStrategy: "recursive-model"`，门槛为 50%。
 
 ```bash
 node training/compare_recursive_confidence.mjs

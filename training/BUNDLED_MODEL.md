@@ -119,10 +119,11 @@ by this model promotion. See [INPUT_ALIGNMENT.md](INPUT_ALIGNMENT.md).
    in the original text, as well as browser word protection. This includes
    supplementary Han and treats spaces as non-Han. Dedicated number-interior,
    numeric-attachment, quantity-phrase and quote/bracket attachment rules have been removed.
-5. Cache the original window logits. For each fragment above 12 visual units,
-   compute softmax over its internal gaps and allow probabilities strictly above 50%.
+5. As of 2026-10-08, run fresh inference for each fragment above 12 visual units,
+   using only that fragment's tokens. Compute softmax over its newly scored internal
+   gaps and allow probabilities strictly above 50%.
    Rank eligible gaps by raw model logit, breaking ties by the earlier gap.
-   Recurse into both children using the same logits and a new child softmax;
+   Recurse into both children, rerunning the CNN only if they exceed 12 visual units;
    removing protected gaps never renormalizes probabilities. An uncertain
    fragment stays intact even above 12 visual units. The threshold measures relative model
    confidence, not a calibrated probability that a cut is appropriate.
@@ -134,13 +135,16 @@ Inputs over 256 tokens are scored in bounded windows with a full convolution
 halo around each owned gap. For this kernel-3, dilation-1, 16-convolution model,
 the halo is 16 tokens on each side. Each gap retains one score, avoiding missing
 context at internal seams. At most 256 tokens still enter any model call;
-shorter inputs still use one call. The true CNN's 512 gap logits on a 513-token
+each shorter fragment uses one call when it needs scoring. The true CNN's 512 gap logits on a 513-token
 fixture exactly match whole-sequence inference in the regression test.
 
-By default the chunker scores the clause once and reuses its logits while
-recursively choosing the highest-scoring eligible gap in each fragment.
-The default [recursive softmax](RECURSIVE_SOFTMAX.md) requires no Worker options
-and never runs CNN inference on a child fragment.
+The default `recursive-model` strategy requires no Worker options. New child
+boundaries change the model's context and padding; parent logits are not reused
+to decide child cuts. Tokenization, source offsets and word protection are kept
+from the original clause. An explicit stack avoids JavaScript recursion limits.
+This change adds inference calls without changing model weights or training.
+The former [cached-logit strategy](RECURSIVE_SOFTMAX.md) and fixed original
+probabilities remain explicit offline comparison options.
 
 A separate [recursive >90% trial](RECURSIVE_CONFIDENCE_EXPERIMENT.md) is available
 with `{ minConfidence: 0.9, scoringStrategy: "recursive-model" }`. It reruns the

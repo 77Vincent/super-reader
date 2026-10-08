@@ -971,15 +971,18 @@ test accuracy versus 60.85% for Transformer and led in all five test domains.
 The experiment is closed; its dedicated scripts and generated artifacts were
 removed after preserving the setup, results, limitations and audit fingerprints.
 
-Recursive fragment rescoring without a confidence gate was evaluated and rejected: the example comparison
-showed higher inference cost without a clear quality benefit. The backend retains
-one-time clause scoring. Only the [conclusion](SCORING_COMPARISON.md) is retained;
-the experimental option, scripts, tests and generated reports have been removed.
+An earlier experiment with recursive fragment rescoring without a confidence gate
+showed higher inference cost without a clear quality benefit. Only its historical
+[conclusion](SCORING_COMPARISON.md) is retained; the original scripts and generated
+reports have been removed. That result does not describe the current default.
 
 A separate [recursive >90% experiment](RECURSIVE_CONFIDENCE_EXPERIMENT.md)
 compares fresh child inference with fixed original probabilities. Its
-`scoringStrategy: "recursive-model"` option is opt-in; the default caches original
-logits and recursively recomputes softmax. Reproduce the historical strategy comparison with
+`scoringStrategy: "recursive-model"` became the default on 2026-10-08, with the
+existing 50% gate: children above 12 visual units receive fresh CNN inference.
+Cached logits and fixed original probabilities remain explicit offline controls.
+See [current backend behavior](BUNDLED_MODEL.md#backend-preprocessing).
+Reproduce the historical strategy comparison with
 `node training/compare_recursive_confidence.mjs`. The article examples are fixed
 text-node snapshots in the script, independent of the product site's copy.
 
