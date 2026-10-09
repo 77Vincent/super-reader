@@ -132,8 +132,10 @@
       sourceOffset += character.length;
       return start;
     });
+    // The original enumeration comma is an extra reading boundary, not a
+    // training proxy: it stays in the preceding fragment's model tokens.
     const isEnd = (index) => USES_CONTEXT
-      ? boundaryOffsets.has(sourceOffsets[index])
+      ? boundaryOffsets.has(sourceOffsets[index]) || characters[index] === "、"
       : CLAUSE_END_CHARACTER.test(characters[index]);
 
     const flush = () => {

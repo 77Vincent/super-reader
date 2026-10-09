@@ -17,7 +17,7 @@ function withModel(scoreTokens, convolutionLayers = 16) {
 }
 const tokenText = (text) => chunker.tokenizeContext(text).map((token) => token.segment).join("");
 
-test("runtime fragments match Python and JavaScript training preparation before sample filtering", async () => {
+test("runtime tokenization matches training with explicit extra reading boundaries", async () => {
   const { trainingFragmentLines } = await import("../training/text_policy.mjs");
   const fixtures = [
     "女：那可挺麻烦的，吃点儿治疗过敏的药吧。",
@@ -46,24 +46,30 @@ print(json.dumps([[f['text'] for line in training_fragment_lines(t) for f in lin
                   for t in json.load(sys.stdin)], ensure_ascii=False))
 `], { input: JSON.stringify(fixtures), encoding: "utf8" }));
   assert.deepEqual(prepared, python);
+  // Training labels keep their original proxy policy. Only runtime grouping
+  // differs at original Chinese enumeration commas.
+  const readingGroups = new Map([
+    [2, ["苹果、", "香蕉､梨﹑橘子︑桃子".normalize("NFKC"), "放入(A)袋"]],
+  ]);
   for (let i = 0; i < fixtures.length; i++) {
     const clauses = chunker.splitClauses(fixtures[i]);
     assert.equal(clauses.join(""), fixtures[i]);
-    assert.deepEqual(clauses.map(tokenText).filter(Boolean), prepared[i], fixtures[i]);
+    assert.deepEqual(clauses.map(tokenText).filter(Boolean), readingGroups.get(i) ?? prepared[i], fixtures[i]);
   }
 });
 
-test("hiding a training proxy gives the same model tokens as the corresponding raw AB input", async () => {
+test("hiding a training proxy preserves tokenization while reading boundaries can partition inference", async () => {
   const { trainingPairs } = await import("../training/text_policy.mjs");
   const fixtures = [
     ["我们需要了解ASCII,英文逗号的保留方式", "这样才能让推理输入和训练保持一致"],
-    ["我们已经读过苹果、香蕉和梨这些内容", "现在继续介绍后面的完整内容"],
+    ["我们已经读过苹果、香蕉和梨这些内容", "现在继续介绍后面的完整内容",
+      ["香蕉和梨这些内容现在继续介绍后面的完整内容"]],
     ["我们记录读数为−1.5，+.25然后继续观察", "这些数据可以用于后续分析"],
     ["我们研究﹐﹔‼⁇︒｡这些兼容字形的处理方法", "然后继续检查原文是否完整"],
     ["我们已经了解这个问题的主要情况", "”然后继续介绍这个话题的其他内容"],
     ["这里记录ＡＢＣ及cafe\u0301和ﬃ还有𠮷这些字形", "接下来还会逐个检查这些字符"],
   ];
-  for (const [left, right] of fixtures) {
+  for (const [left, right, expectedInputs] of fixtures) {
     const pairs = Array.from(trainingPairs(`引句。${left}，${right}。`));
     assert.equal(pairs.length, 1, left);
     const trainingInput = pairs[0].left + pairs[0].right;
@@ -73,8 +79,9 @@ test("hiding a training proxy gives the same model tokens as the corresponding r
       return tokens.slice(1).map(() => 0);
     });
     const rawAB = left + right;
+    assert.equal(tokenText(rawAB), trainingInput, "tokenization itself preserves the training representation");
     assert.equal(runtime.chunkText(rawAB).join(""), rawAB);
-    assert.deepEqual(seen, [trainingInput], left);
+    assert.deepEqual(seen, expectedInputs ?? [trainingInput], left);
   }
 });
 

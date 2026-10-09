@@ -106,17 +106,20 @@ every sentence or confidence-based decision improved.
 
 ## Backend preprocessing
 
-Established on 2026-09-29 to align with the training input contract and preserved
-by this model promotion. See [INPUT_ALIGNMENT.md](INPUT_ALIGNMENT.md).
+The 2026-09-29 training-input alignment is supplemented by runtime enumeration
+pre-splitting on 2026-10-09. See [INPUT_ALIGNMENT.md](INPUT_ALIGNMENT.md).
 
 1. Classify the original Chinese proxy glyphs `，。；！？…` before NFKC,
-   preserving original text and UTF-16 offsets. ASCII punctuation, enumeration
-   commas and compatibility forms are retained context. The former additional
-   enumeration pre-splitting rule has been removed.
+   preserving original text and UTF-16 offsets. ASCII punctuation, Chinese colons
+   and compatibility forms are retained context.
 2. Pre-split on these proxies and all training physical line boundaries. Chinese
    commas between numbers remain numeric context, including signed numbers,
    decimals, exponents and surrounding whitespace. Closing quotes/brackets stay
    on their original side of the proxy, matching training fragment extraction.
+   Also pre-split at original enumeration commas (`、`) so existing list items
+   are processed independently. Keep each comma in the preceding fragment and
+   its normalized model tokens. These additional runtime boundaries add no
+   visual dividers and do not change training proxies or prepared data.
 3. Leave clauses of fewer than 13 visual units intact. A Han character, numeric
    expression or Latin word contributes one unit; this is not a 13-token cap.
 4. Send the remaining longer clauses to the model with their context characters.
@@ -138,7 +141,8 @@ by this model promotion. See [INPUT_ALIGNMENT.md](INPUT_ALIGNMENT.md).
 
 The current default is at least 13 visual units and >45%, selected for the highest
 first-round F1 in the tested 30–50% sweep. This does not establish an optimum for
-complete recursive segmentation.
+complete recursive segmentation. That sweep predates the runtime enumeration
+pre-splitting; its metrics have not been remeasured for this preprocessing change.
 
 Rendered text retains its original punctuation, spacing and character widths.
 Only model-selected cuts inside a clause receive visual dividers.

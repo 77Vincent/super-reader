@@ -960,8 +960,11 @@ The bundled model is the completed epoch-1 best checkpoint from the fresh run
 (`fresh-lr3e-4-max256-20261005/candidate`), promoted on 2026-10-07. It retains 192
 channels and 16 convolution layers. See [BUNDLED_MODEL.md](BUNDLED_MODEL.md) for
 its training configuration, retained-split metrics and export provenance.
-The backend first splits clauses on original Chinese proxy punctuation and
-physical line boundaries; enumeration commas remain context. All clauses
+The backend first splits clauses on original Chinese proxy punctuation,
+physical line boundaries and original enumeration commas (`、`). Enumeration
+commas stay in the preceding fragment and its model tokens; they are runtime
+reading boundaries, not additional training proxies. Chinese colons and
+compatibility punctuation remain context. All clauses
 follow the same rule:
 leave fewer than 13 visual units intact and send eligible clauses with their
 remaining Unicode context to the model. Numeric separators remain within numbers;
