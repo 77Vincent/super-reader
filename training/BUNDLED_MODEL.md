@@ -33,7 +33,7 @@ Loss reporting sums weighted per-example losses over total example weight;
 MRR breaks score ties by ascending gap index, consistent with top-1 argmax.
 
 Accuracy measures recovery of the single hidden punctuation boundary. It does
-not measure precision at the backend's 50% threshold or correctness of recursive
+not measure precision at the backend's 45% threshold or correctness of recursive
 child cuts. The previous bundled model's 89.4642% validation and 89.5785% test
 scores used unfiltered holdouts, so they are not a matched before/after comparison.
 The holdouts have also been reused across experiments; they are not newly
@@ -83,8 +83,15 @@ larger logit differences on mixed-number inputs (up to
 
 ## Runtime behavior
 
-The architecture, input processing, 50% confidence threshold and recursive
-cutting rules are unchanged. Training excluded one-character target sides;
+The model promotion preserved the architecture, input processing and then-current
+50% confidence threshold. On 2026-10-09 the runtime threshold was changed to **45%**:
+it had the highest first-round F1 among 30%, 35%, 40%, 45% and 50% in a fixed
+100,000-row test sample. On the 88,676 runtime-eligible, input-matched rows,
+precision was 92.06%, recall 82.78% and F1 87.18% (50% F1: 87.09%).
+This is exact recovery of one punctuation-proxy label, not full recursive or
+human-rated reading quality. The sample has now been used for threshold selection.
+Reproducible results are in `training/artifacts/confidence-30to50-step5-20261009/`.
+Training excluded one-character target sides;
 this promotion adds no inference-time prohibition on one-character cuts.
 Longer inputs still use the existing 256-token windows with convolution halos.
 
@@ -121,7 +128,7 @@ by this model promotion. See [INPUT_ALIGNMENT.md](INPUT_ALIGNMENT.md).
    numeric-attachment, quantity-phrase and quote/bracket attachment rules have been removed.
 5. As of 2026-10-08, run fresh inference for each fragment above 12 visual units,
    using only that fragment's tokens. Compute softmax over its newly scored internal
-   gaps and allow probabilities strictly above 50%.
+   gaps and allow probabilities strictly above 45% (threshold updated 2026-10-09).
    Rank eligible gaps by raw model logit, breaking ties by the earlier gap.
    Recurse into both children, rerunning the CNN only if they exceed 12 visual units;
    removing protected gaps never renormalizes probabilities. An uncertain

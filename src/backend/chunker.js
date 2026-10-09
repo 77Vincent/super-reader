@@ -17,7 +17,7 @@
   const TRAILING_CLOSER = /[”’」』）》】〉〕〗〙〛"'）)\]]/u;
   const NUMERIC_EXPRESSION = /\p{Number}+(?:[.,]\p{Number}+)?(?:\s+\p{Number}+[\/／]\p{Number}+|[\/／]\p{Number}+)?/gu;
   const SPLIT_LENGTH_THRESHOLD = 12;
-  const MIN_SPLIT_CONFIDENCE = 0.5;
+  const MIN_SPLIT_CONFIDENCE = 0.45;
   const MAX_MODEL_WINDOW_TOKENS = 256;
   const MODEL_INFO = modelBackend?.getModelInfo?.();
   const USES_CONTEXT = MODEL_INFO?.inputRepresentation === "unicode-context-v1";
@@ -403,7 +403,7 @@
    * positions inside each corresponding input; no DOM or task scheduling here.
    * @param {string[]} texts
    * @param {{minConfidence?: number, scoringStrategy?: "recursive-softmax" | "fixed" | "recursive-model"}} options
-   * Defaults to 50% and fresh inference on each over-threshold fragment.
+   * Defaults to 45% and fresh inference on each over-threshold fragment.
    * 0 disables abstention. Cached-score strategies are offline comparison options.
    * @returns {number[][]}
    */

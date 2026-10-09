@@ -727,7 +727,7 @@ test("the inference service sends a whole viewport once and validates the data i
   assert.deepEqual(urls, ["./inference-worker.js"]);
 });
 
-test("the actual worker defaults to fresh recursive inference at 50% on the demo text nodes", () => {
+test("the actual worker defaults to fresh recursive inference at 45% on the demo text nodes", () => {
   let response;
   const inputs = [];
   const context = vm.createContext({ atob, btoa, console, Intl });

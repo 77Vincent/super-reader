@@ -921,9 +921,9 @@ leave at most 12 visual units intact and send longer clauses with their
 remaining Unicode context to the model. Numeric separators remain within numbers;
 original text and UTF-16 offsets are preserved. Model cuts require immediately adjacent
 Han characters on both sides in the original text, plus browser word protection.
-The default [recursive softmax](RECURSIVE_SOFTMAX.md) caches original window logits
-and recomputes softmax over each child's internal gaps. Only probabilities strictly
-above 50% are eligible, with raw-logit ranking. An uncertain longer clause stays intact.
+The default [recursive model inference](BUNDLED_MODEL.md#backend-preprocessing) scores
+each longer child afresh and computes softmax over its internal gaps. Only probabilities
+strictly above 45% are eligible, with raw-logit ranking. An uncertain longer clause stays intact.
 The [confidence audit](CONFIDENCE_THRESHOLD.md) measures original-input predictions
 for the previous, pre-web model; its precision figures do not describe this new
 checkpoint or establish the accuracy of recursive child decisions.
@@ -979,7 +979,9 @@ reports have been removed. That result does not describe the current default.
 A separate [recursive >90% experiment](RECURSIVE_CONFIDENCE_EXPERIMENT.md)
 compares fresh child inference with fixed original probabilities. Its
 `scoringStrategy: "recursive-model"` became the default on 2026-10-08, with the
-existing 50% gate: children above 12 visual units receive fresh CNN inference.
+then-existing 50% gate: children above 12 visual units receive fresh CNN inference.
+On 2026-10-09 the default gate changed to 45%, the highest first-round F1 among the
+five tested thresholds from 30% to 50%; this does not establish full recursive quality.
 Cached logits and fixed original probabilities remain explicit offline controls.
 See [current backend behavior](BUNDLED_MODEL.md#backend-preprocessing).
 Reproduce the historical strategy comparison with
