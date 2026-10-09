@@ -16,9 +16,8 @@
   const CLAUSE_END_CHARACTER = /[，,、。.！？!?；;：:\n…（）()《》〈〉]/u;
   const TRAILING_CLOSER = /[”’」』）》】〉〕〗〙〛"'）)\]]/u;
   const NUMERIC_EXPRESSION = /\p{Number}+(?:[.,]\p{Number}+)?(?:\s+\p{Number}+[\/／]\p{Number}+|[\/／]\p{Number}+)?/gu;
-  const MIN_SPLIT_VISUAL_LENGTH = 12;
-  const SHORT_SPLIT_CONFIDENCE = 0.8;
-  const MIN_SPLIT_CONFIDENCE = 0.45;
+  const MIN_SPLIT_VISUAL_LENGTH = 13;
+  const MIN_SPLIT_CONFIDENCE = 0.5;
   const MAX_MODEL_WINDOW_TOKENS = 256;
   const MODEL_INFO = modelBackend?.getModelInfo?.();
   const USES_CONTEXT = MODEL_INFO?.inputRepresentation === "unicode-context-v1";
@@ -339,11 +338,9 @@
         scores = initial.scores.slice(start, end - 1);
         confidence = gapProbabilities(scores);
       }
-      // Re-evaluate the length tier for every child. An explicit threshold is
-      // a uniform override for offline comparisons, including zero abstention.
-      const requiredConfidence = minConfidence ?? (
-        length === MIN_SPLIT_VISUAL_LENGTH ? SHORT_SPLIT_CONFIDENCE : MIN_SPLIT_CONFIDENCE
-      );
+      // Use the same confidence gate for every eligible fragment.
+      // An explicit threshold supports offline comparisons, including zero abstention.
+      const requiredConfidence = minConfidence ?? MIN_SPLIT_CONFIDENCE;
       const selected = selectBestBoundary(
         scores,
         (index) => (requiredConfidence === 0 || confidence[index] > requiredConfidence) &&
@@ -410,9 +407,9 @@
    * positions inside each corresponding input; no DOM or task scheduling here.
    * @param {string[]} texts
    * @param {{minConfidence?: number, scoringStrategy?: "recursive-softmax" | "fixed" | "recursive-model"}} options
-   * Defaults to >80% at 12 visual units and >45% at 13 or more; shorter
+   * Defaults to >50% at 13 or more visual units; shorter
    * fragments skip inference. Each eligible child receives fresh inference.
-   * An explicit minConfidence overrides both tiers; 0 disables abstention.
+   * An explicit minConfidence overrides the default; 0 disables abstention.
    * Cached-score strategies are offline comparison options.
    * @returns {number[][]}
    */
@@ -431,7 +428,6 @@
 
   return Object.freeze({
     MIN_SPLIT_CONFIDENCE,
-    SHORT_SPLIT_CONFIDENCE,
     gapProbabilities,
     process,
     boundaryFallsInsideWord,

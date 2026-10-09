@@ -917,13 +917,13 @@ its training configuration, retained-split metrics and export provenance.
 The backend first splits clauses on original Chinese proxy punctuation and
 physical line boundaries; enumeration commas remain context. All clauses
 follow the same rule:
-leave fewer than 12 visual units intact and send eligible clauses with their
+leave fewer than 13 visual units intact and send eligible clauses with their
 remaining Unicode context to the model. Numeric separators remain within numbers;
 original text and UTF-16 offsets are preserved. Model cuts require immediately adjacent
 Han characters on both sides in the original text, plus browser word protection.
 The default [recursive model inference](BUNDLED_MODEL.md#backend-preprocessing) scores
-each eligible child afresh and computes softmax over its internal gaps. At exactly 12
-visual units, require probability strictly above 80%; at 13 or more, strictly above 45%.
+each eligible child afresh and computes softmax over its internal gaps.
+Every fragment of at least 13 visual units requires probability strictly above 50%.
 Rank eligible positions by raw logit. An uncertain clause stays intact.
 The [confidence audit](CONFIDENCE_THRESHOLD.md) measures original-input predictions
 for the previous, pre-web model; its precision figures do not describe this new
@@ -981,10 +981,9 @@ A separate [recursive >90% experiment](RECURSIVE_CONFIDENCE_EXPERIMENT.md)
 compares fresh child inference with fixed original probabilities. Its
 `scoringStrategy: "recursive-model"` became the default on 2026-10-08, with the
 then-existing 50% gate: children above 12 visual units receive fresh CNN inference.
-On 2026-10-09 the default gate changed to 45%, the highest first-round F1 among the
-five tested thresholds from 30% to 50%; this does not establish full recursive quality.
-The subsequently added 12-unit tier requires >80%, while 13 or more units retain
->45%. This short-fragment setting is a product choice, not a result of that sweep.
+On 2026-10-09 a 30–50% sweep found the highest first-round F1 at 45%; this does not
+establish full recursive quality. After comparing recursive examples, the current
+default was restored to at least 13 visual units and >50%, favoring fewer cuts.
 Cached logits and fixed original probabilities remain explicit offline controls.
 See [current backend behavior](BUNDLED_MODEL.md#backend-preprocessing).
 Reproduce the historical strategy comparison with

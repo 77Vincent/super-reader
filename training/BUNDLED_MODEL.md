@@ -117,8 +117,8 @@ by this model promotion. See [INPUT_ALIGNMENT.md](INPUT_ALIGNMENT.md).
    commas between numbers remain numeric context, including signed numbers,
    decimals, exponents and surrounding whitespace. Closing quotes/brackets stay
    on their original side of the proxy, matching training fragment extraction.
-3. Leave clauses of fewer than 12 visual units intact. A Han character, numeric
-   expression or Latin word contributes one unit; this is not a 12-token cap.
+3. Leave clauses of fewer than 13 visual units intact. A Han character, numeric
+   expression or Latin word contributes one unit; this is not a 13-token cap.
 4. Send the remaining longer clauses to the model with their context characters.
    Normalize input and within-line whitespace after excluding the raw delimiters,
    and preserve numeric separators. A compatibility glyph that normalizes into a
@@ -126,20 +126,18 @@ by this model promotion. See [INPUT_ALIGNMENT.md](INPUT_ALIGNMENT.md).
    in the original text, as well as browser word protection. This includes
    supplementary Han and treats spaces as non-Han. Dedicated number-interior,
    numeric-attachment, quantity-phrase and quote/bracket attachment rules have been removed.
-5. Run fresh inference for each fragment of at least 12 visual units,
+5. Run fresh inference for each fragment of at least 13 visual units,
    using only that fragment's tokens. Compute softmax over its newly scored internal
-   gaps. As of 2026-10-09, require probabilities strictly above **80% for exactly
-   12 visual units**, and strictly above **45% for 13 or more**. Recompute the
-   length tier for every child; an explicit `minConfidence` uniformly overrides both tiers.
+   gaps. Require probabilities strictly above **50%** for every eligible fragment;
+   an explicit `minConfidence` overrides this default without bypassing the length gate.
    Rank eligible gaps by raw model logit, breaking ties by the earlier gap.
-   Recurse into both children, rerunning the CNN only if they have at least 12 visual units;
+   Recurse into both children, rerunning the CNN only if they have at least 13 visual units;
    removing protected gaps never renormalizes probabilities. An uncertain
    fragment stays intact regardless of length. The threshold measures relative model
    confidence, not a calibrated probability that a cut is appropriate.
 
-The 12-unit, >80% tier is a product choice following qualitative example comparison;
-the earlier 30–50% sweep only selected the >45% tier for inputs above 12 units.
-That sweep does not establish optimality of the short-fragment threshold.
+On 2026-10-09, the 13-unit / >50% rule was restored after comparing recursive examples.
+This is a product choice favoring fewer cuts, not a claim of optimal accuracy or F1.
 
 Rendered text retains its original punctuation, spacing and character widths.
 Only model-selected cuts inside a clause receive visual dividers.

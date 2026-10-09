@@ -48,7 +48,7 @@ test("context tokenization normalizes input while retaining original UTF-16 offs
   assert.equal(tokens.filter((t) => t.index === text.indexOf("ﬃ")).length, 3);
 });
 
-test("every training proxy pre-splits clauses and 12-unit clauses reach the model", () => {
+test("every training proxy pre-splits clauses and only 13-unit clauses reach the model", () => {
   const { proxy_punctuation } = require("../training/text-policy.json");
   const twelve = "甲乙丙丁戊己庚辛壬癸子丑";
   const thirteen = twelve + "寅";
@@ -62,7 +62,7 @@ test("every training proxy pre-splits clauses and 12-unit clauses reach the mode
     assert.deepEqual(Array.from(chunker.splitClauses(text)),
       [`${twelve}${punctuation}`, `${thirteen}${punctuation}`, "短句"], punctuation);
     const chunks = Array.from(chunker.chunkText(text, { segmenter: null }));
-    assert.deepEqual(inputs, [twelve, thirteen], punctuation);
+    assert.deepEqual(inputs, [thirteen], punctuation);
     assert.equal(chunks.join(""), text);
   }
 });
@@ -300,7 +300,7 @@ test("fragment length limits still count numbers and preserve supplementary Han"
   const chunker = withModel((tokens) => Array(tokens.length - 1).fill(0));
   for (const [text, expected] of [
     ["1甲乙丙丁戊己庚辛壬癸子丑", ["1甲", "乙丙丁戊己庚辛壬癸子丑"]],
-    ["甲乙丙丁戊己庚辛壬癸子丑 1 2", ["甲", "乙", "丙", "丁戊己庚辛壬癸子丑 1 2"]],
+    ["甲乙丙丁戊己庚辛壬癸子丑 1 2", ["甲", "乙", "丙丁戊己庚辛壬癸子丑 1 2"]],
     ["1/4 English 𠀀甲乙丙丁戊己庚辛壬癸子", ["1/4 English 𠀀", "甲乙丙丁戊己庚辛壬癸子"]],
   ]) {
     const chunks = Array.from(chunker.chunkText(text, { segmenter: null, minConfidence: 0 }));
@@ -376,9 +376,9 @@ test("long clauses with strongly favored edge scores split without overflowing t
   });
   const chunks = chunker.chunkText(text, { segmenter: null, minConfidence: 0 });
   assert.equal(chunks.join(""), text);
-  assert.equal(chunks.length, text.length - 10);
-  assert.equal(chunks.at(-1), "甲".repeat(11));
-  assert.ok(calls > text.length - 11, "long recursive fragments are rescored in bounded windows");
+  assert.equal(chunks.length, text.length - 11);
+  assert.equal(chunks.at(-1), "甲".repeat(12));
+  assert.ok(calls > text.length - 12, "long recursive fragments are rescored in bounded windows");
 });
 
 test("rejects candidate boundaries inside a segmented word", () => {
@@ -432,23 +432,23 @@ test("counts numeric expressions toward the threshold without splitting a fracti
   });
 });
 
-test("only asks the model to split clauses of at least twelve visual units", () => {
+test("only asks the model to split clauses of at least thirteen visual units", () => {
   const inputs = [];
   const chunker = withModel((tokens) => {
     inputs.push(tokens.join(""));
     return Array(tokens.length - 1).fill(0);
   });
   const text = "甲乙丙丁戊己庚辛壬癸子丑寅";
-  for (const length of [8, 9, 11]) {
+  for (const length of [8, 9, 11, 12]) {
     const short = text.slice(0, length);
     assert.deepEqual(Array.from(chunker.chunkText(short, { segmenter: null, minConfidence: 0 })), [short]);
   }
   assert.deepEqual(inputs, []);
   assert.ok(chunker.chunkText(text, { segmenter: null, minConfidence: 0 }).length > 1);
-  assert.deepEqual(inputs, [text, text.slice(1)]);
+  assert.deepEqual(inputs, [text]);
 });
 
-test("punctuation-delimited clauses below twelve characters stay intact", () => {
+test("punctuation-delimited clauses below thirteen characters stay intact", () => {
   assert.deepEqual(chunkText("甲乙丙丁戊己庚辛壬癸子，天地玄黄宇宙洪荒日月盈。"), [
     "甲乙丙丁戊己庚辛壬癸子，",
     "天地玄黄宇宙洪荒日月盈。",
@@ -471,7 +471,7 @@ test("uses model scores and word protection for the reading example", () => {
   assert.ok(chunks.every((chunk) => visualLength(chunk) <= 12));
 });
 
-test("recursive splitting respects the twelve-unit threshold across clauses", () => {
+test("recursive splitting stops at twelve units across clauses", () => {
   const text = "在左侧输入一段需要重新组织的中文，看看它如何被重新组织成更清晰的短语。";
   const chunker = withModel((tokens) => Array(tokens.length - 1).fill(0));
   const clauses = chunker.chunkTextByClause(text, { segmenter: null, minConfidence: 0 });
@@ -501,8 +501,7 @@ test("renders the reported Euler-method example with model scores", () => {
   assert.deepEqual(chunkText(text, { minConfidence: 0 }), [
     "欧拉法",
     "是在积分无法直接计算时，",
-    '用"无数个小矩形累加"来',
-    '近似',
+    '用"无数个小矩形累加"来近似',
     '积分，',
     "因此",
     "它被称为一种数值",
