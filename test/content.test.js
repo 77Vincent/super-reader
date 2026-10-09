@@ -644,6 +644,118 @@ test("removing the anchor discards its untouched derived text and markers", asyn
   page.click();
 });
 
+test("a page renderer removing generated siblings restores the unchanged source and pauses splitting", async () => {
+  const original = "另一方面，我们也确实存在未能充分满足光顾门店或使用电商服务的顾客期望的情况。";
+  const page = createPage(original);
+  const anchor = page.paragraph.childNodes[0];
+  page.infer = async (texts) => ({ offsetsByText: texts.map(() => [12, 27]) });
+  page.click();
+  await page.finish();
+  const removedNodes = page.paragraph.childNodes.slice(1);
+  removedNodes.forEach((node) => node.remove());
+  page.queueMutation({ type: "childList", target: page.paragraph, removedNodes, addedNodes: [] });
+  assert.equal(page.paragraph.textContent, original.slice(0, 12), "reproduce the missing translation tail");
+  page.deliver();
+  await page.settle();
+  assert.deepEqual(page.paragraph.childNodes, [anchor]);
+  assert.equal(anchor.nodeValue, original);
+  assert.equal(page.requests.length, 1, "do not immediately recreate the nodes the page rejected");
+  page.scroll();
+  await page.settle();
+  assert.equal(page.requests.length, 1, "viewport refresh must not start a renderer conflict loop");
+  page.infer = async (texts) => ({ offsetsByText: texts.map(() => []) });
+  page.edit(anchor, "网页随后更新的完整译文需要重新读取");
+  page.deliver();
+  await page.settle();
+  assert.deepEqual(page.requests[1], [anchor.nodeValue], "a later real page edit can be processed again");
+  page.click();
+});
+
+test("removing one unedited tail restores its group without changing neighboring source nodes", async () => {
+  const page = createPage();
+  const anchor = page.paragraph.childNodes[0];
+  const other = page.text("第二个原始节点应保持自己的分隔线");
+  page.infer = async (texts) => ({ offsetsByText: texts.map(() => [4, 8]) });
+  page.click();
+  await page.finish();
+  const [originalAnchor, firstDivider, middle, secondDivider, tail] = page.paragraph.childNodes;
+  assert.equal(originalAnchor, anchor);
+  const otherDivider = other.nextSibling;
+  middle.remove();
+  page.queueMutation({ type: "childList", target: page.paragraph, removedNodes: [middle], addedNodes: [] });
+  page.deliver();
+  await page.settle();
+  assert.equal(anchor.nodeValue, sampleText);
+  assert.equal(anchor.nextSibling, other);
+  assert.equal(other.nextSibling, otherDivider);
+  assert.ok([firstDivider, middle, secondDivider, tail].every((node) => !node.isConnected));
+  assert.equal(page.requests.length, 1);
+  page.click();
+  assert.deepEqual(page.paragraph.childNodes, [anchor, other]);
+});
+
+test("OFF restores removed generated tails when their page mutation is still queued", async () => {
+  const page = createPage();
+  const anchor = page.paragraph.childNodes[0];
+  page.click();
+  await page.finish();
+  const removedNodes = page.paragraph.childNodes.slice(1);
+  removedNodes.forEach((node) => node.remove());
+  page.queueMutation({ type: "childList", target: page.paragraph, removedNodes, addedNodes: [] });
+  page.click();
+  assert.deepEqual(page.paragraph.childNodes, [anchor]);
+  assert.equal(anchor.nodeValue, sampleText);
+});
+
+test("removed tails never resurrect text after an anchor replacement, clearing, or same-value write", async () => {
+  for (const updated of ["页面的新内容", "", sampleText.slice(0, 4)]) {
+    const page = createPage();
+    const anchor = page.paragraph.childNodes[0];
+    page.click();
+    await page.finish();
+    const removedNodes = page.paragraph.childNodes.slice(1);
+    removedNodes.forEach((node) => node.remove());
+    page.queueMutation({ type: "childList", target: page.paragraph, removedNodes, addedNodes: [] });
+    page.edit(anchor, updated);
+    page.click();
+    assert.deepEqual(page.paragraph.childNodes, [anchor]);
+    assert.equal(anchor.nodeValue, updated);
+  }
+});
+
+test("a replacement node in the removed tail's place is preserved without restoring duplicate content", async () => {
+  const page = createPage();
+  page.click();
+  await page.finish();
+  const [anchor, , tail] = page.paragraph.childNodes;
+  tail.remove();
+  const replacement = page.text(sampleText.slice(4));
+  page.queueMutation({ type: "childList", target: page.paragraph, removedNodes: [tail], addedNodes: [replacement] });
+  page.click();
+  assert.deepEqual(page.paragraph.childNodes, [anchor, replacement]);
+  assert.equal(page.paragraph.textContent, sampleText);
+});
+
+test("edited or adopted tails are not resurrected after the page later removes them", async () => {
+  for (const adoption of ["edit", "move"]) {
+    const page = createPage();
+    page.click();
+    await page.finish();
+    const [anchor, , tail] = page.paragraph.childNodes;
+    if (adoption === "edit") page.edit(tail, tail.nodeValue);
+    else {
+      tail.remove();
+      page.paragraph.append(tail);
+      page.queueMutation({ type: "childList", target: page.paragraph, removedNodes: [tail], addedNodes: [tail] });
+    }
+    tail.remove();
+    page.queueMutation({ type: "childList", target: page.paragraph, removedNodes: [tail], addedNodes: [] });
+    page.click();
+    assert.deepEqual(page.paragraph.childNodes, [anchor]);
+    assert.equal(anchor.nodeValue, sampleText.slice(0, 4));
+  }
+});
+
 test("unwrite preserves adjacent original Text objects, empty nodes, and nested markup", async () => {
   const page = createPage();
   const anchor = page.paragraph.childNodes[0];

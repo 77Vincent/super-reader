@@ -28,6 +28,7 @@
   globalThis.SuperReader.addMarkers = function addMarkers(source, offsets, styleUrl) {
     // Offsets follow the processing contract; only the live DOM can become stale.
     if (!sourceIsCurrent(source)) return [];
+    const nextSibling = source.node.nextSibling;
     const written = [source.node];
     const sequence = [source.node];
     const sourceMarkers = [];
@@ -46,8 +47,9 @@
     }
     if (sourceMarkers.length) markedSources.add({
       parent: source.parent,
+      nextSibling,
       markers: sourceMarkers,
-      sequence: sequence.map((node) => ({ node, text: node.nodeValue, dirty: false, moved: false })),
+      sequence: sequence.map((node) => ({ node, text: node.nodeValue, dirty: false, moved: false, reinserted: false })),
     });
     return written;
   };
@@ -64,12 +66,14 @@
     if (!records.length) return false;
     const edited = new Set(records.filter((record) => record.type === "characterData").map((record) => record.target));
     const removed = new Set(records.flatMap((record) => Array.from(record.removedNodes || [])));
+    const added = new Set(records.flatMap((record) => Array.from(record.addedNodes || [])));
     let changed = false;
     for (const source of markedSources) {
       for (const entry of source.sequence) {
         if (entry.node.nodeType !== 3) continue;
         if (edited.has(entry.node)) entry.dirty = true;
         if (removed.has(entry.node)) entry.moved = true;
+        if (added.has(entry.node)) entry.reinserted = true;
       }
       if (!sourceIsIntact(source)) changed = true;
     }
@@ -109,6 +113,29 @@
     discard(source, texts);
   }
 
+  // Some page renderers retain their original Text object and prune injected
+  // siblings. Recover only our untouched, detached fragments, without merging
+  // across replacement nodes or undoing a page edit/move of the original text.
+  function canRestoreRemovedFragments(source, texts) {
+    const [anchor, ...fragments] = texts;
+    if (anchor.dirty || anchor.moved || anchor.node.parentNode !== source.parent ||
+        anchor.node.nodeValue !== anchor.text) return false;
+    if (!fragments.some(({ node }) => node.parentNode === null)) return false;
+    if (!fragments.every(({ node, text, dirty, moved, reinserted }) => (
+      !dirty && !reinserted && node.nodeValue === text &&
+      (node.parentNode === null || (!moved && node.parentNode === source.parent))
+    ))) return false;
+
+    const remaining = texts.filter(({ node }) => node.parentNode === source.parent);
+    if (!textsAreTogether(source, remaining)) return false;
+    // A new sibling in the old group's place may already replace the removed
+    // text. Require the original end boundary to avoid restoring it twice.
+    const ownMarkers = new Set(source.markers);
+    let next = remaining[remaining.length - 1].node.nextSibling;
+    while (ownMarkers.has(next)) next = next.nextSibling;
+    return next === source.nextSibling;
+  }
+
   function releaseSource(source) {
     const texts = source.sequence.filter(({ node }) => node.nodeType === 3);
     const [anchor, ...fragments] = texts;
@@ -119,7 +146,11 @@
     const anchorDirty = anchor.dirty || anchor.node.nodeValue !== anchor.text;
     let preserved = [];
 
-    if (fragmentsUntouched && anchorInPlace && textsAreTogether(source, texts)) {
+    if (canRestoreRemovedFragments(source, texts)) {
+      unwrite(source, texts);
+      // Keep the restored source intact until the page changes it again.
+      if (anchor.node.isConnected) preserved = [anchor.node];
+    } else if (fragmentsUntouched && anchorInPlace && textsAreTogether(source, texts)) {
       // Contract: a page write to the original anchor replaces its whole source.
       if (anchorDirty) discard(source, texts);
       else unwrite(source, texts);
