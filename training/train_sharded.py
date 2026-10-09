@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import copy
 import gc
+import gzip
 import hashlib
 import json
 import math
@@ -101,6 +102,11 @@ def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def open_jsonl(path: Path):
+    """Read ordinary and independently compressed training shards identically."""
+    return gzip.open(path, "rt", encoding="utf-8") if path.suffix == ".gz" else path.open("r", encoding="utf-8")
+
+
 def weight_table(manifest: dict[str, Any], mode: str = "inverse-cell") -> list[list[float]]:
     cells = manifest["statistics"]["cells"]
     if mode == "none":
@@ -135,7 +141,7 @@ def combined_weight_mean(
     total = 0.0
     samples = 0
     for path in shards:
-        with path.open("r", encoding="utf-8") as handle:
+        with open_jsonl(path) as handle:
             for line in handle:
                 if not line.strip():
                     continue
@@ -161,7 +167,7 @@ def read_training_shard(
 ) -> list[dict[str, Any]]:
     unknown = vocabulary[UNKNOWN_TOKEN]
     records = []
-    with path.open("r", encoding="utf-8") as handle:
+    with open_jsonl(path) as handle:
         for line in handle:
             if not line.strip():
                 continue
@@ -195,7 +201,7 @@ def read_evaluation_records(
 ) -> list[dict[str, Any]]:
     unknown = vocabulary[UNKNOWN_TOKEN]
     records = []
-    with path.open("r", encoding="utf-8") as handle:
+    with open_jsonl(path) as handle:
         for line in handle:
             if not line.strip():
                 continue

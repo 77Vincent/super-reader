@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 from itertools import islice
 import json
@@ -23,7 +24,8 @@ def absolute(path):
 def read_row(path, index):
     if index < 0:
         raise ValueError('Row indices are zero-based and cannot be negative')
-    with absolute(path).open() as handle:
+    path = absolute(path)
+    with (gzip.open(path, 'rt', encoding='utf-8') if path.suffix == '.gz' else path.open()) as handle:
         line = next(islice(handle, index, index + 1), None)
     if line is None:
         raise IndexError(f'Row {index} does not exist in {path}')
@@ -44,7 +46,8 @@ def inspect_sample(manifest_path, shard_index, row_index, raw_dir=None):
     document_ref, pair_index, punctuation = read_row(provenance['path'], row_index)
     if document_ref < 0:
         raise ValueError('Document byte offset cannot be negative')
-    with absolute(provenance['documents_path']).open('rb') as handle:
+    documents_path = absolute(provenance['documents_path'])
+    with (gzip.open(documents_path, 'rb') if documents_path.suffix == '.gz' else documents_path.open('rb')) as handle:
         handle.seek(document_ref)
         origin = json.loads(handle.readline())
     if origin['byte_offset'] != document_ref:

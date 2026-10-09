@@ -1,6 +1,7 @@
 """Read-time filtering, passive source statistics, immutable data and fresh/resume runs."""
 import argparse
 import copy
+import gzip
 import json
 import os
 from pathlib import Path
@@ -21,6 +22,24 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class SampleSubsetTests(unittest.TestCase):
+    def test_compressed_shards_preserve_records_filters_and_weight_mean(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            _, plain, manifest, vocabulary = self.fixture(root)
+            packed = root / 'train.jsonl.gz'
+            with gzip.open(packed, 'wb') as handle:
+                handle.write(plain.read_bytes())
+            weights = [[0.5, 2.0]]
+            records, counters = [], []
+            for path in (plain, packed):
+                counts = empty_statistics()
+                records.append(read_training_shard(path, vocabulary, weights, manifest['domains'], 2, counts, 4))
+                counters.append(counts)
+            self.assertEqual(records[0], records[1])
+            self.assertEqual(counters[0], counters[1])
+            self.assertEqual(combined_weight_mean([plain], weights, 2, 4),
+                             combined_weight_mean([packed], weights, 2, 4))
+
     def fixture(self, directory):
         rows = [['甲乙', 0, 0, 0, 0], ['甲乙丙丁', 0, 0, 0, 0],
                 ['甲乙丙丁', 2, 1, 0, 1], ['甲乙丙丁', 1, 0, 0, 1],

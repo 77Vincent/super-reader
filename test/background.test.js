@@ -727,7 +727,7 @@ test("the inference service sends a whole viewport once and validates the data i
   assert.deepEqual(urls, ["./inference-worker.js"]);
 });
 
-test("the actual worker uses fresh recursive inference with the 13-unit and 50% gates", () => {
+test("the actual worker uses fresh recursive inference with the 13-unit and 45% gates", () => {
   let response;
   const inputs = [];
   const context = vm.createContext({ atob, btoa, console, Intl });

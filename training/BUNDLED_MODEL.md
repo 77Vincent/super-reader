@@ -128,7 +128,7 @@ by this model promotion. See [INPUT_ALIGNMENT.md](INPUT_ALIGNMENT.md).
    numeric-attachment, quantity-phrase and quote/bracket attachment rules have been removed.
 5. Run fresh inference for each fragment of at least 13 visual units,
    using only that fragment's tokens. Compute softmax over its newly scored internal
-   gaps. Require probabilities strictly above **50%** for every eligible fragment;
+   gaps. Require probabilities strictly above **45%** for every eligible fragment;
    an explicit `minConfidence` overrides this default without bypassing the length gate.
    Rank eligible gaps by raw model logit, breaking ties by the earlier gap.
    Recurse into both children, rerunning the CNN only if they have at least 13 visual units;
@@ -136,8 +136,9 @@ by this model promotion. See [INPUT_ALIGNMENT.md](INPUT_ALIGNMENT.md).
    fragment stays intact regardless of length. The threshold measures relative model
    confidence, not a calibrated probability that a cut is appropriate.
 
-On 2026-10-09, the 13-unit / >50% rule was restored after comparing recursive examples.
-This is a product choice favoring fewer cuts, not a claim of optimal accuracy or F1.
+The current default is at least 13 visual units and >45%, selected for the highest
+first-round F1 in the tested 30–50% sweep. This does not establish an optimum for
+complete recursive segmentation.
 
 Rendered text retains its original punctuation, spacing and character widths.
 Only model-selected cuts inside a clause receive visual dividers.

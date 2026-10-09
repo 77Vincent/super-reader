@@ -858,6 +858,52 @@ every four shards and at safe interrupt boundaries. `status.json`, `training.log
 Completion exports a separate candidate; the bundled backend stays on its
 currently released model until explicitly promoted.
 
+## Prepare all remaining web records (2026-10-09)
+
+`prepare_remaining_web_data.py` exhausts the unvisited suffix of each of the
+256 local Parquet files. The reconstructed cursors in
+`artifacts/web-source-usage-20261009/usage-and-cursors.json` identify 23,277,777
+previously visited records and **107,728,685 remaining records**. This is a
+document count, not a training-pair count. Cursor evidence is checked against
+historical log hashes, shuffled row-group order and Parquet row counts.
+
+```sh
+python3 training/prepare_remaining_web_data.py \
+  --output-dir training/data/processed/ultra-fineweb-remaining-v7-20261009
+# After interruption: keep the same output directory and frozen plan.
+python3 training/prepare_remaining_web_data.py \
+  --output-dir training/data/processed/ultra-fineweb-remaining-v7-20261009 --resume
+```
+
+This preparation deliberately freezes the original **unicode-context-v7 /
+surface-noise-v4** extraction code from the 350m preparation. It does not apply
+the newer v8 filters or a score threshold. All previously visited documents,
+including the entire last partially consumed document, are skipped. Old training
+shards are not included, and pairs are not deduplicated against old training data;
+previously unvisited documents can still repeat text seen before. New pairs are
+deduplicated internally and against the byte-identical inherited validation/test
+sets. The original 96/2/2 document partition and holdout document registries are
+also retained. Bloom false positives can discard additional pairs. No claim of
+near-duplicate removal is made.
+
+Each transaction scans up to 5,000 documents and atomically publishes gzip
+training, pair-provenance and document-provenance files together. Training readers
+support these shards directly. The full deduplication snapshot is saved at file
+boundaries and graceful stops; recovery replays committed shards after that
+snapshot and discards unfinished transactions. Defaults use a 4 GiB deduplication
+bitmap and a 64 MiB holdout bitmap, reserving 32 GiB of free disk plus room for
+the next bitmap snapshot. A low-space stop is resumable. `--session-documents N`
+allows a finite pilot followed by `--resume` without that option to exhaust the rest.
+
+`plan.json` freezes inputs, rules and code; `status.json` and `preparation.log`
+show progress. The final `manifest.json` is published only after all remaining
+records are processed. Preparation keeps original eligible pairs; later training
+still applies minimum two characters per side and maximum 256 total characters.
+No training or model promotion starts automatically. Trace v7 samples with the
+frozen `source/inspect_training_sample.py` and `PYTHONPATH=training/.deps` so that
+pair regeneration uses the same policy. Compressed document offsets are measured
+in uncompressed bytes and require decompression within one chunk.
+
 ## Web data continuation
 
 The current v7 expansion (2026-09-20) retains all **146,266,210** existing
@@ -923,7 +969,7 @@ original text and UTF-16 offsets are preserved. Model cuts require immediately a
 Han characters on both sides in the original text, plus browser word protection.
 The default [recursive model inference](BUNDLED_MODEL.md#backend-preprocessing) scores
 each eligible child afresh and computes softmax over its internal gaps.
-Every fragment of at least 13 visual units requires probability strictly above 50%.
+Every fragment of at least 13 visual units requires probability strictly above 45%.
 Rank eligible positions by raw logit. An uncertain clause stays intact.
 The [confidence audit](CONFIDENCE_THRESHOLD.md) measures original-input predictions
 for the previous, pre-web model; its precision figures do not describe this new
@@ -982,8 +1028,8 @@ compares fresh child inference with fixed original probabilities. Its
 `scoringStrategy: "recursive-model"` became the default on 2026-10-08, with the
 then-existing 50% gate: children above 12 visual units receive fresh CNN inference.
 On 2026-10-09 a 30–50% sweep found the highest first-round F1 at 45%; this does not
-establish full recursive quality. After comparing recursive examples, the current
-default was restored to at least 13 visual units and >50%, favoring fewer cuts.
+establish full recursive quality. The current default is at least 13 visual units
+and >45%, following that first-round F1 selection.
 Cached logits and fixed original probabilities remain explicit offline controls.
 See [current backend behavior](BUNDLED_MODEL.md#backend-preprocessing).
 Reproduce the historical strategy comparison with
