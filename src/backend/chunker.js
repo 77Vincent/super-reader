@@ -16,7 +16,8 @@
   const CLAUSE_END_CHARACTER = /[，,、。.！？!?；;：:\n…（）()《》〈〉]/u;
   const TRAILING_CLOSER = /[”’」』）》】〉〕〗〙〛"'）)\]]/u;
   const NUMERIC_EXPRESSION = /\p{Number}+(?:[.,]\p{Number}+)?(?:\s+\p{Number}+[\/／]\p{Number}+|[\/／]\p{Number}+)?/gu;
-  const SPLIT_LENGTH_THRESHOLD = 12;
+  const MIN_SPLIT_VISUAL_LENGTH = 12;
+  const SHORT_SPLIT_CONFIDENCE = 0.8;
   const MIN_SPLIT_CONFIDENCE = 0.45;
   const MAX_MODEL_WINDOW_TOKENS = 256;
   const MODEL_INFO = modelBackend?.getModelInfo?.();
@@ -276,7 +277,7 @@
 
   function chunkByModel(text, segmenter, minConfidence, scoringStrategy) {
     const tokens = USES_CONTEXT ? tokenizeContext(text) : tokenizeHanCharacters(text);
-    if (tokens.length < 2 || visualLength(text) <= SPLIT_LENGTH_THRESHOLD) return [text];
+    if (tokens.length < 2 || visualLength(text) < MIN_SPLIT_VISUAL_LENGTH) return [text];
     if (!modelBackend || typeof modelBackend.scoreTokens !== "function") {
       throw new Error("Super Reader model backend must load before the chunker");
     }
@@ -316,9 +317,10 @@
     const pendingRanges = [{ start: 0, end: tokens.length }];
     while (pendingRanges.length > 0) {
       const { start, end } = pendingRanges.pop();
+      const length = visualOffsets[end] - visualOffsets[start];
       if (
         end - start < 2 ||
-        visualOffsets[end] - visualOffsets[start] <= SPLIT_LENGTH_THRESHOLD
+        length < MIN_SPLIT_VISUAL_LENGTH
       ) {
         ranges.push({ start, end });
         continue;
@@ -337,9 +339,14 @@
         scores = initial.scores.slice(start, end - 1);
         confidence = gapProbabilities(scores);
       }
+      // Re-evaluate the length tier for every child. An explicit threshold is
+      // a uniform override for offline comparisons, including zero abstention.
+      const requiredConfidence = minConfidence ?? (
+        length === MIN_SPLIT_VISUAL_LENGTH ? SHORT_SPLIT_CONFIDENCE : MIN_SPLIT_CONFIDENCE
+      );
       const selected = selectBestBoundary(
         scores,
-        (index) => (minConfidence === 0 || confidence[index] > minConfidence) &&
+        (index) => (requiredConfidence === 0 || confidence[index] > requiredConfidence) &&
           tokens[indexOffset + index + 1].index > tokens[indexOffset + index].index &&
           hanBoundaryOffsets.has(tokens[indexOffset + index + 1].index) &&
           !protectedBoundaryOffsets.has(tokens[indexOffset + index + 1].index),
@@ -366,9 +373,9 @@
   }
 
   function chunkTextByClause(text, options = {}) {
-    const minConfidence = options.minConfidence ?? MIN_SPLIT_CONFIDENCE;
+    const minConfidence = options.minConfidence;
     const scoringStrategy = options.scoringStrategy ?? "recursive-model";
-    if (!Number.isFinite(minConfidence) || minConfidence < 0 || minConfidence > 1) {
+    if (minConfidence != null && (!Number.isFinite(minConfidence) || minConfidence < 0 || minConfidence > 1)) {
       throw new RangeError("Super Reader minConfidence must be between 0 and 1");
     }
     if (!["recursive-softmax", "fixed", "recursive-model"].includes(scoringStrategy)) {
@@ -403,8 +410,10 @@
    * positions inside each corresponding input; no DOM or task scheduling here.
    * @param {string[]} texts
    * @param {{minConfidence?: number, scoringStrategy?: "recursive-softmax" | "fixed" | "recursive-model"}} options
-   * Defaults to 45% and fresh inference on each over-threshold fragment.
-   * 0 disables abstention. Cached-score strategies are offline comparison options.
+   * Defaults to >80% at 12 visual units and >45% at 13 or more; shorter
+   * fragments skip inference. Each eligible child receives fresh inference.
+   * An explicit minConfidence overrides both tiers; 0 disables abstention.
+   * Cached-score strategies are offline comparison options.
    * @returns {number[][]}
    */
   function process(texts, options = {}) {
@@ -422,6 +431,7 @@
 
   return Object.freeze({
     MIN_SPLIT_CONFIDENCE,
+    SHORT_SPLIT_CONFIDENCE,
     gapProbabilities,
     process,
     boundaryFallsInsideWord,

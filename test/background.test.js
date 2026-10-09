@@ -727,7 +727,7 @@ test("the inference service sends a whole viewport once and validates the data i
   assert.deepEqual(urls, ["./inference-worker.js"]);
 });
 
-test("the actual worker defaults to fresh recursive inference at 45% on the demo text nodes", () => {
+test("the actual worker uses fresh recursive inference with the two length tiers", () => {
   let response;
   const inputs = [];
   const context = vm.createContext({ atob, btoa, console, Intl });
@@ -761,12 +761,13 @@ test("the actual worker defaults to fresh recursive inference at 45% on the demo
     "过长的的句子会破坏阅读体验",
     "请感受本文里断句的出现是否让你的阅读更轻松",
     "在长句中找到符合人类习惯的断句点",
+    "找到符合人类习惯的断句点",
     "把长句切成更短的语意块提升阅读效率",
     "即便是完全符合语法的通顺的但没有任何标点断句的句子模型依然能够找到恰当的切分点",
     "即便是完全符合语法的通顺的",
     "但没有任何标点断句的句子模型依然能够找到恰当的切分点",
   ], "the worker passes long child fragments back into the CNN");
-  assert.equal(inputs.reduce((n, tokens) => n + tokens.length, 0), 174);
+  assert.equal(inputs.reduce((n, tokens) => n + tokens.length, 0), 186);
 });
 
 test("the actual worker returns ordered model results for a whole viewport including long strings", () => {

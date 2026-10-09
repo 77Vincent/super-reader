@@ -5,7 +5,7 @@
 本次评估使用网页语料加入前的 16 层、192 通道、3,496,329 参数 epoch 1 best_state。
 2026-09-16 后端已更新为网页混合训练模型；本文保留历史评估，指标不代表新权重。
 
-当前后端已采用 [45% 门槛、子片段重新推理](BUNDLED_MODEL.md#backend-preprocessing)。以下指标与“原始子句
+当前后端已采用 [12 单位 >80%、13 单位及以上 >45%，子片段重新推理](BUNDLED_MODEL.md#backend-preprocessing)。以下指标与“原始子句
 最多一刀”的结论针对原始输入的单次预测，不代表递归后续切点的准确率。
 
 ## 本次评估的决策定义
@@ -20,9 +20,9 @@
 模型训练目标是每条输入的一个断点；概率之和为 1，因此 90% 门槛下，每个原始子句
 最多出现一个模型切分点。标点预分出的不同子句分别处理。
 
-运行默认值在 `src/backend/chunker.js` 的 `MIN_SPLIT_CONFIDENCE`。
+运行默认值在 `src/backend/chunker.js` 的 `SHORT_SPLIT_CONFIDENCE` 和 `MIN_SPLIT_CONFIDENCE`。
 `chunkText`、`chunkTextByClause`、`buildVisualChunks` 和 `process` 均可传入
-`{ minConfidence: 0 }` 关闭门槛；参数必须是 0 到 1 的有限数值。
+`{ minConfidence: 0 }` 关闭门槛；显式数值统一覆盖两档，必须是 0 到 1 的有限数值。
 复现本报告的后端策略使用 `{ minConfidence: 0.9, scoringStrategy: "fixed" }`。
 
 后续新增的[递归 >90% 实验](RECURSIVE_CONFIDENCE_EXPERIMENT.md)可通过

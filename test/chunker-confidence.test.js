@@ -38,12 +38,74 @@ test("default 45% gate leaves uncertain long clauses intact and zero disables ab
   assert.equal(calls, 1, "long input still receives a score");
   const baseline = Array.from(chunker.chunkText(text, { segmenter: null, minConfidence: 0 }));
   assert.ok(baseline.length > 1);
-  assert.ok(baseline.every((part) => chunker.visualLength(part) <= 12));
+  assert.ok(baseline.every((part) => chunker.visualLength(part) < 12));
   assert.equal(baseline.join(""), text);
   assert.equal(calls, baseline.length, "each split runs inference after the initial abstention check");
   const beforeShort = calls;
-  chunker.chunkText(text.slice(0, 12));
+  chunker.chunkText(text.slice(0, 11));
   assert.equal(calls, beforeShort, "short clauses skip inference regardless of confidence");
+});
+
+test("default length tiers skip 11, require strictly above 80% at 12 and above 45% at 13", () => {
+  for (const [length, weight, shouldSplit] of [
+    [11, 100, false], [12, 3, false], [12, 4, false], [12, 5, true],
+    [13, .8, false], [13, .9, true],
+  ]) {
+    let calls = 0;
+    const chunker = withScores((tokens) => {
+      calls++;
+      if (length === 13) return tokens.slice(1).map((_, i) => (
+        i === 5 ? Math.log(weight) : -Math.log(tokens.length - 2)
+      ));
+      return tokens.slice(1).map((_, i) => i === 5 ? Math.log(weight) : i === 3 ? 0 : -1000);
+    });
+    const input = text.slice(0, length);
+    assert.deepEqual(Array.from(chunker.chunkText(input, { segmenter: null })),
+      shouldSplit ? [input.slice(0, 6), input.slice(6)] : [input], `${length} units, odds ${weight}`);
+    assert.equal(calls, length < 12 ? 0 : 1);
+  }
+});
+
+test("both 12-unit children use the 80% tier after fresh inference", () => {
+  const inputs = [];
+  const chunker = withScores((tokens) => {
+    inputs.push(tokens.join(""));
+    if (tokens.length === 24) return tokens.slice(1).map((_, i) => i === 11 ? 100 : 0);
+    const weight = tokens[0] === text[0] ? 3 : 5;
+    return tokens.slice(1).map((_, i) => i === 5 ? Math.log(weight) : i === 3 ? 0 : -1000);
+  });
+  assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter: null })),
+    [text.slice(0, 12), text.slice(12, 18), text.slice(18)]);
+  assert.deepEqual(inputs, [text, text.slice(0, 12), text.slice(12)]);
+});
+
+test("length tiers count visual units, preserving context and supplementary Han offsets", () => {
+  for (const extra of ["9 1/4", "English", "𠮷"]) {
+    const input = text.slice(0, 6) + extra + text.slice(6, 11);
+    const offset = input.indexOf(text[8]);
+    const target = realChunker.tokenizeContext(input).findIndex((token) => token.index === offset) - 1;
+    for (const weight of [3, 5]) {
+      const chunker = withScores((tokens) => tokens.slice(1).map((_, i) => (
+        i === target ? Math.log(weight) : i === 1 ? 0 : -1000
+      )));
+      assert.equal(chunker.visualLength(input), 12);
+      assert.deepEqual(Array.from(chunker.chunkText(input, { segmenter: null })),
+        weight === 5 ? [input.slice(0, offset), input.slice(offset)] : [input]);
+    }
+  }
+});
+
+test("an explicit confidence overrides both tiers and word protection still applies", () => {
+  const input = text.slice(0, 12);
+  const chunker = withScores((tokens) => tokens.slice(1).map((_, i) => i === 5 ? Math.log(3) : i === 3 ? 0 : -1000));
+  assert.deepEqual(Array.from(chunker.chunkText(input, { segmenter: null })), [input]);
+  for (const minConfidence of [.7, 0]) {
+    assert.deepEqual(Array.from(chunker.chunkText(input, { segmenter: null, minConfidence })),
+      [input.slice(0, 6), input.slice(6)]);
+  }
+  const strong = withScores((tokens) => tokens.slice(1).map((_, i) => i === 5 ? 100 : 0));
+  const segmenter = { segment: () => [{ segment: input.slice(4, 8), index: 4, isWordLike: true }] };
+  assert.deepEqual(Array.from(strong.chunkText(input, { segmenter })), [input]);
 });
 
 test("threshold is strict and configurable and does not use a per-gap sigmoid", () => {
@@ -106,7 +168,7 @@ test("a confident edge gap remains eligible regardless of its position", () => {
   const chunker = withScores((tokens) => tokens.slice(1).map((_, i) => i === 0 ? Math.log(10) : i === 11 ? 0 : -1000));
   // Raw confidence is 10/11 at the edge and is used directly for acceptance.
   assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter: null })),
-    [...text.slice(0, 12), text.slice(12)]);
+    [...text.slice(0, 13), text.slice(13)]);
 });
 
 test("confidence cannot create a fragment with no visual content", () => {
@@ -225,10 +287,10 @@ test("default recursion runs fresh inference and can accept a different second b
   const inputs = [];
   const chunker = withScores((tokens) => {
     inputs.push(tokens.join(""));
-    return tokens.slice(1).map((_, i) => i === (tokens.length === 24 ? 15 : 3) ? 100 : 0);
+    return tokens.slice(1).map((_, i) => i === (tokens.length === 24 ? 15 : 4) ? 100 : 0);
   });
   assert.deepEqual(Array.from(chunker.chunkText(text, { segmenter: null })),
-    [text.slice(0, 4), text.slice(4, 16), text.slice(16)]);
+    [text.slice(0, 5), text.slice(5, 16), text.slice(16)]);
   assert.deepEqual(inputs, [text, text.slice(0, 16)]);
   for (const scoringStrategy of ["unknown", true, 1]) {
     assert.throws(() => chunker.chunkText(text, { scoringStrategy }), /scoringStrategy/u);

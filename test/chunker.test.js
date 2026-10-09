@@ -48,7 +48,7 @@ test("context tokenization normalizes input while retaining original UTF-16 offs
   assert.equal(tokens.filter((t) => t.index === text.indexOf("ﬃ")).length, 3);
 });
 
-test("every training proxy pre-splits clauses and only over-threshold clauses reach the model", () => {
+test("every training proxy pre-splits clauses and 12-unit clauses reach the model", () => {
   const { proxy_punctuation } = require("../training/text-policy.json");
   const twelve = "甲乙丙丁戊己庚辛壬癸子丑";
   const thirteen = twelve + "寅";
@@ -61,8 +61,8 @@ test("every training proxy pre-splits clauses and only over-threshold clauses re
     const text = `${twelve}${punctuation}${thirteen}${punctuation}短句`;
     assert.deepEqual(Array.from(chunker.splitClauses(text)),
       [`${twelve}${punctuation}`, `${thirteen}${punctuation}`, "短句"], punctuation);
-    const chunks = Array.from(chunker.chunkText(text, { segmenter: null, minConfidence: 0 }));
-    assert.deepEqual(inputs, [thirteen], punctuation);
+    const chunks = Array.from(chunker.chunkText(text, { segmenter: null }));
+    assert.deepEqual(inputs, [twelve, thirteen], punctuation);
     assert.equal(chunks.join(""), text);
   }
 });
@@ -300,7 +300,7 @@ test("fragment length limits still count numbers and preserve supplementary Han"
   const chunker = withModel((tokens) => Array(tokens.length - 1).fill(0));
   for (const [text, expected] of [
     ["1甲乙丙丁戊己庚辛壬癸子丑", ["1甲", "乙丙丁戊己庚辛壬癸子丑"]],
-    ["甲乙丙丁戊己庚辛壬癸子丑 1 2", ["甲", "乙", "丙丁戊己庚辛壬癸子丑 1 2"]],
+    ["甲乙丙丁戊己庚辛壬癸子丑 1 2", ["甲", "乙", "丙", "丁戊己庚辛壬癸子丑 1 2"]],
     ["1/4 English 𠀀甲乙丙丁戊己庚辛壬癸子", ["1/4 English 𠀀", "甲乙丙丁戊己庚辛壬癸子"]],
   ]) {
     const chunks = Array.from(chunker.chunkText(text, { segmenter: null, minConfidence: 0 }));
@@ -315,11 +315,11 @@ test("recursive scores are recomputed for every request and never reused across 
   const chunker = withModel((tokens) => {
     inputs.push(Array.from(tokens));
     const scores = Array(tokens.length - 1).fill(-100);
-    scores[tokens.length === text.length ? 15 : 3] = 10;
+    scores[tokens.length === text.length ? 15 : 4] = 10;
     return scores;
   });
   const chunks = chunker.chunkText(text, { segmenter: null, minConfidence: 0 });
-  assert.deepEqual(Array.from(chunks), [text.slice(0, 4), text.slice(4, 16), text.slice(16)]);
+  assert.deepEqual(Array.from(chunks), [text.slice(0, 5), text.slice(5, 16), text.slice(16)]);
   assert.deepEqual(inputs.map((tokens) => tokens.join("")), [text, text.slice(0, 16)]);
   // A new operation gets fresh scores; they are not retained across requests.
   chunker.chunkText(text, { segmenter: null, minConfidence: 0 });
@@ -332,12 +332,12 @@ test("short clauses skip inference and separate long clauses receive separate sc
     inputs.push(tokens.join(""));
     return Array(tokens.length - 1).fill(0);
   });
-  chunker.chunkText("甲乙丙丁戊己庚辛壬癸子丑，中文。English", { segmenter: null, minConfidence: 0 });
+  chunker.chunkText("甲乙丙丁戊己庚辛壬癸子，中文。English", { segmenter: null });
   assert.deepEqual(inputs, []);
   const first = "甲乙丙丁戊己庚辛壬癸子丑寅";
   const second = "天地玄黄宇宙洪荒日月盈昃辰";
   const text = `${first}，中文。${second}`;
-  assert.equal(chunker.chunkText(text, { segmenter: null, minConfidence: 0 }).join(""), text);
+  assert.equal(chunker.chunkText(text, { segmenter: null }).join(""), text);
   assert.deepEqual(inputs, [first, second]);
 });
 
@@ -351,7 +351,7 @@ test("fixed model windows score every gap once, without forcing cuts at window e
       return windowTokens.slice(0, -1).map((token) => {
         const index = token.codePointAt(0) - 0x20000;
         gaps.push(index);
-        return (index + 1) % 12 === 0 ? 10 : -1;
+        return (index + 1) % 11 === 0 ? 10 : -1;
       });
     });
     const scores = chunker.scoreTokenWindows(tokens);
@@ -362,8 +362,8 @@ test("fixed model windows score every gap once, without forcing cuts at window e
     assert.deepEqual(gaps, Array.from({ length: length - 1 }, (_, index) => index));
     const chunks = chunker.chunkText(tokens.join(""), { segmenter: null, minConfidence: 0 });
     assert.equal(chunks.join(""), tokens.join(""));
-    assert.equal(chunks.length, Math.ceil(length / 12));
-    assert.ok(chunks.slice(0, -1).every((chunk) => Array.from(chunk).length === 12));
+    assert.equal(chunks.length, Math.ceil(length / 11));
+    assert.ok(chunks.slice(0, -1).every((chunk) => Array.from(chunk).length === 11));
   }
 });
 
@@ -376,9 +376,9 @@ test("long clauses with strongly favored edge scores split without overflowing t
   });
   const chunks = chunker.chunkText(text, { segmenter: null, minConfidence: 0 });
   assert.equal(chunks.join(""), text);
-  assert.equal(chunks.length, text.length - 11);
-  assert.equal(chunks.at(-1), "甲".repeat(12));
-  assert.ok(calls > text.length - 12, "long recursive fragments are rescored in bounded windows");
+  assert.equal(chunks.length, text.length - 10);
+  assert.equal(chunks.at(-1), "甲".repeat(11));
+  assert.ok(calls > text.length - 11, "long recursive fragments are rescored in bounded windows");
 });
 
 test("rejects candidate boundaries inside a segmented word", () => {
@@ -432,26 +432,26 @@ test("counts numeric expressions toward the threshold without splitting a fracti
   });
 });
 
-test("only asks the model to split clauses longer than twelve visual units", () => {
+test("only asks the model to split clauses of at least twelve visual units", () => {
   const inputs = [];
   const chunker = withModel((tokens) => {
     inputs.push(tokens.join(""));
     return Array(tokens.length - 1).fill(0);
   });
   const text = "甲乙丙丁戊己庚辛壬癸子丑寅";
-  for (const length of [8, 9, 11, 12]) {
+  for (const length of [8, 9, 11]) {
     const short = text.slice(0, length);
     assert.deepEqual(Array.from(chunker.chunkText(short, { segmenter: null, minConfidence: 0 })), [short]);
   }
   assert.deepEqual(inputs, []);
   assert.ok(chunker.chunkText(text, { segmenter: null, minConfidence: 0 }).length > 1);
-  assert.deepEqual(inputs, [text]);
+  assert.deepEqual(inputs, [text, text.slice(1)]);
 });
 
-test("punctuation-delimited clauses of twelve characters or fewer stay intact", () => {
-  assert.deepEqual(chunkText("甲乙丙丁戊己庚辛壬癸子丑，天地玄黄宇宙洪荒日月盈昃。"), [
-    "甲乙丙丁戊己庚辛壬癸子丑，",
-    "天地玄黄宇宙洪荒日月盈昃。",
+test("punctuation-delimited clauses below twelve characters stay intact", () => {
+  assert.deepEqual(chunkText("甲乙丙丁戊己庚辛壬癸子，天地玄黄宇宙洪荒日月盈。"), [
+    "甲乙丙丁戊己庚辛壬癸子，",
+    "天地玄黄宇宙洪荒日月盈。",
   ]);
 });
 
@@ -501,7 +501,8 @@ test("renders the reported Euler-method example with model scores", () => {
   assert.deepEqual(chunkText(text, { minConfidence: 0 }), [
     "欧拉法",
     "是在积分无法直接计算时，",
-    '用"无数个小矩形累加"来近似',
+    '用"无数个小矩形累加"来',
+    '近似',
     '积分，',
     "因此",
     "它被称为一种数值",

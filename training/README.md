@@ -917,13 +917,14 @@ its training configuration, retained-split metrics and export provenance.
 The backend first splits clauses on original Chinese proxy punctuation and
 physical line boundaries; enumeration commas remain context. All clauses
 follow the same rule:
-leave at most 12 visual units intact and send longer clauses with their
+leave fewer than 12 visual units intact and send eligible clauses with their
 remaining Unicode context to the model. Numeric separators remain within numbers;
 original text and UTF-16 offsets are preserved. Model cuts require immediately adjacent
 Han characters on both sides in the original text, plus browser word protection.
 The default [recursive model inference](BUNDLED_MODEL.md#backend-preprocessing) scores
-each longer child afresh and computes softmax over its internal gaps. Only probabilities
-strictly above 45% are eligible, with raw-logit ranking. An uncertain longer clause stays intact.
+each eligible child afresh and computes softmax over its internal gaps. At exactly 12
+visual units, require probability strictly above 80%; at 13 or more, strictly above 45%.
+Rank eligible positions by raw logit. An uncertain clause stays intact.
 The [confidence audit](CONFIDENCE_THRESHOLD.md) measures original-input predictions
 for the previous, pre-web model; its precision figures do not describe this new
 checkpoint or establish the accuracy of recursive child decisions.
@@ -982,6 +983,8 @@ compares fresh child inference with fixed original probabilities. Its
 then-existing 50% gate: children above 12 visual units receive fresh CNN inference.
 On 2026-10-09 the default gate changed to 45%, the highest first-round F1 among the
 five tested thresholds from 30% to 50%; this does not establish full recursive quality.
+The subsequently added 12-unit tier requires >80%, while 13 or more units retain
+>45%. This short-fragment setting is a product choice, not a result of that sweep.
 Cached logits and fixed original probabilities remain explicit offline controls.
 See [current backend behavior](BUNDLED_MODEL.md#backend-preprocessing).
 Reproduce the historical strategy comparison with
