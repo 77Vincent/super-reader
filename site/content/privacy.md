@@ -38,4 +38,4 @@ layout = 'legal'
 
 ## 联系与更新
 
-隐私问题请通过[项目反馈页](https://github.com/77Vincent/super-reader/issues)联系，公开反馈中请勿包含敏感内容。数据处理方式变更时，将更新本页并注明日期。
+隐私问题请通过[项目反馈页](https://github.com/77Vincent/haodu/issues)联系，公开反馈中请勿包含敏感内容。数据处理方式变更时，将更新本页并注明日期。

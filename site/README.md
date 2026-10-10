@@ -71,7 +71,7 @@ npm run release:site -- --base-url https://正式域名/
 也可以在构建时指定地址：
 
 ```sh
-npm --prefix site run build -- --baseURL https://example.org/super-reader/
+npm --prefix site run build -- --baseURL https://example.org/haodu/
 ```
 
 页面使用 Doks/Thulite 的 SEO 集成生成元信息和 sitemap，保留自定义的 `robots.txt`。404 页面设有 `noindex`。子路径部署时，爬虫读取域名根目录的 `/robots.txt`，需在根配置中添加对应 sitemap 地址。

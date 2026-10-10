@@ -54,11 +54,11 @@
 
 填写完成后点击 **Save draft**。保存草稿不等于提交审核。
 
-网站地址：<https://github.com/77Vincent/super-reader>。正式官网 `https://haodu.site/` 尚未公开上线，暂不填写不可访问的网址。
+网站地址：<https://github.com/77Vincent/haodu>。正式官网 `https://haodu.site/` 尚未公开上线，暂不填写不可访问的网址。
 
-隐私政策地址：<https://github.com/77Vincent/super-reader/blob/main/site/content/privacy.md>。该文件已在公开仓库中可访问，与站点使用同一份政策；官网上线后可改为 `https://haodu.site/privacy/`。
+隐私政策地址：<https://github.com/77Vincent/haodu/blob/main/site/content/privacy.md>。该文件已在公开仓库中可访问，与站点使用同一份政策；官网上线后可改为 `https://haodu.site/privacy/`。
 
-支持地址：<https://github.com/77Vincent/super-reader/issues>
+支持地址：<https://github.com/77Vincent/haodu/issues>
 
 审核人员无需账号、密码或付费。安装后打开普通中文网页，点击工具栏图标开启，再次点击关闭。产品官网包含静态演示并主动禁止扩展处理，不能用官网验证真实模型注入；应使用普通中文内容页面。
 

@@ -1,6 +1,6 @@
 title = '好读'
 description = '中文阅读辅助，按人类习惯，将长句划分为短句，让阅读更轻松。'
-repositoryURL = 'https://github.com/77Vincent/super-reader'
+repositoryURL = 'https://github.com/77Vincent/haodu'
 # Placeholder: replace with the published extension's Chrome Web Store URL.
 chromeWebStoreURL = 'https://chromewebstore.google.com/detail/haodu/REPLACE_WITH_EXTENSION_ID'
 footer = '好读'
@@ -48,7 +48,7 @@ math = false
   type = 'Organization'
   name = '好读'
   logo = 'favicon.png'
-  sameAs = ['https://github.com/77Vincent/super-reader']
+  sameAs = ['https://github.com/77Vincent/haodu']
   article = []
   newsArticle = []
   blogPosting = []

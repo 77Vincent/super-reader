@@ -68,7 +68,7 @@ npm run deploy:site -- --profile haodu-site
 
 ## 4. 上架顺序
 
-1. 确认公开隐私政策与支持链接可访问。官网备案期间，可使用公开仓库的 [隐私政策](https://github.com/77Vincent/super-reader/blob/main/site/content/privacy.md) 和项目首页提交商店，无需等待正式域名上线。官网上线后，再验证首页、`/privacy/`、404、CSS/JS、明暗切换与演示按钮。
+1. 确认公开隐私政策与支持链接可访问。官网备案期间，可使用公开仓库的 [隐私政策](https://github.com/77Vincent/haodu/blob/main/site/content/privacy.md) 和项目首页提交商店，无需等待正式域名上线。官网上线后，再验证首页、`/privacy/`、404、CSS/JS、明暗切换与演示按钮。
 2. 用 `dist/extension/` 做最终安装验证，避免与旧的开发版同时启用。检查开关、页面刷新、滚动、跨标签页和本地推理；官网应保持静态演示。
 3. 在 Chrome Web Store 开发者后台创建项目，上传 ZIP，参考 [商店材料](chrome-web-store.md) 填写文案、权限、隐私页和支持链接，并补齐真实截图与宣传图。
 4. 获得商店项目 ID 后，保留它作为后续升级的同一项目；不要把本地开发扩展的 ID 当成商店 ID。
