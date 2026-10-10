@@ -11,27 +11,6 @@
     "release:site:preview": "node scripts/build-site.mjs --preview",
     "site:sync-reading": "node scripts/sync-site-reading.mjs",
     "site:check-reading": "node scripts/sync-site-reading.mjs --check",
-    "deploy:site": "node scripts/deploy-site.mjs",
-    "model:baseline": "node training/evaluate_model.mjs",
-    "model:compare-initial-learning-rate": "python3 training/run_initial_learning_rate_comparison.py --run-dir training/artifacts/initial-learning-rate-1m-20261004",
-    "model:compare-length": "python3 training/run_length_ablation.py --run-dir training/artifacts/length-cap-256-1m-20261004",
-    "model:compare-position": "python3 training/run_position_ablation.py",
-    "model:position-baselines": "python3 training/evaluate_position_baselines.py",
-    "model:compare-single-character": "python3 training/run_single_character_ablation.py",
-    "smoke:data": "node --max-old-space-size=20480 training/prepare_smoke_data.mjs --tokenization character",
-    "smoke:model": "npm run smoke:data && python3 training/run_smoke.py --epochs 2",
-    "full:data": "node --max-old-space-size=4096 training/prepare_full_wikipedia_data.mjs",
-    "full:model": "python3 training/run_sharded.py --epochs 3 --channels 128 --residual-blocks 4 --initialize-from training/artifacts/data-scale-wiki-250k-8conv-64ch-6ep/training-state.pt",
-    "synthetic:data": "python3 training/run_prepare_synthetic.py",
-    "model:export": "python3 training/export_browser_model.py --artifact-dir training/artifacts/fresh-lr3e-4-max256-20261005/epoch-1-backend",
-    "smoke:compare": "python3 training/run_tokenization_comparison.py",
-    "model:retrain-context": "python3 training/run_context_pipeline.py",
-    "model:retrain-surface": "python3 training/run_surface_retraining.py",
-    "model:download-web": "python3 training/download_ultrafineweb.py",
-    "model:continue-depth": "python3 training/run_depth_expansion.py",
-    "model:continue-web": "python3 training/run_web_continuation.py",
-    "model:expand-web": "python3 training/run_web_continuation.py --run-dir training/artifacts/web-mix-40m-192ch-16conv-20260916 --data-dir training/data/processed/web-mix-40m-192ch-16conv-20260916 --base-manifest training/data/processed/web-mix-20m-192ch-16conv-20260915/manifest.json --evaluation training/data/processed/web-mix-20m-192ch-16conv-20260915 --initialize-from training/artifacts/web-mix-20m-192ch-16conv-20260915/epoch-1-expansion/selected-state.pt --target-samples 20000000 --freeze-evaluation",
-    "model:expand-web-v7": "python3 training/run_web_continuation.py --run-dir training/artifacts/chinese-line-web-200m-16conv-v7-20260920 --data-dir training/data/processed/chinese-line-web-200m-16conv-v7-20260920 --base-manifest training/data/processed/chinese-line-web-100m-16conv-v7-20260917-web/manifest.json --evaluation training/data/processed/chinese-line-web-100m-16conv-v7-20260917-eval --initialize-from training/artifacts/chinese-line-web-100m-16conv-v7-20260917/candidate/training-state.pt --target-samples 100000000 --shards 1024 --freeze-evaluation --epochs 1",
-    "model:expand-padding-fixed": "python3 training/run_web_continuation.py --run-dir training/artifacts/padding-fixed-web-350m-v7-20260925 --data-dir training/data/processed/padding-fixed-web-350m-v7-20260925 --base-manifest training/data/processed/chinese-line-web-200m-16conv-v7-20260920/manifest.json --evaluation training/data/processed/chinese-line-web-200m-16conv-v7-20260920 --initialize-from training/artifacts/learning-rate-192ch-full-246m-v7-20260923/epoch-1-backend/training-state.pt --target-samples 150000000 --shards 1024 --freeze-evaluation --epochs 1 --learning-rate 0.00003 --selection-macro-weight 0 --checkpoint-shards 2"
+    "deploy:site": "node scripts/deploy-site.mjs"
   }
 }

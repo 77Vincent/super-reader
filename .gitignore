@@ -1,7 +1,6 @@
-training/data/raw/
-training/data/processed/
-training/artifacts/
-training/.deps/
+# Training code lives in the private haodu-training repository. Keep the local
+# directory available for running jobs and data without publishing it again.
+/training/
 __pycache__/
 *.pyc
 /dist/

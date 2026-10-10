@@ -48,8 +48,8 @@ test("context tokenization normalizes input while retaining original UTF-16 offs
   assert.equal(tokens.filter((t) => t.index === text.indexOf("ﬃ")).length, 3);
 });
 
-test("every training proxy pre-splits clauses and only 13-unit clauses reach the model", () => {
-  const { proxy_punctuation } = require("../training/text-policy.json");
+test("Chinese sentence delimiters pre-split clauses and only 13-unit clauses reach the model", () => {
+  const proxy_punctuation = Array.from("，。；！？…");
   const twelve = "甲乙丙丁戊己庚辛壬癸子丑";
   const thirteen = twelve + "寅";
   for (const punctuation of proxy_punctuation) {
@@ -169,7 +169,7 @@ test("reported wheel enumeration avoids recursive cuts within short listed phras
 });
 
 test("Chinese proxies and enumeration marks isolate each list item's inference", () => {
-  const { proxy_punctuation } = require("../training/text-policy.json");
+  const proxy_punctuation = Array.from("，。；！？…");
   const item = "甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥天地";
   for (const punctuation of proxy_punctuation) {
     const inputs = [];

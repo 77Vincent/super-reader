@@ -1,5 +1,0 @@
-[
-  {
-    "event": "Before freeze: corrected missing transcription token for P1132 (T); shifted remaining decisions in 1121–1200 back to their intended IDs. Original per-row manual review retained. Added exact batch-size assertion."
-  }
-]
