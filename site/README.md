@@ -66,7 +66,7 @@ npm run release:site -- --base-url https://正式域名/
 - `config/_default/params.toml` 的 `chromeWebStoreURL`：首页安装按钮的固定地址。目前使用含 `REPLACE_WITH_EXTENSION_ID` 的 Chrome 商店占位链接；发布后替换为好读的完整商店详情页链接，再重新构建、部署网站。
 - `content/_index.md`：维护首页标题、SEO 标题、描述和正文。
 
-首页安装入口统一显示“在 Chrome 商店安装”，所有浏览器都直接打开配置的商店详情页，不检测浏览器，也不依赖 JavaScript。
+首页安装入口统一显示“现在安装”，所有浏览器都直接打开配置的商店详情页，不检测浏览器，也不依赖 JavaScript。
 
 也可以在构建时指定地址：
 
