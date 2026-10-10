@@ -232,6 +232,36 @@ class SampleSubsetTests(unittest.TestCase):
             self.assertFalse((run / 'candidate/smoke-metrics.json').exists())
 
     @unittest.skipUnless(torch.backends.mps.is_available(), 'MPS required')
+    def test_coordinator_continuation_then_resume_preserves_optimizer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            old = root / 'old'; old.mkdir(); self.fixture(old)
+            new = root / 'new'; new.mkdir(); self.fixture(new)
+            entry = str(ROOT / 'training/run_fresh_training.py')
+            environment = dict(os.environ, DEBUG='0')
+            def run(arguments):
+                result = subprocess.run([sys.executable, entry, *arguments], cwd=ROOT, env=environment,
+                                        capture_output=True, text=True, timeout=90)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for name, data, epoch, continuation in (
+                ('parent', old, '1', []),
+                ('child', new, '2', ['--continue-from', str(root / 'parent/candidate/training-state.pt'),
+                                     '--validation-every-samples', '1']),
+            ):
+                run(['--manifest', str(data / 'manifest.json'), '--run-dir', str(root / name),
+                     '--epochs', epoch, '--learning-rate', '0.0003', '--max-sequence-length', '4',
+                     '--defer-test', *continuation])
+            checkpoint = root / 'child/candidate/training-state.pt'
+            before = torch.load(checkpoint, map_location='cpu', weights_only=True)
+            self.assertEqual({int(v['step']) for v in before['optimizer_state']['state'].values()}, {2})
+            self.assertEqual(before['history'][0]['epoch'], 2)
+            run(['--run-dir', str(root / 'child'), '--resume'])
+            after = torch.load(checkpoint, map_location='cpu', weights_only=True)
+            for key, value in before['model_state'].items():
+                torch.testing.assert_close(value, after['model_state'][key], rtol=0, atol=0)
+            self.assertEqual(after['validation_history'], before['validation_history'])
+
+    @unittest.skipUnless(torch.backends.mps.is_available(), 'MPS required')
     def test_length_cap_training_counts_resume_and_rejects_changed_cap(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

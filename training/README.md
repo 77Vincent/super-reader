@@ -264,6 +264,46 @@ promoted. `--resume` reuses the frozen plan and the new run's own checkpoint.
 The coordinator keeps macOS awake on AC power and resumes workers after a saved
 MPS memory-pressure checkpoint. SIGTERM to the coordinator requests a safe stop.
 
+### New-corpus continuation and intermediate validation
+
+`prepare_training_snapshot.py` can freeze a randomized selection of completed
+`prepare_remaining_web_data.py` chunks while preparation continues. It references
+the sealed gzip shards in place, verifies their SHA-256 hashes, and reuses the
+byte-identical evaluation files and vocabulary. It never includes `.chunk-writing`
+or changes the preparation directory. `--target-samples` is an **approximate
+retained-sample budget**: complete random chunks estimate the retention rate, then
+whole shards are selected. `data/selection.json` records both raw counts and the
+estimate; the trainer records exact retained counts as it reads the selected shards.
+
+```sh
+python3 training/prepare_training_snapshot.py \
+  --source-dir training/data/processed/ultra-fineweb-remaining-v7-20261009 \
+  --output-dir training/artifacts/NEW_RUN/data --target-samples 400000000
+python3 training/run_fresh_training.py \
+  --manifest training/artifacts/NEW_RUN/data/manifest.json \
+  --run-dir training/artifacts/NEW_RUN \
+  --continue-from training/artifacts/fresh-lr3e-4-max256-20261005-epoch2/candidate/training-state.pt \
+  --epochs 3 --learning-rate 0.0003 --max-sequence-length 256 \
+  --validation-every-samples 50000000 --defer-test
+```
+
+`--continue-from` requires a completed epoch, matching vocabulary, optimizer
+configuration and evaluation identity. It carries the last model, AdamW state,
+and epoch number into an explicitly new dataset. Ordinary `--resume` continues
+the resulting run and still rejects changes to its manifest or configuration.
+The parent checkpoint and its best validation model are preserved.
+
+`--validation-every-samples` defaults to zero (epoch-end evaluation only).
+When enabled, full validation runs at the first shard boundary after each
+multiple of that many **retained training samples**. Validation restores training
+mode and does not update the optimizer. Its time is excluded from training-speed
+statistics. An interrupted validation retries at the saved boundary without
+replaying optimizer steps. `candidate/validation-history.json` records results;
+`candidate/validation-checkpoints/` retains resumable intermediate checkpoints.
+`best_position` identifies the best epoch and sample position, including a
+mid-epoch winner. No automatic early stopping, learning-rate change, test-set
+evaluation (with `--defer-test`), or backend promotion occurs.
+
 `train_sharded.py --min-side-characters 2` filters targets with a one-character
 side from **training, validation and test** at read time. The default is 1 (no
 exclusion). Lengths count Unicode code points, matching model tokenization.

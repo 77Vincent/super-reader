@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start an isolated random-initialized run over an existing prepared corpus."""
+"""Run a frozen training plan, from random weights or a completed-epoch checkpoint."""
 from __future__ import annotations
 
 import argparse
@@ -54,6 +54,13 @@ def prepare(run, args):
     defer_test = getattr(args, "defer_test", False)
     if defer_test:
         command.append("--defer-test")
+    interval = getattr(args, "validation_every_samples", 0)
+    if interval:
+        command.extend(["--validation-every-samples", str(interval)])
+    continuation = getattr(args, "continue_from", None)
+    if continuation:
+        continuation = continuation.resolve()
+        command.extend(["--continue-from", str(continuation)])
     plan = {"created_at": datetime.now(timezone.utc).isoformat(),
             "initialization": "random; no pretrained weights or optimizer",
             "manifest": str(manifest_path), "manifest_sha256": sha(manifest_path),
@@ -69,6 +76,10 @@ def prepare(run, args):
             "epochs": args.epochs, "learning_rate": args.learning_rate, "seed": args.seed,
             "source_hashes": {p.name: sha(p) for p in sorted(snapshot.iterdir())},
             "command": command, "automatic_promotion": False}
+    plan["validation_every_samples"] = interval
+    if continuation:
+        plan["initialization"] = "continue completed epoch; preserve model and AdamW optimizer state"
+        plan["continue_from"] = {"path": str(continuation), "sha256": sha(continuation)}
     write_json(run / "plan.json", plan)
     return plan
 
@@ -84,6 +95,9 @@ def main():
                         help="Whole-sample character limit for all splits; 0 disables")
     parser.add_argument("--defer-test", action="store_true",
                         help="Stop after validation; do not evaluate the test set or export a model")
+    parser.add_argument("--continue-from", type=Path,
+                        help="Continue a completed epoch on this dataset with its optimizer state")
+    parser.add_argument("--validation-every-samples", type=int, default=0)
     parser.add_argument("--seed", type=int, default=2026100405)
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--resume", action="store_true",
@@ -93,6 +107,8 @@ def main():
         parser.error("Epochs and learning rate must be positive and finite")
     if args.max_sequence_length < 0:
         parser.error("Maximum sequence length cannot be negative")
+    if args.validation_every_samples < 0:
+        parser.error("Validation interval cannot be negative")
     run = args.run_dir.resolve()
     run.mkdir(parents=True, exist_ok=True)
     with (run / ".lock").open("a") as lock:
@@ -103,6 +119,9 @@ def main():
         for name, digest in plan["source_hashes"].items():
             if sha(run / "source" / name) != digest:
                 raise ValueError(f"Frozen training source changed: {name}")
+        parent = plan.get("continue_from")
+        if parent and sha(Path(parent["path"])) != parent["sha256"]:
+            raise ValueError("Continuation checkpoint changed")
         if args.prepare_only:
             print(json.dumps(plan, ensure_ascii=False, indent=2))
             return
@@ -134,6 +153,9 @@ def main():
             while not stopped:
                 command = list(plan["command"])
                 if checkpoint.exists():
+                    if "--continue-from" in command:
+                        index = command.index("--continue-from")
+                        del command[index:index + 2]
                     command.append("--resume")
                 previous_stamp = checkpoint.stat().st_mtime_ns if checkpoint.exists() else None
                 with (run / "training.log").open("ab") as log:

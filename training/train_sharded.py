@@ -64,11 +64,15 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--artifact-dir", type=Path, default=DEFAULT_ARTIFACT_DIR)
     parser.add_argument("--vocabulary", type=Path)
     parser.add_argument("--initialize-from", type=Path)
+    parser.add_argument("--continue-from", type=Path,
+                        help="Continue a completed epoch on a new manifest, preserving weights and optimizer")
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--batch-size", type=int, default=512)
     parser.add_argument("--max-tokens-per-batch", type=int, default=8192)
     parser.add_argument("--checkpoint-shards", type=int, default=4)
+    parser.add_argument("--validation-every-samples", type=int, default=0,
+                        help="Validate at shard boundaries after crossing each retained-sample interval; 0 disables")
     parser.add_argument("--max-shards", type=int, default=0)
     parser.add_argument("--validation-limit", type=int, default=0)
     parser.add_argument("--test-limit", type=int, default=0)
@@ -312,6 +316,46 @@ def identity_for_run(
     }
 
 
+def normalized_configuration(configuration):
+    return {"minimum_side_characters": 1, "maximum_sequence_length": 0,
+            "validation_every_samples": 0, **configuration}
+
+
+def validate_continuation(checkpoint, configuration, vocabulary, data_identity):
+    """A new dataset is explicit; optimizer semantics and evaluation stay fixed."""
+    if checkpoint.get("format_version") != 2:
+        raise ValueError("Unsupported continuation checkpoint")
+    previous = normalized_configuration(checkpoint["configuration"])
+    current = normalized_configuration(configuration)
+    for key in set(previous) | set(current):
+        if key != "validation_every_samples" and previous.get(key) != current.get(key):
+            raise ValueError(f"Continuation configuration differs: {key}")
+    if checkpoint["vocabulary"] != vocabulary:
+        raise ValueError("Continuation vocabulary differs")
+    for key in ("validation_bytes", "test_bytes", "summary_sha256"):
+        if checkpoint["data_identity"][key] != data_identity[key]:
+            raise ValueError(f"Continuation evaluation differs: {key}")
+    progress = checkpoint["progress"]
+    if (progress["epoch"] < 2 or not checkpoint["history"]
+            or checkpoint["history"][-1]["epoch"] != progress["epoch"] - 1
+            or any(progress[key] != 0 for key in
+                   ("shard", "next_batch", "running_loss", "seen_weight", "seen_examples", "training_seconds"))):
+        raise ValueError("Continuation requires a completed epoch boundary")
+
+
+def validation_due(interval, epoch, samples, last_validation):
+    previous = last_validation.get("samples", 0) if last_validation.get("epoch") == epoch else 0
+    return interval > 0 and samples // interval > previous // interval
+
+
+def evaluate_preserving_mode(model, *args, **kwargs):
+    training = model.training
+    try:
+        return evaluate(model, *args, **kwargs)
+    finally:
+        model.train(training)
+
+
 def main() -> None:
     args = parse_arguments()
     if min(args.epochs, args.channels, args.residual_blocks, args.checkpoint_shards) < 1:
@@ -320,8 +364,10 @@ def main() -> None:
         raise ValueError("--min-side-characters must be positive")
     if args.max_sequence_length < 0:
         raise ValueError("--max-sequence-length cannot be negative")
-    if args.resume and args.initialize_from:
-        raise ValueError("Choose either --resume or --initialize-from")
+    if sum(bool(value) for value in (args.resume, args.initialize_from, args.continue_from)) > 1:
+        raise ValueError("Choose one of --resume, --initialize-from or --continue-from")
+    if args.validation_every_samples < 0:
+        raise ValueError("--validation-every-samples cannot be negative")
     if min(args.max_shards, args.validation_limit, args.test_limit) < 0:
         raise ValueError("Shard and evaluation limits cannot be negative")
     if args.gradient_clip < 0:
@@ -392,6 +438,7 @@ def main() -> None:
         "max_shards": args.max_shards,
         "validation_limit": args.validation_limit,
         "test_limit": args.test_limit,
+        "validation_every_samples": args.validation_every_samples,
     }
     data_identity = identity_for_run(manifest_path, data_dir)
     resume_state = None
@@ -399,13 +446,18 @@ def main() -> None:
         resume_state = torch.load(state_path, map_location="cpu", weights_only=True)
         if resume_state.get("format_version") != 2:
             raise ValueError(f"Unsupported sharded checkpoint: {state_path}")
-        resumed_configuration = {"minimum_side_characters": 1, "maximum_sequence_length": 0,
-                                 **resume_state["configuration"]}
+        resumed_configuration = normalized_configuration(resume_state["configuration"])
         if resumed_configuration != configuration:
             raise ValueError("Resume checkpoint configuration differs from current arguments")
         if resume_state["data_identity"] != data_identity:
             raise ValueError("Resume checkpoint was created from different data")
         vocabulary = resume_state["vocabulary"]
+    continuation = None
+    if args.continue_from:
+        continuation = torch.load(args.continue_from, map_location="cpu", weights_only=True)
+        validate_continuation(continuation, configuration, vocabulary, data_identity)
+        if args.epochs < continuation["progress"]["epoch"]:
+            raise ValueError("--epochs must include the next continuation epoch")
 
     # Reuse only after validating both configuration and data identity. Avoid a
     # full corpus scan on every worker refresh needed to release Metal graphs.
@@ -448,6 +500,9 @@ def main() -> None:
     best_epoch = 0
     best_state: dict[str, torch.Tensor] | None = None
     history: list[dict[str, Any]] = []
+    validation_history: list[dict[str, Any]] = []
+    last_validation: dict[str, int] = {}
+    best_position: dict[str, Any] = {}
     start_epoch = 1
     start_shard = 0
     start_batch = 0
@@ -462,6 +517,9 @@ def main() -> None:
         best_epoch = resume_state["best_epoch"]
         best_state = resume_state["best_state"]
         history = resume_state["history"]
+        validation_history = resume_state.get("validation_history", [])
+        last_validation = resume_state.get("last_validation", {})
+        best_position = resume_state.get("best_position", {"epoch": best_epoch, "samples": None})
         initialization = resume_state.get("initialization")
         progress = resume_state["progress"]
         start_epoch = progress["epoch"]
@@ -475,6 +533,23 @@ def main() -> None:
             f"resumed epoch={start_epoch} shard={start_shard} next_batch={start_batch}",
             flush=True,
         )
+    elif continuation is not None:
+        model.load_state_dict(continuation["model_state"])
+        optimizer.load_state_dict(continuation["optimizer_state"])
+        best_validation = continuation["best_validation"]
+        best_epoch = continuation["best_epoch"]
+        best_state = continuation["best_state"]
+        best_position = continuation.get("best_position", {"epoch": best_epoch, "samples": None})
+        start_epoch = continuation["progress"]["epoch"]
+        initialization = {
+            "kind": "new-corpus-continuation", "path": str(args.continue_from.resolve()),
+            "checkpoint_sha256": hashlib.sha256(args.continue_from.read_bytes()).hexdigest(),
+            "model": "last completed epoch", "optimizer": "preserved AdamW state",
+            "parent_data_identity": continuation["data_identity"],
+            "parent_history": continuation["history"], "start_epoch": start_epoch,
+        }
+        del continuation
+        print(f"continued completed epoch {start_epoch - 1}; optimizer preserved", flush=True)
 
     stop = {"requested": False, "signals": 0}
 
@@ -498,8 +573,9 @@ def main() -> None:
         seen_weight: float,
         seen_examples: int,
         training_seconds: float,
+        archive_name: str | None = None,
     ) -> None:
-        save_training_state(state_path, {
+        state = {
             "format_version": 2,
             "configuration": configuration,
             # Historical checkpoints are device-independent; data and training
@@ -515,6 +591,9 @@ def main() -> None:
             "best_epoch": best_epoch,
             "best_state": best_state,
             "history": history,
+            "validation_history": validation_history,
+            "last_validation": last_validation,
+            "best_position": best_position,
             "initialization": initialization,
             "progress": {
                 "epoch": epoch,
@@ -525,7 +604,20 @@ def main() -> None:
                 "seen_examples": seen_examples,
                 "training_seconds": training_seconds,
             },
-        })
+        }
+        # Write the archive first. An interrupted save may repeat validation,
+        # but never advances the training cursor without a durable checkpoint.
+        if archive_name is not None:
+            archive = artifact_dir / "validation-checkpoints" / archive_name
+            archive.parent.mkdir(exist_ok=True)
+            save_training_state(archive, state)
+        save_training_state(state_path, state)
+        if args.validation_every_samples:
+            write_json(artifact_dir / "validation-history.json", {
+                "interval_samples": args.validation_every_samples,
+                "best_position": best_position, "best_accuracy": best_validation,
+                "history": validation_history,
+            })
 
         write_json(artifact_dir / "source-statistics.json", {
             "meaning": "corpus provenance only; not semantic domains or training/selection weights",
@@ -533,10 +625,38 @@ def main() -> None:
             "validation": validation_counts,
         })
 
-    if resume_state is None and initialization is not None:
+    def periodic_validation(epoch, shard, samples, loss_sum, weight_sum, seconds):
+        nonlocal best_validation, best_epoch, best_state, best_position, last_validation
+        persist(epoch, shard, 0, loss_sum, weight_sum, samples, seconds)
+        print(f"periodic validation started epoch={epoch} samples={samples}", flush=True)
+        started = time.perf_counter()
+        try:
+            metrics = evaluate_preserving_mode(model, validation_records, args.batch_size,
+                args.max_tokens_per_batch, should_stop=lambda: stop["requested"])
+        except TrainingStopRequested:
+            print("stopped during periodic validation; retry from saved shard boundary", flush=True)
+            return False
+        score = selection_score(metrics)
+        position = {"epoch": epoch, "samples": samples}
+        if score > best_validation:
+            best_validation, best_epoch, best_state = score, epoch, clone_state(model)
+            best_position = position
+        last_validation = position
+        archive = f"epoch-{epoch}-samples-{samples}.pt"
+        validation_history.append({**position, "kind": "periodic", "validation": metrics,
+            "validation_seconds": time.perf_counter() - started, "training_seconds": seconds,
+            "checkpoint": str(artifact_dir / "validation-checkpoints" / archive)})
+        persist(epoch, shard, 0, loss_sum, weight_sum, samples, seconds, archive)
+        print(f"periodic validation complete epoch={epoch} samples={samples} accuracy={score:.6f}", flush=True)
+        return not stop["requested"]
+
+    if resume_state is None and args.continue_from:
+        persist(start_epoch, 0, 0, 0.0, 0.0, 0, 0.0)
+    elif resume_state is None and initialization is not None:
         initial_validation = evaluate(model, validation_records, args.batch_size, args.max_tokens_per_batch)
         best_validation = selection_score(initial_validation)
         best_state = clone_state(model)
+        best_position = {"epoch": 0, "samples": 0}
         initialization["validation_before_training"] = initial_validation
         initialization["selection_score_before_training"] = best_validation
         print(f"initialized validation accuracy={initial_validation['accuracy']:.6f}", flush=True)
@@ -563,9 +683,22 @@ def main() -> None:
             seen_examples = 0
             previous_seconds = 0.0
         epoch_started = time.perf_counter()
+        validation_overhead = 0.0
         model.train()
 
+        def elapsed_training():
+            return time.perf_counter() - epoch_started - validation_overhead
+
         for shard_position in range(shard_start, len(order)):
+            # Includes a retry after interruption during validation. Evaluate
+            # only at a shard boundary, never on a mid-shard resume cursor.
+            if (not (shard_position == shard_start and batch_start > 0)
+                    and validation_due(args.validation_every_samples, epoch, seen_examples, last_validation)):
+                started = time.perf_counter()
+                if not periodic_validation(epoch, shard_position, seen_examples, running_loss,
+                                           seen_weight, previous_seconds + elapsed_training()):
+                    return
+                validation_overhead += time.perf_counter() - started
             shard_number = order[shard_position]
             shard_counts = empty_statistics()
             records = read_training_shard(
@@ -621,7 +754,7 @@ def main() -> None:
                 # Free the completed batch's graph before checking driver usage.
                 del logits, losses, weighted, loss
                 if batch_index == first_batch or (batch_index + 1) % 500 == 0:
-                    elapsed = time.perf_counter() - epoch_started
+                    elapsed = elapsed_training()
                     session_samples = seen_examples - (resumed_examples if epoch == start_epoch else 0)
                     print(
                         f"epoch={epoch:02d} shard={shard_position + 1}/{len(shards)} "
@@ -631,7 +764,7 @@ def main() -> None:
                         flush=True,
                     )
                 if stop["requested"]:
-                    seconds = previous_seconds + time.perf_counter() - epoch_started
+                    seconds = previous_seconds + elapsed_training()
                     persist(
                         epoch,
                         shard_position,
@@ -648,7 +781,7 @@ def main() -> None:
                     )
                     return
                 if mps_memory_restart_needed(args.mps_memory_fraction):
-                    seconds = previous_seconds + time.perf_counter() - epoch_started
+                    seconds = previous_seconds + elapsed_training()
                     persist(epoch, shard_position, batch_index + 1, running_loss,
                             seen_weight, seen_examples, seconds)
                     print("MPS memory pressure; saved next batch, requesting worker refresh (exit 75)", flush=True)
@@ -657,7 +790,7 @@ def main() -> None:
             gc.collect()
             torch.mps.empty_cache()
             if (shard_position + 1) % args.checkpoint_shards == 0:
-                seconds = previous_seconds + time.perf_counter() - epoch_started
+                seconds = previous_seconds + elapsed_training()
                 persist(
                     epoch,
                     shard_position + 1,
@@ -674,7 +807,7 @@ def main() -> None:
                     flush=True,
                 )
 
-        training_seconds = previous_seconds + time.perf_counter() - epoch_started
+        training_seconds = previous_seconds + elapsed_training()
         if seen_weight <= 0:
             persist(epoch, len(shards), 0, running_loss, seen_weight, seen_examples, training_seconds)
             raise ValueError("The selected training subset is empty or has zero total weight")
@@ -722,7 +855,15 @@ def main() -> None:
             best_validation = score
             best_epoch = epoch
             best_state = clone_state(model)
-        persist(epoch + 1, 0, 0, 0.0, 0.0, 0, 0.0)
+            best_position = {"epoch": epoch, "samples": seen_examples}
+        archive = None
+        if args.validation_every_samples:
+            last_validation = {"epoch": epoch, "samples": seen_examples}
+            archive = f"epoch-{epoch}-samples-{seen_examples}.pt"
+            validation_history.append({**last_validation, "kind": "epoch-end", "validation": validation,
+                "training_seconds": training_seconds,
+                "checkpoint": str(artifact_dir / "validation-checkpoints" / archive)})
+        persist(epoch + 1, 0, 0, 0.0, 0.0, 0, 0.0, archive)
         if stop["requested"]:
             print(f"stopped after epoch {epoch}; checkpoint={state_path}", flush=True)
             return
@@ -758,6 +899,8 @@ def main() -> None:
             "parameter_count": sum(parameter.numel() for parameter in model.parameters()),
             "initialization": initialization,
             "history": history,
+            "validation_history": validation_history,
+            "best_position": best_position,
             "endpoint_validation": endpoint_validation,
             "endpoint_selection_score": endpoint_score,
             "best_epoch": best_epoch,
@@ -874,6 +1017,7 @@ def main() -> None:
         "checkpoint_selection": {
             "metric": "overall_validation_accuracy",
             "best_score": best_validation,
+            "best_position": best_position,
         },
         "average_candidate_gaps": {
             "train": stats["tokens"] / stats["samples"] - 1,
@@ -901,6 +1045,7 @@ def main() -> None:
             "test": test_baselines,
         },
         "history": history,
+        "validation_history": validation_history,
         "sample_predictions": predictions,
     }
     write_json(artifact_dir / "source-statistics.json", metrics["corpus_source_statistics"])
