@@ -13,11 +13,12 @@ if (readerToggle) {
     new ResizeObserver(syncToggleSize).observe(installButton);
   }
   const markers = document.querySelectorAll('.reader-divider');
+  const label = readerToggle.querySelector('[data-reader-label]');
   readerToggle.addEventListener('click', () => {
     const enabled = readerToggle.getAttribute('aria-pressed') !== 'true';
     markers.forEach((marker) => { marker.hidden = !enabled; });
     readerToggle.setAttribute('aria-pressed', String(enabled));
-    readerToggle.textContent = enabled ? '关闭辅助预览' : '开启辅助预览';
+    label.textContent = enabled ? '关闭辅助预览' : '开启辅助预览';
   });
   readerToggle.hidden = false;
 }
