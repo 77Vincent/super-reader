@@ -4,7 +4,7 @@
     {{- $content := .Page.RenderString (dict "display" "block") .Inner -}}
     {{- replace $content "｜" `<span class="reader-divider" aria-hidden="true"></span>` | safeHTML -}}
     {{- with .Get "source" -}}
-      <p class="text-end mb-0">-- {{ . }}</p>
+      <p class="text-end mb-0 text-muted">{{ . }}</p>
     {{- end -}}
   </div>
 </div>

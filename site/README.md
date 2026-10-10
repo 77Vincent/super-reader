@@ -10,7 +10,7 @@
 
 网站 favicon 与插件图标统一为透明底的红色粗竖线，颜色为 `#ff1744`；在仓库根目录运行 `npm run icons:generate` 可同时重新生成 SVG、插件各尺寸 PNG 和 `static/favicon.png`。
 
-首页的切分示例是静态演示，不加载模型或运行推理。在 `content/_index.md` 的 `reader-demo` shortcode 内用 `｜` 指定示意断点；构建时生成分隔线。安装入口位于顶部中央，使用 `btn-primary`；阅读辅助开关固定在视口底部中央，使用带实色底和阴影的 `btn-outline-primary`，适配手机底部安全区域，并为页脚预留空间。开关统一控制简介及所有演示段落中的分隔线，主标题和品牌分隔线始终显示。卡片保留自定义的 [CSS Scan #32](https://getcssscan.com/css-box-shadow-examples) 纸张阴影，间距使用 Bootstrap 的 `p-3 p-md-4`。没有 JavaScript 时仍显示静态示例，开关隐藏。
+首页的切分示例是静态演示，不加载模型或运行推理。在 `content/_index.md` 的 `reader-demo` shortcode 内用 `｜` 指定示意断点；构建时生成分隔线。安装入口位于顶部中央，使用 `btn-primary`；阅读辅助开关固定在视口底部中央，使用带实色底和阴影的 `btn-outline-primary`，适配手机底部安全区域；悬浮按钮脱离文档流，不额外增加页面底部或页脚高度。开关统一控制简介及所有演示段落中的分隔线，主标题和品牌分隔线始终显示。卡片保留自定义的 [CSS Scan #32](https://getcssscan.com/css-box-shadow-examples) 纸张阴影，间距使用 Bootstrap 的 `p-3 p-md-4`。没有 JavaScript 时仍显示静态示例，开关隐藏。
 
 演示引用可用 `{{< reader-demo source="罗素《幸福之路》" >}}` 指定来源，模板自动添加 `-- ` 前缀。来源在卡片内渲染为正文之后的独立段落，使用 Bootstrap 的 `text-end mb-0` 靠右对齐；不指定 `source` 时不生成来源段落。
 
