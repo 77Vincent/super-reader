@@ -12,7 +12,7 @@
 
 首页的切分示例是静态演示，不加载模型或运行推理。在 `content/_index.md` 的 `reader-demo` shortcode 内用 `｜` 指定示意断点；构建时生成分隔线。阅读辅助开关与安装入口并排，使用 Bootstrap 类保持等宽等高；安装入口使用 `btn-primary`，开关使用 `btn-outline-primary`。开关统一控制本页标题、简介及所有演示段落中的分隔线。卡片保留自定义的 [CSS Scan #32](https://getcssscan.com/css-box-shadow-examples) 纸张阴影，间距使用 Bootstrap 的 `p-3 p-md-4`。没有 JavaScript 时仍显示静态示例，开关隐藏。
 
-演示引用可用 `{{< reader-demo source="罗素「幸福之路」" >}}` 指定来源，模板自动添加 `-- ` 前缀。来源在卡片内渲染为正文之后的独立段落，使用 Bootstrap 的 `text-end mb-0` 靠右对齐；不指定 `source` 时不生成来源段落。
+演示引用可用 `{{< reader-demo source="罗素《幸福之路》" >}}` 指定来源，模板自动添加 `-- ` 前缀。来源在卡片内渲染为正文之后的独立段落，使用 Bootstrap 的 `text-end mb-0` 靠右对齐；不指定 `source` 时不生成来源段落。
 
 首页主标题 `headline` 和副标题 `lead` 也用 `｜` 指定固定断点，构建时由 `layouts/_partials/reader-copy.html` 转为与演示相同的红色分隔线，不显示字面量竖线，也不运行模型。每个语意块优先保持完整，分隔线随前一块一起换行，避免单独落在行首。`title` 和 `seo.title` 保留不带分隔标记的纯文本，供页面元信息使用。
 
