@@ -1,5 +1,18 @@
-// Use Bootstrap classes for layout and appearance, except for the proportional
-// reading divider and the demo card's paper texture and shadow.
+// Use Bootstrap classes for layout and appearance, with custom reading markers,
+// paper texture and floating preview control spacing.
+.reader-preview-toggle.btn {
+  --bs-btn-bg: var(--bs-body-bg);
+
+  bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
+  z-index: $zindex-fixed;
+  max-width: calc(100% - 2rem);
+}
+
+// Keep the footer reachable above the floating button, including on phones.
+body.home:has(.reader-preview-toggle:not([hidden])) {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+}
+
 .reader-divider::before,
 .brand-divider::before {
   display: inline-block;
