@@ -1,12 +1,3 @@
-import { selectInstallTarget } from './install-target.js';
-
-// Only choose a store link; installation still happens in the browser's store.
-document.querySelectorAll('[data-install-link]').forEach((link) => {
-  const target = selectInstallTarget(link.dataset, navigator);
-  link.href = target.href;
-  link.textContent = target.label;
-});
-
 // Toggle model-generated markers in the lead and demos; brand dividers stay visible.
 const readerToggle = document.querySelector('[data-reader-toggle]');
 if (readerToggle) {

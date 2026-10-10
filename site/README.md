@@ -63,10 +63,10 @@ npm run release:site -- --base-url https://正式域名/
 ## 发布前配置
 
 - `config/_default/hugo.toml` 的 `baseURL`：把 `https://example.org/` 替换为正式地址，包含协议、部署子路径（如有）和末尾斜杠。
-- `config/_default/params.toml` 的 `chromeWebStoreURL`、`edgeAddonsURL`：分别填写好读的 Chrome、Edge 商店详情页链接。尚未上架时保持为空，首页按钮指向 GitHub 的项目与安装说明。
+- `config/_default/params.toml` 的 `chromeWebStoreURL`：首页安装按钮的固定地址。目前使用含 `REPLACE_WITH_EXTENSION_ID` 的 Chrome 商店占位链接；发布后替换为好读的完整商店详情页链接，再重新构建、部署网站。
 - `content/_index.md`：维护首页标题、SEO 标题、描述和正文。
 
-首页始终只有一个安装入口，由少量本地 JavaScript 根据浏览器调整文案与链接：桌面 Chrome 使用 Chrome 商店；桌面 Edge 优先使用 Edge 商店，未配置时使用 Chrome 商店（Edge 支持从其他商店安装扩展）。没有可用商店链接、移动端或未识别的浏览器显示安装说明。识别优先使用 `userAgentData.brands`，再使用 User-Agent，不发送检测请求。禁用 JavaScript 时仍有可用链接，按 Chrome 商店、Edge 商店、项目说明的顺序选择。
+首页安装入口统一显示“在 Chrome 商店安装”，所有浏览器都直接打开配置的商店详情页，不检测浏览器，也不依赖 JavaScript。
 
 也可以在构建时指定地址：
 
