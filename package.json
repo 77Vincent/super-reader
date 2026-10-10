@@ -9,6 +9,8 @@
     "release:extension": "node scripts/build-extension.mjs",
     "release:site": "node scripts/build-site.mjs",
     "release:site:preview": "node scripts/build-site.mjs --preview",
+    "site:sync-reading": "node scripts/sync-site-reading.mjs",
+    "site:check-reading": "node scripts/sync-site-reading.mjs --check",
     "deploy:site": "node scripts/deploy-site.mjs",
     "model:baseline": "node training/evaluate_model.mjs",
     "model:compare-initial-learning-rate": "python3 training/run_initial_learning_rate_comparison.py --run-dir training/artifacts/initial-learning-rate-1m-20261004",

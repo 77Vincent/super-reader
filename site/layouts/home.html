@@ -3,11 +3,11 @@
   <section class="container-fluid pt-5 pb-4" aria-labelledby="page-title">
     <div class="row justify-content-center text-center">
       <div class="col-lg-14 col-xl-12">
-        <h1 id="page-title">{{ partial "reader-copy.html" (.Params.headline | default .Title) }}</h1>
+        <h1 id="page-title">{{ partial "reader-copy.html" (dict "text" (.Params.headline | default .Title) "dividerClass" "brand-divider") }}</h1>
         <p class="lead mt-4">
           {{- range $index, $line := .Params.lead -}}
             {{- if $index }}<br>{{ end -}}
-            {{- partial "reader-copy.html" $line -}}
+            {{- partial "reader-copy.html" (dict "text" $line) -}}
           {{- end -}}
         </p>
         <div class="row justify-content-center mt-4">

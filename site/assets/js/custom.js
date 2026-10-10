@@ -17,7 +17,7 @@ menu?.addEventListener('click', (event) => {
   }
 });
 
-// Toggle all prepared markers on this page, including the heading and lead.
+// Toggle model-generated markers in the lead and demos; brand dividers stay visible.
 const readerToggle = document.querySelector('[data-reader-toggle]');
 if (readerToggle) {
   const markers = document.querySelectorAll('.reader-divider');

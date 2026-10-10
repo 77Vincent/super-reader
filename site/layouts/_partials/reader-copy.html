@@ -1,5 +1,6 @@
-{{- /* Literal markers share the demo's visual divider, without model inference. */ -}}
-{{- $chunks := split . "｜" -}}
+{{- /* Body markers are model-generated; the headline uses a permanent brand divider. */ -}}
+{{- $chunks := split .text "｜" -}}
+{{- $dividerClass := .dividerClass | default "reader-divider" -}}
 {{- range $index, $chunk := $chunks -}}
-  <span class="d-inline-block mw-100">{{ $chunk }}{{ if lt $index (sub (len $chunks) 1) }}<span class="reader-divider" aria-hidden="true"></span>{{ end }}</span>
+  <span class="d-inline-block mw-100">{{ $chunk }}{{ if lt $index (sub (len $chunks) 1) }}<span class="{{ $dividerClass }}" aria-hidden="true"></span>{{ end }}</span>
 {{- end -}}

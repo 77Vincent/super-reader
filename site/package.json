@@ -5,7 +5,9 @@
   "type": "module",
   "description": "中文阅读辅助，按人类习惯，将长句划分为短句，让阅读更轻松。",
   "scripts": {
+    "predev": "node ../scripts/sync-site-reading.mjs",
     "dev": "hugo server --bind 127.0.0.1 --renderToMemory --disableFastRender --noHTTPCache",
+    "prebuild": "node ../scripts/sync-site-reading.mjs",
     "build": "hugo --cleanDestinationDir --minify --gc"
   },
   "engines": {

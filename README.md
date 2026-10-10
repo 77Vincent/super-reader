@@ -189,4 +189,5 @@ python3 -m http.server 8765 --bind 127.0.0.1
 
 - 插件：`npm run release:extension` 输出 `dist/extension/` 和可提交 Chrome Web Store 的 `dist/haodu-<version>.zip`，同时输出文件清单和 SHA-256。打包直接使用已接入的模型，不触发训练或导出。
 - 静态站点：先运行 `npm --prefix site ci`，再运行 `npm run release:site -- --base-url https://正式域名/`，产物为 `dist/site/`。本地开发仍使用 `npm --prefix site run dev`。
+- 首页介绍和例文的预览切点由当前插件后端生成，包含相同的长度门槛、置信度、词内保护和递归切分。启动开发服务或构建前会自动同步；开发服务运行中修改文案后，运行 `npm run site:sync-reading` 更新切点。`npm run site:check-reading` 只检查一致性。标题“让中文｜更好读”和 Logo 的分隔线固定保留，不参与模型切分，也不随辅助预览开关隐藏；浏览器无需加载模型。
 - 发布顺序、部署参数和商店材料见 [`release/README.md`](release/README.md)；商店介绍和权限解释见 [`release/chrome-web-store.md`](release/chrome-web-store.md)。
